@@ -587,6 +587,167 @@ export async function transferTicketPod(
   }
 }
 
+export async function setupMultiPodV2(payload: {
+  identifier: string;
+  organizationName?: string;
+  industry: string;
+  customIndustryDescription?: string;
+  totalSeats: number;
+  leadershipMode?: 'UNIFIED' | 'DEDICATED';
+  pods: Array<{
+    name: string;
+    podCategory: string;
+    description?: string;
+    services?: string[];
+    seats?: number;
+  }>;
+}): Promise<{
+  success: boolean;
+  organization?: any;
+  pods?: any[];
+  leaderTokens?: Array<{
+    workspaceId: string;
+    workspaceName: string;
+    podCategory: string;
+    services: string[];
+    token: string;
+    joinUrl: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/setup-multi-pod-v2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to setup multi-pod v2.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
+export async function fetchLeaderTokenStatus(token: string): Promise<any> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/leader-token-status/${encodeURIComponent(token)}`,
+      { cache: 'no-store' },
+    );
+    return await res.json();
+  } catch {
+    return { valid: false, error: 'Network error.' };
+  }
+}
+
+export async function lockLeaderQuota(payload: {
+  token: string;
+  fullName: string;
+  password?: string;
+  chosenSubordinates: number;
+}): Promise<{
+  success: boolean;
+  leader?: any;
+  workspace?: any;
+  agentTokens?: Array<{ token: string; joinUrl: string }>;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/lock-leader-quota`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to lock quota.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error.' };
+  }
+}
+
+export async function fetchAgentTokenStatus(token: string): Promise<any> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/agent-token-status/${encodeURIComponent(token)}`,
+      { cache: 'no-store' },
+    );
+    return await res.json();
+  } catch {
+    return { valid: false, error: 'Network error.' };
+  }
+}
+
+export async function claimAgentToken(payload: {
+  token: string;
+  fullName: string;
+  password?: string;
+}): Promise<{
+  success: boolean;
+  user?: any;
+  workspace?: any;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/claim-agent-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to claim agent token.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error.' };
+  }
+}
+
+export async function fetchSuperAdminCockpit(identifier: string): Promise<any> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/super-admin-cockpit?identifier=${encodeURIComponent(identifier)}`,
+      { cache: 'no-store' },
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function regenerateToken(token: string): Promise<{
+  success: boolean;
+  oldToken?: string;
+  newToken?: string;
+  role?: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  joinUrl?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/regenerate-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to regenerate token.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
 
 
 

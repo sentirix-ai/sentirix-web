@@ -384,34 +384,7 @@ export default function DashboardPage() {
     window.location.href = '/';
   };
 
-  // If Admin and in Cockpit Analytics mode, render AdminCockpitView matching admin.jpg
-  if (user?.role === 'ADMIN' && adminTab === 'ANALYTICS') {
-    return (
-      <div className="min-h-screen bg-[#0B0F17] flex flex-col font-sans">
-        <AdminCockpitView
-          analyticsData={ownerAnalytics}
-          tickets={tickets}
-          isConnected={isConnected}
-          onRefresh={loadAnalytics}
-          isRefreshing={isRefreshingAnalytics}
-          onSwitchToHelpdesk={() => setAdminTab('HELPDESK')}
-          onLogout={handleLogout}
-          user={user}
-          onOpenProfileModal={() => setIsProfileModalOpen(true)}
-        />
-
-        {/* Account Profile & Avatar Upload Modal */}
-        <ProfileModal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-          user={user}
-          onProfileUpdated={handleProfileUpdated}
-        />
-      </div>
-    );
-  }
-
-  // Otherwise, render Regular User / Helpdesk Workspace matching dashboard.jpg
+  // Render Helpdesk Workspace matching dashboard.jpg for all roles
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans">
       <Navbar

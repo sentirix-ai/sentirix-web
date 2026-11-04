@@ -230,36 +230,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <ExternalLink className="w-3 h-3 text-slate-400" />
         </a>
 
-        {/* Admin Mode Switcher: Analytics vs Helpdesk Demo */}
-        {isAdmin && onSelectAdminTab && (
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
-            <button
-              onClick={() => onSelectAdminTab('ANALYTICS')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                activeAdminTab === 'ANALYTICS'
-                  ? 'bg-[#2563EB] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Owner Analytics</span>
-            </button>
-            <button
-              onClick={() => onSelectAdminTab('HELPDESK')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                activeAdminTab === 'HELPDESK'
-                  ? 'bg-[#2563EB] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <LayoutDashboard className="w-3.5 h-3.5" />
-              <span>Demo Helpdesk</span>
-            </button>
-          </div>
-        )}
-
         {/* New Ticket Button matching dashboard.jpg */}
-        {((!isAdmin && !isGuestMember) || (isAdmin && activeAdminTab === 'HELPDESK')) && (
+        {!isGuestMember && (
           <button
             onClick={onNewTicketClick}
             className="flex items-center gap-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-lg shadow-sm transition-colors cursor-pointer"
