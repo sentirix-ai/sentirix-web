@@ -383,11 +383,13 @@ export async function updateUserAvatar(
   return { success: true, avatarUrl };
 }
 
-// Session Management
+// Session Management with Tab/Browser Isolation & Auto-logout on Browser Close
 export function getSession(): UserSession | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw =
+      sessionStorage.getItem(STORAGE_SESSION_KEY) ||
+      sessionStorage.getItem('sentirix_active_session_v1') ||
       localStorage.getItem(STORAGE_SESSION_KEY) ||
       localStorage.getItem('sentirix_active_session_v1') ||
       localStorage.getItem('omniflow_active_session_v1');
@@ -399,12 +401,58 @@ export function getSession(): UserSession | null {
 
 export function setSession(session: UserSession): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(session));
+  // Save primarily to sessionStorage for browser-session isolation and auto-logout on browser close
+  sessionStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(session));
+  sessionStorage.setItem('sentirix_active_session_v1', JSON.stringify(session));
+
+  // If user has an ID, register session start in backend
+  if (session.id) {
+    fetch(`${API_BASE_URL}/auth/session-start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: session.id,
+        role: session.role === 'ADMIN' ? 'SUPER_ADMIN' : 'AGENT',
+        workspaceId: session.workspaceId,
+      }),
+    }).catch(() => {});
+  }
 }
 
-export function logoutUser(): void {
+export function logoutUser(userId?: string): void {
   if (typeof window === 'undefined') return;
+  const current = getSession();
+  const targetId = userId || current?.id;
+
+  if (targetId) {
+    fetch(`${API_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: targetId, reason: 'MANUAL_LOGOUT' }),
+    }).catch(() => {});
+  }
+
+  // Clear this tab's session
+  sessionStorage.removeItem(STORAGE_SESSION_KEY);
+  sessionStorage.removeItem('sentirix_active_session_v1');
   localStorage.removeItem(STORAGE_SESSION_KEY);
   localStorage.removeItem('sentirix_active_session_v1');
   localStorage.removeItem('omniflow_active_session_v1');
+}
+
+export function sendHeartbeat(userId: string): void {
+  if (typeof window === 'undefined' || !userId) return;
+  fetch(`${API_BASE_URL}/auth/heartbeat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  }).catch(() => {});
+}
+
+export function sendBeaconLogout(userId: string): void {
+  if (typeof window === 'undefined' || !userId || !navigator.sendBeacon) return;
+  const blob = new Blob([JSON.stringify({ userId })], {
+    type: 'application/json',
+  });
+  navigator.sendBeacon(`${API_BASE_URL}/auth/beacon-logout`, blob);
 }

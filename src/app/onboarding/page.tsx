@@ -8,7 +8,12 @@ import {
   CreditCard,
   Laptop,
   HeartPulse,
+  Home,
   Plane,
+  Gamepad2,
+  Wifi,
+  Car,
+  Scale,
   GraduationCap,
   Building2,
   Users,
@@ -46,67 +51,99 @@ interface IndustryOption {
 const INDUSTRY_PRESETS: IndustryOption[] = [
   {
     id: 'ECOMMERCE',
-    name: 'E-Commerce & Retail',
-    tagline: 'Order tracking (WISMO), returns, refunds, checkout vouchers',
+    name: 'E-Commerce & D2C Brands',
+    tagline: 'WISMO tracking, RMA returns, checkout vouchers, VIP buyers',
     icon: ShoppingCart,
     accentColor: 'from-emerald-500/20 to-teal-500/10 border-emerald-500/40 text-emerald-400',
-    defaultServices: ['Layanan Resi & Status Kirim', 'Klaim Retur & Ganti Rugi', 'Penagihan & Refund', 'Voucher & Promo'],
+    defaultServices: ['WISMO & Carrier Exceptions', 'Returns, Exchanges & Damaged Claims', 'Checkout & Payments', 'VIP Concierge Support'],
   },
   {
     id: 'LOGISTICS',
-    name: 'Logistics & Couriers',
-    tagline: 'Waybill & resi tracking, damaged cargo claims, dispatch, COD',
+    name: 'Logistics, Freight & 3PLs',
+    tagline: 'Interstate linehaul, last-mile RTS, freight damage, COD settlement',
     icon: Truck,
     accentColor: 'from-blue-500/20 to-indigo-500/10 border-blue-500/40 text-blue-400',
-    defaultServices: ['Pelacakan Resi & Status', 'Klaim Barang Rusak/Hilang', 'Penagihan COD & Invoice', 'Eskalasi Operasional Gudang'],
+    defaultServices: ['Linehaul & Hub Transit', 'Last-Mile Route Exceptions', 'Freight Damage & Claims', 'COD & Shipper Billing'],
   },
   {
     id: 'FINTECH',
-    name: 'FinTech & Payments',
-    tagline: 'Transaction disputes, KYC identity verify, chargeback fraud',
+    name: 'FinTech & Digital Payments',
+    tagline: 'ACH disputes, biometric KYC, chargeback defense, BNPL lending',
     icon: CreditCard,
     accentColor: 'from-purple-500/20 to-pink-500/10 border-purple-500/40 text-purple-400',
-    defaultServices: ['Sengketa Transaksi & Saldo', 'Verifikasi Akun & KYC', 'Penyelidikan Fraud & Chargeback', 'Dukungan Gateway Pembayaran'],
+    defaultServices: ['ACH & Wire Transfer Disputes', 'Biometric KYC & Account Security', 'Fraud & Chargeback Defense', 'Payment Gateway & Webhooks'],
   },
   {
     id: 'SAAS',
-    name: 'B2B SaaS & Tech',
-    tagline: 'REST APIs, webhooks, subscription billing, SAML/SSO SLA',
+    name: 'B2B SaaS & Tech Enterprise',
+    tagline: 'REST APIs, webhooks, Okta/SAML SSO, SLA downtime incidents',
     icon: Laptop,
     accentColor: 'from-cyan-500/20 to-blue-500/10 border-cyan-500/40 text-cyan-400',
-    defaultServices: ['Integrasi API & Webhook', 'Dukungan Teknis & Bug', 'Langganan & Invoice Perusahaan', 'Eskalasi Insiden Kritis SLA'],
+    defaultServices: ['Tier-1 User Admin Access', 'Tier-2 API & Webhooks', 'Tier-3 Engineering Escalations', 'Enterprise SAML SSO & SLA'],
   },
   {
     id: 'HEALTHCARE',
-    name: 'Healthcare & MedTech',
-    tagline: 'Doctor appointments, digital pharmacy, health insurance claims',
+    name: 'Healthcare & Telemedicine',
+    tagline: 'Doctor video visits, Rx pharmacy delivery, HIPAA health records',
     icon: HeartPulse,
     accentColor: 'from-rose-500/20 to-red-500/10 border-rose-500/40 text-rose-400',
-    defaultServices: ['Jadwal Dokter & Konsultasi', 'Resep Obat & Farmasi', 'Klaim Asuransi & BPJS', 'Dukungan Darurat Medis'],
+    defaultServices: ['Urgent Clinical Triage', 'Doctor Appointments & Video Call', 'Digital Rx & Pharmacy Fulfillment', 'Health Insurance & Prior Auth'],
+  },
+  {
+    id: 'REAL_ESTATE',
+    name: 'Real Estate & PropTech',
+    tagline: 'Tenant emergency repairs, lease agreements, security deposits',
+    icon: Home,
+    accentColor: 'from-teal-500/20 to-emerald-500/10 border-teal-500/40 text-teal-400',
+    defaultServices: ['Tenant Emergency Maintenance', 'Lease Agreements & Move-in', 'Rent Collection & Deposit Refund', 'HOA Compliance & Amenities'],
   },
   {
     id: 'TRAVEL',
-    name: 'Travel & Hospitality',
-    tagline: 'Flight rescheduling, hotel bookings, route disruptions, concierge',
+    name: 'Travel, Hospitality & Airlines',
+    tagline: 'Flight rescheduling, hotel overbooking, emergency trip disruption',
     icon: Plane,
     accentColor: 'from-amber-500/20 to-orange-500/10 border-amber-500/40 text-amber-400',
-    defaultServices: ['Reschedule & Tiket Pesawat', 'Reservasi Hotel & Kamar', 'Refund Pembatalan Perjalanan', 'Layanan VIP Concierge'],
+    defaultServices: ['Flight Rescheduling & Disruptions', 'Hotel Bookings & Overbooked Rooms', '24/7 Trip Emergency Assistance', 'Corporate Travel & Group MICE'],
+  },
+  {
+    id: 'GAMING',
+    name: 'Gaming & Interactive Media',
+    tagline: 'Account recovery, in-game item refunds, anti-cheat ban appeals',
+    icon: Gamepad2,
+    accentColor: 'from-violet-500/20 to-fuchsia-500/10 border-violet-500/40 text-violet-400',
+    defaultServices: ['Account Recovery & Stolen Items', 'In-Game Purchases & Microtransactions', 'Toxicity & Ban Appeals', 'Server Lag & Game Client Bugs'],
+  },
+  {
+    id: 'TELECOM',
+    name: 'Telecommunications & ISPs',
+    tagline: 'Fiber network outages, technician dispatch, modem router diagnostics',
+    icon: Wifi,
+    accentColor: 'from-sky-500/20 to-cyan-500/10 border-sky-500/40 text-sky-400',
+    defaultServices: ['Network Outage Escalations', 'Field Technician On-Site Dispatch', 'Modem & Hardware Diagnostics', 'Billing Invoices & Plan Renewals'],
+  },
+  {
+    id: 'AUTOMOTIVE',
+    name: 'Automotive & EV Mobility',
+    tagline: 'Roadside towing, EV charging stations, car rental damage claims',
+    icon: Car,
+    accentColor: 'from-orange-500/20 to-red-500/10 border-orange-500/40 text-orange-400',
+    defaultServices: ['Roadside Assistance & Towing', 'EV Charging Station App Billing', 'Vehicle Warranty & Recall Servicing', 'Car Rental Damage & Toll Disputes'],
+  },
+  {
+    id: 'PROFESSIONAL_SERVICES',
+    name: 'Legal & CPA Tax Services',
+    tagline: 'IRS tax filing, client retainer agreements, attorney scheduling',
+    icon: Scale,
+    accentColor: 'from-yellow-500/20 to-amber-500/10 border-yellow-500/40 text-yellow-400',
+    defaultServices: ['IRS Tax Filing & W-2 Collection', 'Client Retainer Engagements', 'Attorney & CPA Appointments', 'Secure Document Vault & Compliance'],
   },
   {
     id: 'EDTECH',
-    name: 'Education & EdTech',
-    tagline: 'LMS classroom access, tuition fees, student counseling & tutors',
+    name: 'Education & Bootcamps',
+    tagline: 'LMS virtual classrooms, tuition financial aid, degree credentials',
     icon: GraduationCap,
-    accentColor: 'from-indigo-500/20 to-violet-500/10 border-indigo-500/40 text-indigo-400',
-    defaultServices: ['Akses Kelas & Portal LMS', 'Jadwal Tutor & Konseling', 'Pembayaran Biaya Pendidikan', 'Sertifikat & Kelulusan'],
-  },
-  {
-    id: 'OTHER',
-    name: 'Custom Industry / Sektor Lainnya',
-    tagline: 'AI Instant Pod Architect akan menyesuaikan dengan sektor bisnis Anda',
-    icon: Building2,
-    accentColor: 'from-fuchsia-500/20 to-purple-500/10 border-fuchsia-500/40 text-fuchsia-400',
-    defaultServices: ['Layanan Informasi Umum', 'Pengaduan Masalah Pelanggan', 'Penagihan & Administrasi', 'Eskalasi Khusus Manajemen'],
+    accentColor: 'from-indigo-500/20 to-blue-500/10 border-indigo-500/40 text-indigo-400',
+    defaultServices: ['LMS Virtual Classroom Access', 'Tuition Payments & Financial Aid', 'Academic Advising & Tutors', 'Degree & Certificate Issuance'],
   },
 ];
 
@@ -167,13 +204,20 @@ export default function TitaniumOnboardingPage() {
       return;
     }
     setLocalSession(active);
-    if (!organizationName) {
-      setOrganizationName(
-        active.fullName ? `${active.fullName}'s Organization` : `${active.username}'s Operations`,
-      );
-    }
     setIsVerifying(false);
-  }, [router, organizationName]);
+
+    // Read planned capacity from landing page calculator if present
+    try {
+      const planned = localStorage.getItem('sentirix_planned_capacity');
+      if (planned) {
+        const num = Number(planned);
+        if (!isNaN(num) && num >= 1) {
+          setTypedMembers(num);
+        }
+        localStorage.removeItem('sentirix_planned_capacity');
+      }
+    } catch {}
+  }, [router]);
 
   // Load pods when entering Step 3
   const prepareStep3Pods = async () => {
@@ -245,6 +289,10 @@ export default function TitaniumOnboardingPage() {
   };
 
   const handleNextToStep2 = () => {
+    if (!organizationName.trim()) {
+      setErrorMessage('Nama organisasi / perusahaan wajib diisi.');
+      return;
+    }
     if (selectedIndustry === 'OTHER' && !customIndustryText.trim()) {
       setErrorMessage('Mohon jelaskan jenis industri atau bidang usaha Anda.');
       return;
@@ -391,18 +439,17 @@ export default function TitaniumOnboardingPage() {
       <div className="w-full max-w-4xl relative z-10">
         {/* Header Breadcrumbs */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#111827] border border-slate-800 text-blue-400 text-xs font-semibold mb-4 shadow-lg shadow-black/40 backdrop-blur-sm">
-            <Crown className="w-3.5 h-3.5 text-amber-400" />
-            <span>Sentirix Operations Setup • Langkah {currentStep} dari 4</span>
-          </div>
-
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
             {currentStep === 4 ? 'Aktivasi Token Kepemimpinan Leader' : 'Pengaturan Arsitektur Multi-Pod'}
           </h1>
-          <p className="text-sm text-slate-400 max-w-xl mx-auto">
+          <p className="text-sm text-slate-400 max-w-3xl mx-auto">
             {currentStep === 4
               ? 'Bagikan token aktivasi sekali pakai kepada setiap Leader Pod sebelum masuk ke Executive Cockpit.'
-              : 'Bangun tata kelola layanan pelanggan yang terfokus, tangkas, dan bebas bentrok antar-divisi.'}
+              : (
+                <>
+                  Bangun tata kelola layanan pelanggan yang terfokus, tangkas, dan bebas bentrok <span className="whitespace-nowrap">antar divisi.</span>
+                </>
+              )}
           </p>
 
           {/* Stepper Dots */}
@@ -467,19 +514,26 @@ export default function TitaniumOnboardingPage() {
 
               {/* Organization Name Input */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Nama Organisasi / Perusahaan
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
+                  <span>Nama Organisasi / Perusahaan</span>
+                  <span className="text-red-400 font-bold">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={organizationName}
-                  onChange={(e) => setOrganizationName(e.target.value)}
-                  placeholder="Contoh: Karim Express Logistics"
-                  className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium"
+                  onChange={(e) => {
+                    setOrganizationName(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
+                  placeholder="Express Company"
+                  className={`w-full bg-[#0B0F19] border ${
+                    !organizationName.trim() && errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-800'
+                  } rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium`}
                 />
               </div>
 
-              {/* 8 Industry Preset Cards */}
+              {/* 12 Industry Preset Cards (3 rows of 4) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                 {INDUSTRY_PRESETS.map((ind) => {
                   const Icon = ind.icon;
@@ -488,7 +542,10 @@ export default function TitaniumOnboardingPage() {
                     <button
                       key={ind.id}
                       type="button"
-                      onClick={() => setSelectedIndustry(ind.id)}
+                      onClick={() => {
+                        setSelectedIndustry(ind.id);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
                       className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[120px] ${
                         isSelected
                           ? 'bg-[#1E293B] border-blue-500 shadow-lg shadow-blue-500/20 ring-1 ring-blue-500'
@@ -514,6 +571,39 @@ export default function TitaniumOnboardingPage() {
                 })}
               </div>
 
+              {/* 13th Option: Custom Industry / AI Instant Architect Banner */}
+              <div
+                onClick={() => {
+                  setSelectedIndustry('OTHER');
+                  if (errorMessage) setErrorMessage(null);
+                }}
+                className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                  selectedIndustry === 'OTHER'
+                    ? 'bg-[#1E293B] border-fuchsia-500 shadow-lg shadow-fuchsia-500/20 ring-1 ring-fuchsia-500'
+                    : 'bg-[#0B0F19] border-slate-800 hover:border-slate-700 hover:bg-[#151D2F]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-fuchsia-500/20 to-purple-500/10 border border-fuchsia-500/40 text-fuchsia-400 shrink-0">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Sektor Lainnya</h3>
+                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800">
+                        AI INSTANT ARCHITECT
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Punya model bisnis khusus atau niche? Ketikkan bidang usaha Anda dan AI akan merancang arsitektur pod operasional secara otomatis.
+                    </p>
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-2">
+                  {selectedIndustry === 'OTHER' && <CheckCircle2 className="w-4 h-4 text-fuchsia-400" />}
+                </div>
+              </div>
+
               {/* Custom Industry Text Input if OTHER selected */}
               {selectedIndustry === 'OTHER' && (
                 <div className="p-4 rounded-xl bg-[#0B0F19] border border-fuchsia-500/30 animate-fadeIn">
@@ -525,11 +615,11 @@ export default function TitaniumOnboardingPage() {
                     type="text"
                     value={customIndustryText}
                     onChange={(e) => setCustomIndustryText(e.target.value)}
-                    placeholder="Contoh: Produsen Sepatu Olahraga Ekspor & B2B Wholesaler"
+                    placeholder="Contoh: Drone Pertanian Otonom & Pemetaan Lahan Komersial"
                     className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-fuchsia-500 transition-all font-medium"
                   />
                   <p className="text-[11px] text-slate-400 mt-2">
-                    AI Architect akan merancang pod spesifik dari penjelasan bisnis yang Anda ketikkan.
+                    AI Architect akan merancang 6 pod spesifik dari penjelasan bisnis yang Anda ketikkan.
                   </p>
                 </div>
               )}
@@ -583,29 +673,10 @@ export default function TitaniumOnboardingPage() {
                   <span className="text-sm font-semibold text-slate-400">Orang Anggota Tim</span>
                 </div>
 
-                {/* Educational Callout Box based on Amazon Two-Pizza Rule */}
-                <div className="mt-4 p-4 rounded-xl bg-[#1E293B]/80 border border-blue-500/30 text-slate-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className="w-4 h-4 text-blue-400" />
-                    <span className="text-xs font-extrabold text-blue-300 uppercase tracking-wider">
-                      Analisis Tata Kelola Amazon Two-Pizza
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Dengan jumlah <strong>{typedMembers} member</strong> yang Anda ketikkan, si user (organisasi Anda) mempunyai jumlah pod sebesar jumlah member yang ditulis dibagi 8, dan dibulatkan ke atas:
-                  </p>
-                  <div className="my-2.5 px-3.5 py-2 rounded-lg bg-[#0B0F19] border border-slate-800 font-mono text-xs text-blue-300 flex items-center justify-between">
-                    <span>
-                      Rumus: <strong>{typedMembers} / 8 = {rawFraction}</strong>
-                    </span>
-                    <span className="text-emerald-400 font-black text-sm">
-                      ➔ Dibulatkan Ke Atas: {calculatedPodCount} Pod
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
-                    Format ini memastikan setiap pod maksimal dihuni 8 orang (1 Leader + 7 Agen), menjaga kelincahan penanganan komplain, dan mengeliminasi lempar tanggung jawab antar personel.
-                  </p>
-                </div>
+                {/* Professional Operational Rationale Text */}
+                <p className="text-xs text-slate-300 leading-relaxed pt-2">
+                  Dengan jumlah member sebanyak <span className="font-bold text-white">{typedMembers} orang</span>, maka jumlah pod operasional Anda adalah <span className="font-bold text-emerald-400">{calculatedPodCount} pod</span> guna memastikan rentang kendali (<em>span of control</em>) tetap optimal dan koordinasi penanganan komplain berjalan responsif.
+                </p>
               </div>
 
               {/* Action Buttons */}
@@ -765,6 +836,7 @@ export default function TitaniumOnboardingPage() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(2)}
+                  title="Kembali ke Penentuan Kapasitas Member (Langkah 2)"
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />

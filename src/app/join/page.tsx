@@ -6,6 +6,7 @@ import {
   Users,
   ShieldCheck,
   ArrowRight,
+  ArrowLeft,
   Sparkles,
   AlertCircle,
   CheckCircle2,
@@ -38,11 +39,13 @@ function JoinWorkspaceContent() {
   const [tokenType, setTokenType] = useState<'LEADER' | 'AGENT' | 'LEGACY'>('LEGACY');
   const [tokenData, setTokenData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form inputs
   const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [selectedSubordinates, setSelectedSubordinates] = useState<number>(1);
+  const [isQuotaLocked, setIsQuotaLocked] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Success state for Leader
@@ -72,7 +75,12 @@ function JoinWorkspaceContent() {
           setErrorMessage(res.error || 'Token Leader tidak valid atau sudah kadaluwarsa.');
         } else {
           setTokenData(res);
-          if (res.quotaStats?.allowedOptions?.length > 0) {
+          if (res.workspace?.isQuotaLocked) {
+            setIsQuotaLocked(true);
+            if (res.workspace.assignedQuota > 1) {
+              setSelectedSubordinates(res.workspace.assignedQuota - 1);
+            }
+          } else if (res.quotaStats?.allowedOptions?.length > 0) {
             setSelectedSubordinates(
               res.quotaStats.allowedOptions[res.quotaStats.allowedOptions.length - 1],
             );
@@ -109,23 +117,26 @@ function JoinWorkspaceContent() {
   const handleLockLeaderQuota = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setErrorMessage('Mohon isi nama lengkap Anda (minimal 2 karakter).');
+      setFormError('Mohon isi nama lengkap Anda (minimal 2 karakter).');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setErrorMessage(null);
+      setFormError(null);
+
+      const maxAllowed = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
+      const safeSubordinates = Math.min(Number(selectedSubordinates) || 1, maxAllowed);
 
       const res = await lockLeaderQuota({
         token,
         fullName: fullName.trim(),
         password: password.trim() || undefined,
-        chosenSubordinates: Number(selectedSubordinates),
+        chosenSubordinates: safeSubordinates,
       });
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Gagal mengunci kuota pod.');
+        setFormError(res.error || 'Gagal mengunci kuota pod.');
         return;
       }
 
@@ -294,10 +305,21 @@ function JoinWorkspaceContent() {
             </div>
             <h2 className="text-base font-bold text-white">Akses Token Ditolak</h2>
             <p className="text-xs text-red-300 leading-relaxed max-w-md mx-auto">{errorMessage}</p>
-            <div className="pt-2">
+            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage(null);
+                  setFormError(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Kembali ke Halaman Pemilihan Token &amp; Kuota</span>
+              </button>
               <a
                 href="/"
-                className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 transition-all font-semibold"
               >
                 <span>Kembali ke Beranda</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -401,9 +423,8 @@ function JoinWorkspaceContent() {
         ) : tokenType === 'LEADER' ? (
           /* LEADER ACTIVATION & CAPACITY SELECTION FORM */
           <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-3">
-                <Crown className="w-3.5 h-3.5 text-amber-400" />
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-3 mx-auto">
                 <span>Undangan Kepemimpinan Pod (Single-Use Token)</span>
               </div>
               <h1 className="text-xl font-black text-white">
@@ -415,6 +436,14 @@ function JoinWorkspaceContent() {
             </div>
 
             <form onSubmit={handleLockLeaderQuota} className="space-y-5">
+              {/* Form Error Banner */}
+              {formError && (
+                <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-500/80 text-red-200 text-xs flex items-center gap-2.5 shadow-lg shadow-red-950/40 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               {/* Leader Profile Details */}
               <div className="space-y-4 p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -433,18 +462,6 @@ function JoinWorkspaceContent() {
                     className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Password Akun (Opsional)
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
-                  />
-                </div>
               </div>
 
               {/* Interconnected Quota Allocation Box with Dropdown + [✓] Checkmark button */}
@@ -453,9 +470,6 @@ function JoinWorkspaceContent() {
                   <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
                     Langkah 2: Tentukan Kuota Bawahan Pod Anda
-                  </span>
-                  <span className="text-[10px] font-mono font-bold bg-blue-950 text-blue-300 px-2 py-0.5 rounded border border-blue-800">
-                    Amazon Two-Pizza Rule
                   </span>
                 </div>
 
@@ -477,17 +491,51 @@ function JoinWorkspaceContent() {
                   </div>
                 </div>
 
+                {/* Highlighted Maximum Quota Callout */}
+                <div className="p-3 rounded-xl bg-blue-950/80 border border-cyan-500/50 text-cyan-200 text-xs flex items-center justify-between shadow-inner">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <span className="font-semibold text-slate-300">Batas Maksimal Kuota Pod:</span>
+                  </div>
+                  <span className="font-mono font-black text-cyan-300 bg-blue-900/90 px-2.5 py-1 rounded-lg border border-cyan-400/40 text-xs">
+                    Maksimal {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} Bawahan (+ 1 Leader)
+                  </span>
+                </div>
+
                 {/* Dropdown Selection & Checkmark Locking Button */}
                 <div className="pt-2">
-                  <label className="block text-xs font-bold text-white mb-1.5">
-                    Pilih Jumlah Anggota Bawahan:
+                  <label className="block text-xs font-bold text-white mb-1.5 flex items-center justify-between">
+                    <span>Pilih Jumlah Anggota Bawahan:</span>
+                    {tokenData?.quotaStats?.isLastPod ? (
+                      <span className="text-[11px] text-amber-400 font-bold">
+                        (Pod Terakhir: Hanya 1 Pilihan Kuota Maksimal Tersedia)
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-cyan-400 font-medium">
+                        (Tersedia: 1 s.d. {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} orang)
+                      </span>
+                    )}
                   </label>
                   <div className="flex items-center gap-3">
                     <div className="relative flex-1">
                       <select
+                        disabled={isQuotaLocked}
                         value={selectedSubordinates}
-                        onChange={(e) => setSelectedSubordinates(Number(e.target.value))}
-                        className="w-full bg-[#111827] border-2 border-blue-500 text-white font-bold text-xs rounded-xl px-3.5 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          const max = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
+                          if (val > max) {
+                            setFormError(`Jumlah kuota terlalu banyak. Maksimal yang bisa dipilih adalah ${max} orang.`);
+                          } else {
+                            if (formError) setFormError(null);
+                            setSelectedSubordinates(val);
+                          }
+                        }}
+                        className={`w-full ${
+                          isQuotaLocked
+                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
+                            : 'bg-[#111827] border-2 border-blue-500 text-white'
+                        } font-bold text-xs rounded-xl px-3.5 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-80`}
                       >
                         {tokenData?.quotaStats?.allowedOptions?.map((num: number) => (
                           <option key={num} value={num} className="bg-[#111827] text-white">
@@ -498,23 +546,56 @@ function JoinWorkspaceContent() {
                     </div>
 
                     <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-lg shadow-emerald-600/30 cursor-pointer transition-all shrink-0"
+                      type="button"
+                      onClick={() => {
+                        const max = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
+                        if (selectedSubordinates > max) {
+                          setFormError(`Jumlah kuota terlalu banyak. Maksimal yang bisa dipilih adalah ${max} orang.`);
+                          return;
+                        }
+                        setFormError(null);
+                        setIsQuotaLocked(!isQuotaLocked);
+                      }}
+                      className={`px-5 py-2.5 rounded-xl text-white text-xs font-extrabold flex items-center gap-1.5 shadow-lg cursor-pointer transition-all shrink-0 ${
+                        isQuotaLocked
+                          ? 'bg-emerald-700 hover:bg-emerald-600 shadow-emerald-700/40'
+                          : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
+                      }`}
                     >
-                      {isSubmitting ? (
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Check className="w-4 h-4 stroke-[3]" />
-                      )}
-                      <span>Kunci Kuota</span>
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>{isQuotaLocked ? 'Kuota Terkunci' : 'Kunci Kuota'}</span>
                     </button>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-2">
-                    *Pilihan dropdown terkunci maksimal {tokenData?.quotaStats?.maxSubordinatesAllowed} orang agar alokasi kuota antar-pod pas 100%. Setelah diklik centang, kuota terkunci permanen dan token bawahan akan terbuat otomatis.
-                  </p>
+                  {tokenData?.quotaStats?.isLastPod ? (
+                    <p className="text-[10px] text-amber-300 mt-2 font-medium bg-amber-950/40 border border-amber-500/30 rounded-lg p-2 leading-relaxed">
+                      *Karena pod lain telah mengunci kuota, maka pod terakhir ini otomatis hanya menyisakan tepat 1 pilihan kuota maksimal ({tokenData?.quotaStats?.maxSubordinatesAllowed} bawahan + 1 leader = {tokenData?.quotaStats?.maxSubordinatesAllowed + 1} orang) agar seluruh kapasitas organisasi terisi pas 100%.
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      *Pilihan dropdown dibatasi maksimal {tokenData?.quotaStats?.maxSubordinatesAllowed} orang agar alokasi kuota antar-pod pas 100%. Setelah kuota dikunci dan data lengkap, klik tombol aktivasi di bawah untuk melanjutkan.
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {/* Main Submit Button at bottom */}
+              <button
+                type="submit"
+                disabled={isSubmitting || !fullName.trim() || !isQuotaLocked}
+                className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Mengaktivasi Akun & Menyiapkan Token...</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>Aktivasi Link dan Lanjutkan Langkah Berikutnya</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
             </form>
           </div>
         ) : tokenType === 'AGENT' ? (
