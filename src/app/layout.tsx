@@ -14,9 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Sentirix — Enterprise AI Customer Support & Copilot',
+  title: 'Sentirix — Autonomous Support Intelligence & AI Copilot',
   description:
-    'Autonomous customer triage and real-time copilot platform powered by Google Gemini 2.5 Flash.',
+    'Autonomous Support Intelligence with real-time AI copilot and multi-pod architecture powered by Google Gemini.',
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/logo_warna_s.png',
+  },
   other: {
     google: 'notranslate',
   },

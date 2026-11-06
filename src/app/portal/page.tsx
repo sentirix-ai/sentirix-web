@@ -138,11 +138,11 @@ export default function PublicCustomerPortalPage() {
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-xl text-[#0F172A] tracking-tight">Sentirix</span>
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-[#EEF2FF] text-[#2563EB] px-2.5 py-0.5 rounded-full border border-[#C7D2FE]">
-                  PUBLIC PORTAL
+                  AI COPILOT PORTAL
                 </span>
               </div>
-              <p className="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">
-                AI-POWERED TICKET INTELLIGENCE
+              <p className="text-[9.5px] font-bold text-slate-400 tracking-wider uppercase">
+                AUTONOMOUS SUPPORT INTELLIGENCE
               </p>
             </div>
           </Link>

@@ -60,7 +60,7 @@ export const AdminCockpitView: React.FC<AdminCockpitViewProps> = ({
       <header className="h-16 border-b border-[#1E2638] bg-[#0E131F] px-6 flex items-center justify-between sticky top-0 z-30">
         {/* Left: Sentirix Logo + Divider + LIVE MONITORING & ANALYTICS */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl overflow-hidden border border-[#1E2638] bg-[#0e183c] p-1 flex items-center justify-center shadow-md shadow-blue-500/10">
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-md shadow-blue-500/10">
             <img
               src="/logo_warna_s.png"
               alt="Sentirix Logo"
@@ -69,9 +69,12 @@ export const AdminCockpitView: React.FC<AdminCockpitViewProps> = ({
           </div>
           <div className="flex items-center gap-3">
             <span className="font-extrabold text-xl text-white tracking-tight">Sentirix</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-800/60">
+              AI COPILOT
+            </span>
             <span className="text-[#38455E] text-lg font-light">|</span>
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              LIVE MONITORING &amp; ANALYTICS
+              AUTONOMOUS SUPPORT INTELLIGENCE
             </span>
           </div>
         </div>

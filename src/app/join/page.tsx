@@ -75,6 +75,9 @@ function JoinWorkspaceContent() {
           setErrorMessage(res.error || 'Token Leader tidak valid atau sudah kadaluwarsa.');
         } else {
           setTokenData(res);
+          if (res.isExistingLeader && res.existingLeaderName) {
+            setFullName(res.existingLeaderName);
+          }
           if (res.workspace?.isQuotaLocked) {
             setIsQuotaLocked(true);
             if (res.workspace.assignedQuota > 1) {
@@ -93,6 +96,9 @@ function JoinWorkspaceContent() {
           setErrorMessage(res.error || 'Token Agen tidak valid atau sudah digunakan.');
         } else {
           setTokenData(res);
+          if (res.assignedMemberName) {
+            setFullName(res.assignedMemberName);
+          }
         }
       } else {
         // Fallback for legacy invite link
@@ -151,7 +157,13 @@ function JoinWorkspaceContent() {
           isVerified: true,
           avatarText: res.leader.fullName.slice(0, 2).toUpperCase(),
           onboardingCompleted: true,
+          workspaceId: res.workspace?.id || res.leader.workspaceId,
         });
+
+        if (res.isReLogin) {
+          window.location.href = '/dashboard';
+          return;
+        }
       }
 
       setLeaderLockedResult({
@@ -199,6 +211,8 @@ function JoinWorkspaceContent() {
           isVerified: true,
           avatarText: res.user.fullName.slice(0, 2).toUpperCase(),
           onboardingCompleted: true,
+          workspaceId: res.workspace?.id || res.user.workspaceId,
+          isGuestMember: true,
         });
       }
 
@@ -274,14 +288,19 @@ function JoinWorkspaceContent() {
       {/* Header */}
       <header className="relative z-10 max-w-5xl mx-auto w-full px-6 py-6 flex items-center justify-between">
         <a href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-800 bg-[#111827] flex items-center justify-center shadow-lg">
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-lg">
             <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
           </div>
           <div>
-            <span className="font-extrabold text-lg text-white tracking-tight">Sentirix</span>
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30 ml-2">
-              {tokenType === 'LEADER' ? 'LEADER ACTIVATION' : 'TEAM ONBOARDING'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-lg text-white tracking-tight">Sentirix</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
+                {tokenType === 'LEADER' ? 'LEADER ACTIVATION' : 'AI COPILOT'}
+              </span>
+            </div>
+            <p className="text-[9.5px] font-bold text-slate-400 tracking-wider uppercase">
+              AUTONOMOUS SUPPORT INTELLIGENCE
+            </p>
           </div>
         </a>
 
@@ -421,6 +440,83 @@ function JoinWorkspaceContent() {
             </button>
           </div>
         ) : tokenType === 'LEADER' ? (
+          tokenData?.isExistingLeader ? (
+            /* LEADER RE-LOGIN VIEW (Meta, Tita entering with regenerated token) */
+            <div className="p-6 sm:p-8 bg-[#111827] border border-blue-500/40 rounded-2xl shadow-2xl space-y-6">
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 rounded-2xl bg-amber-950/80 border border-amber-500/50 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-950/40">
+                  <Crown className="w-7 h-7" />
+                </div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
+                  <span>Sesi Kepemimpinan Pod Aktif</span>
+                </div>
+                <h1 className="text-xl font-black text-white">
+                  Selamat Datang Kembali, {tokenData?.existingLeaderName || fullName || 'Leader'}!
+                </h1>
+                <p className="text-xs text-slate-400">
+                  Pod: <strong className="text-white">{tokenData?.workspace?.name}</strong> &bull; Organisasi:{' '}
+                  <strong className="text-white">{tokenData?.organization?.name}</strong>
+                </p>
+                <div className="p-3 rounded-xl bg-[#0B0F19] border border-slate-800 text-xs text-slate-300 flex items-center justify-between max-w-sm mx-auto mt-2">
+                  <span>Kapasitas Pod Terkunci:</span>
+                  <strong className="text-emerald-400">{tokenData?.workspace?.assignedQuota} Personel</strong>
+                </div>
+              </div>
+
+              <form onSubmit={handleLockLeaderQuota} className="space-y-4 max-w-md mx-auto">
+                {formError && (
+                  <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-500/80 text-red-200 text-xs flex items-center gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Nama Lengkap Leader
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Password Akun (Opsional)
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !fullName.trim()}
+                  className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Memverifikasi &amp; Masuk...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <span>Masuk ke Dashboard Leader Pod</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          ) : (
           /* LEADER ACTIVATION & CAPACITY SELECTION FORM */
           <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
             <div className="text-center">
@@ -598,6 +694,7 @@ function JoinWorkspaceContent() {
               </button>
             </form>
           </div>
+          )
         ) : tokenType === 'AGENT' ? (
           /* AGENT ACTIVATION FORM */
           <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
@@ -607,10 +704,11 @@ function JoinWorkspaceContent() {
                 <span>Undangan Anggota Pod Frontline (Single-Use Token)</span>
               </div>
               <h1 className="text-xl font-black text-white">
-                Bergabung ke {tokenData?.workspace?.name}
+                {tokenData?.assignedMemberName ? `Selamat Datang Kembali, ${tokenData.assignedMemberName}!` : `Bergabung ke ${tokenData?.workspace?.name}`}
               </h1>
               <p className="text-xs text-slate-400 mt-1">
-                Organisasi: <strong className="text-white">{tokenData?.organization?.name}</strong> • Leader:{' '}
+                Pod: <strong className="text-white">{tokenData?.workspace?.name}</strong> &bull; Organisasi:{' '}
+                <strong className="text-white">{tokenData?.organization?.name}</strong> &bull; Leader:{' '}
                 <strong className="text-white">{tokenData?.leaderName}</strong>
               </p>
             </div>
@@ -693,7 +791,7 @@ function JoinWorkspaceContent() {
 
       {/* Footer */}
       <footer className="relative z-10 max-w-5xl mx-auto w-full px-6 py-6 text-center text-[11px] text-slate-500">
-        Sentirix AI-Powered Multi-Pod Operations • Amazon Two-Pizza Quota Architecture
+        Sentirix Autonomous Support Intelligence • Amazon Two-Pizza Quota Architecture
       </footer>
     </div>
   );

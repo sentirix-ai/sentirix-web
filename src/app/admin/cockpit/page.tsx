@@ -24,9 +24,30 @@ import {
   BarChart3,
   ExternalLink,
   Bell,
+  X,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
 import { fetchSuperAdminCockpit, regenerateToken } from '../../../lib/api';
+
+const INDUSTRY_DISPLAY_NAMES: Record<string, string> = {
+  PROFESSIONAL_SERVICES: 'Legal & CPA Tax Services',
+  ECOMMERCE: 'E-Commerce & D2C Brands',
+  LOGISTICS: 'Logistics, Freight & 3PLs',
+  FINTECH: 'FinTech & Digital Payments',
+  SAAS: 'B2B SaaS & Tech Enterprise',
+  HEALTHCARE: 'Healthcare & Telemedicine',
+  EDTECH: 'Education & Bootcamps',
+};
+
+const getSectorName = (industry?: string, customDesc?: string) => {
+  if (industry && INDUSTRY_DISPLAY_NAMES[industry]) {
+    return INDUSTRY_DISPLAY_NAMES[industry];
+  }
+  if (customDesc && customDesc.trim()) {
+    return customDesc.trim();
+  }
+  return industry || 'Legal & CPA Tax Services';
+};
 
 export default function SuperAdminCockpitPage() {
   const router = useRouter();
@@ -119,8 +140,11 @@ export default function SuperAdminCockpitPage() {
     }
   };
 
-  const handleLogout = () => {
-    logoutUser();
+  const handleLogout = async () => {
+    try {
+      sessionStorage.setItem('is_manual_logout', 'true');
+    } catch {}
+    await logoutUser();
     router.push('/');
   };
 
@@ -140,6 +164,159 @@ export default function SuperAdminCockpitPage() {
   const workspaces = cockpitData?.workspaces || [];
   const tokenAudit = cockpitData?.tokenAudit || [];
   const crisisTickets = cockpitData?.crisisTickets || [];
+  const slaBreachedTickets = cockpitData?.slaBreachedTickets || [];
+
+  const renderPresenceRow = (user: any, badgePrefix?: React.ReactNode) => {
+    const isOnline = user.isOnline;
+    const liveOnlineSeconds =
+      isOnline && user.latestLoginAt
+        ? Math.max(0, Math.floor((currentTime - new Date(user.latestLoginAt).getTime()) / 1000))
+        : user.currentOnlineSeconds || 0;
+
+    return (
+      <tr key={user.userId} className="hover:bg-[#1E293B]/40 transition-colors">
+        {/* Personel Name & Role */}
+        <td className="py-3.5 px-4">
+          <div className="flex items-center gap-2.5">
+            {badgePrefix}
+            <div className="w-8 h-8 rounded-lg bg-blue-950 border border-blue-700/50 text-blue-300 font-bold text-xs flex items-center justify-center shrink-0">
+              {user.fullName ? user.fullName.slice(0, 2).toUpperCase() : 'US'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white">{user.fullName}</span>
+                <span
+                  className={`text-[9px] font-extrabold px-2 py-0.5 rounded ${
+                    user.role === 'SUPER_ADMIN'
+                      ? 'bg-purple-950 text-purple-300 border border-purple-800'
+                      : user.role === 'LEADER'
+                        ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                        : 'bg-blue-950 text-blue-300 border border-blue-800'
+                  }`}
+                >
+                  {user.role === 'SUPER_ADMIN'
+                    ? 'SUPER ADMIN'
+                    : user.role === 'LEADER'
+                      ? 'LEADER'
+                      : 'MEMBER'}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 font-mono">@{user.username}</span>
+            </div>
+          </div>
+        </td>
+
+        {/* Kesiapan & Beban Kerja (Opsi 1) */}
+        <td className="py-3.5 px-4">
+          <div className="space-y-1">
+            {user.role === 'SUPER_ADMIN' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-500/50 text-purple-300 text-[11px] font-bold">
+                <Crown className="w-3 h-3 text-purple-400" />
+                <span>Pengawasan Eksekutif</span>
+              </span>
+            ) : user.operationalState === 'SERVING' || (isOnline && (user.activeTicketsCount || 0) > 0) ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 text-[11px] font-bold">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span>Melayani Pelanggan</span>
+              </span>
+            ) : isOnline ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[11px] font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Siaga (Standby)</span>
+              </span>
+            ) : user.operationalState === 'ABRUPT_DISCONNECT' || user.status === 'TERPUTUS' || user.status === 'LOGOUT_CLOSE_BROWSER' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 text-[11px] font-bold">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span>Terputus (Close Browser)</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-400 text-[11px] font-bold">
+                <span className="w-2 h-2 rounded-full bg-slate-500" />
+                <span>Off-Duty (Selesai Shift)</span>
+              </span>
+            )}
+            <span className="text-[10px] text-slate-400 block font-medium">
+              {user.workloadDescription ||
+                (isOnline
+                  ? (user.activeTicketsCount || 0) > 0
+                    ? `${user.activeTicketsCount} Tiket Aktif Ditangani`
+                    : 'Siap Menerima Tiket'
+                  : 'Meja Kerja Bebas')}
+            </span>
+          </div>
+        </td>
+
+        {/* Lamanya Waktu Online */}
+        <td className="py-3.5 px-4">
+          {isOnline ? (
+            <div className="space-y-0.5">
+              <div className="font-mono text-emerald-400 font-bold text-xs flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{formatDuration(liveOnlineSeconds)}</span>
+              </div>
+              <span className="text-[10px] text-slate-500 block">
+                Sejak: {new Date(user.latestLoginAt).toLocaleTimeString()}
+              </span>
+            </div>
+          ) : (
+            <div className="text-slate-400 text-xs">
+              <span className="text-slate-500 text-[11px] block">Sesi Terakhir:</span>
+              <span className="font-mono">
+                {formatDuration(user.sessionHistory?.[0]?.durationSeconds || 0)}
+              </span>
+            </div>
+          )}
+        </td>
+
+        {/* Catatan Disconnect & Re-Login */}
+        <td className="py-3.5 px-4">
+          {user.hadUnexpectedDisconnect ? (
+            <div className="space-y-0.5 text-[11px]">
+              <div className="text-amber-400 flex items-center gap-1">
+                <span>Terputus:</span>
+                <strong className="font-mono">
+                  {user.unexpectedDisconnectTime
+                    ? new Date(user.unexpectedDisconnectTime).toLocaleTimeString()
+                    : '-'}
+                </strong>
+              </div>
+              {user.reconnectedTime ? (
+                <div className="text-emerald-400 flex items-center gap-1">
+                  <span>Login Kembali:</span>
+                  <strong className="font-mono">
+                    {new Date(user.reconnectedTime).toLocaleTimeString()}
+                  </strong>
+                  <span className="text-slate-500 font-mono">
+                    (Jeda: {formatDuration(user.disconnectDowntimeSeconds)})
+                  </span>
+                </div>
+              ) : (
+                <span className="text-slate-500 italic text-[10px]">
+                  Belum login kembali
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-slate-500 text-[11px] italic">
+              Normal (Tidak Ada Disconnect)
+            </span>
+          )}
+        </td>
+
+        {/* View History Button */}
+        <td className="py-3.5 px-4 text-right">
+          <button
+            type="button"
+            onClick={() => setSelectedUserHistory(user)}
+            className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <Clock className="w-3.5 h-3.5 text-blue-400" />
+            <span>Detail History</span>
+          </button>
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex flex-col font-sans selection:bg-blue-600 selection:text-white">
@@ -147,18 +324,18 @@ export default function SuperAdminCockpitPage() {
       <header className="border-b border-slate-800 bg-[#111827]/90 backdrop-blur-md sticky top-0 z-40 px-6 py-3.5">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#0B0F19] border border-slate-800 flex items-center justify-center shadow-md">
-              <img src="/logo_warna_s.png" alt="Sentirix" className="w-6 h-6 object-contain" />
+            <div className="w-9 h-9 rounded-xl bg-white border border-slate-700 p-1 flex items-center justify-center shadow-md overflow-hidden">
+              <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-base text-white tracking-tight">Sentirix</span>
                 <span className="text-[10px] font-black uppercase tracking-wider bg-blue-950 text-blue-400 px-2 py-0.5 rounded border border-blue-800">
-                  EXECUTIVE COCKPIT
+                  AI COPILOT COCKPIT
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400 font-medium">
-                {org.name || 'Enterprise Organization'} • Sektor: {org.industry || 'General'}
+              <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">
+                AUTONOMOUS SUPPORT INTELLIGENCE • {org.name || 'Enterprise Organization'}
               </p>
             </div>
           </div>
@@ -171,7 +348,7 @@ export default function SuperAdminCockpitPage() {
               title="Refresh Data"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">Refresh Data</span>
             </button>
 
             <button
@@ -204,7 +381,7 @@ export default function SuperAdminCockpitPage() {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-white">{stats.claimedSeats || 0}</span>
-              <span className="text-xs text-slate-400">/ {stats.totalSeats || 20} Kursi Terpakai</span>
+              <span className="text-xs text-slate-400">/ {stats.totalSeats || 9} Kursi Terpakai</span>
             </div>
             {/* Progress bar */}
             <div className="w-full h-1.5 bg-[#0B0F19] rounded-full overflow-hidden">
@@ -240,11 +417,28 @@ export default function SuperAdminCockpitPage() {
               <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-white">99.2%</span>
-              <span className="text-xs text-emerald-400 font-bold">Optimal</span>
+              <span className="text-2xl font-black text-white">
+                {stats.slaCompliancePercentage !== undefined
+                  ? `${stats.slaCompliancePercentage}%`
+                  : '100%'}
+              </span>
+              <span
+                className={`text-xs font-bold ${
+                  (stats.slaCompliancePercentage ?? 100) >= 95
+                    ? 'text-emerald-400'
+                    : (stats.slaCompliancePercentage ?? 100) >= 80
+                    ? 'text-amber-400'
+                    : 'text-red-400'
+                }`}
+              >
+                {stats.slaStatusLabel || 'Optimal'}
+              </span>
             </div>
             <span className="text-[10px] text-slate-500 block">
               Batas Waktu Respons: &lt; 15 Menit
+              {stats.totalEvaluatedTickets > 0
+                ? ` • ${stats.slaMetCount}/${stats.totalEvaluatedTickets} Tiket Terpenuhi`
+                : ' • Belum Ada Tiket Masuk'}
             </span>
           </div>
 
@@ -270,7 +464,12 @@ export default function SuperAdminCockpitPage() {
             { id: 'OVERVIEW', label: 'Topologi Pod & Beban Kerja', icon: Layers },
             { id: 'PRESENCE', label: 'Monitor Presensi & Waktu Online', icon: Clock, count: stats.onlineCount || 0 },
             { id: 'TOKENS', label: 'Audit Token Sekali Pakai', icon: ShieldCheck, count: tokenAudit.length },
-            { id: 'CRISIS', label: 'Radar Krisis & SLA', icon: AlertTriangle, count: stats.crisisCount },
+            {
+              id: 'CRISIS',
+              label: 'Radar Krisis & SLA',
+              icon: AlertTriangle,
+              count: (stats.crisisCount || 0) + (stats.slaBreachedCount || 0),
+            },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -338,7 +537,9 @@ export default function SuperAdminCockpitPage() {
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-extrabold text-white">{ws.name}</h3>
+                      <h3 className="text-sm font-extrabold text-white">
+                        {getSectorName(org.industry, org.customIndustryDescription)}
+                      </h3>
                       <div className="flex items-center gap-1.5 mt-1.5">
                         <span className="text-xs text-slate-400">Leader:</span>
                         {ws.leaderClaimed ? (
@@ -357,18 +558,19 @@ export default function SuperAdminCockpitPage() {
                       </div>
                     </div>
 
-                    {/* Services Tags */}
+                    {/* Services Tags with numbering */}
                     <div>
-                      <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-1">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-1.5">
                         Layanan yang Ditangani:
                       </span>
-                      <div className="flex flex-wrap gap-1">
-                        {ws.services?.map((svc: string) => (
+                      <div className="flex flex-col gap-1.5">
+                        {ws.services?.map((svc: string, sIdx: number) => (
                           <span
                             key={svc}
-                            className="text-[10px] bg-[#0B0F19] text-blue-300 px-2 py-0.5 rounded border border-slate-800 font-medium"
+                            className="text-[10px] bg-[#0B0F19] text-blue-300 px-2.5 py-1 rounded-lg border border-slate-800 font-medium flex items-center gap-1.5"
                           >
-                            {svc}
+                            <span className="text-blue-400 font-bold shrink-0">{sIdx + 1}.</span>
+                            <span>{svc}</span>
                           </span>
                         ))}
                       </div>
@@ -399,8 +601,7 @@ export default function SuperAdminCockpitPage() {
           <section className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-blue-400" />
+                <h2 className="text-base font-bold text-white">
                   Monitor Presensi &amp; Waktu Online (Leader &amp; Member)
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -416,211 +617,183 @@ export default function SuperAdminCockpitPage() {
             </div>
 
             {/* Presensi Barometer Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-[#111827] border border-emerald-500/30 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400 block font-medium">Personel Sedang Online</span>
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-emerald-400">
-                      {cockpitData?.presenceMonitoring?.filter((u: any) => u.isOnline).length || 0}
-                    </span>
-                    <span className="text-xs text-slate-500">Personel Aktif</span>
+            {(() => {
+              const staffUsers = (cockpitData?.presenceMonitoring || []).filter(
+                (u: any) => u.role !== 'SUPER_ADMIN',
+              );
+              const totalStaffCount = staffUsers.length;
+              const onlineStaffCount = staffUsers.filter((u: any) => u.isOnline).length;
+              const offlineStaffCount = staffUsers.filter((u: any) => !u.isOnline).length;
+              const attendanceRate =
+                totalStaffCount > 0
+                  ? Math.round((onlineStaffCount / totalStaffCount) * 1000) / 10
+                  : 0;
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Kotak 1: Personel Sedang Online */}
+                  <div className="p-4 rounded-xl bg-[#111827] border border-emerald-500/30 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Personel Sedang Online</span>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-2xl font-black text-emerald-400">{onlineStaffCount}</span>
+                        <span className="text-xs text-slate-500">Personel Aktif</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Sedang Aktif Bertugas</span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                      <Radio className="w-5 h-5 animate-pulse" />
+                    </div>
+                  </div>
+
+                  {/* Kotak 2: Personel Sedang Offline */}
+                  <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Personel Sedang Offline</span>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-2xl font-black text-slate-300">{offlineStaffCount}</span>
+                        <span className="text-xs text-slate-500">Personel</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Tidak Aktif / Sedang Istirahat</span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 flex items-center justify-center">
+                      <Users className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  {/* Kotak 3: Tingkat Kehadiran Tim (Opsi 3) */}
+                  <div className="p-4 rounded-xl bg-[#111827] border border-blue-500/30 flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-slate-400 block font-medium">Tingkat Kehadiran Tim</span>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-2xl font-black text-blue-400">{attendanceRate}%</span>
+                        <span
+                          className={`text-xs font-bold ${
+                            attendanceRate >= 80
+                              ? 'text-emerald-400'
+                              : attendanceRate >= 50
+                              ? 'text-cyan-400'
+                              : 'text-amber-400'
+                          }`}
+                        >
+                          {attendanceRate >= 80 ? 'Optimal' : attendanceRate >= 50 ? 'Sedang' : 'Rendah'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        {onlineStaffCount} dari {totalStaffCount} Personel Hadir
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                      <BarChart3 className="w-5 h-5" />
+                    </div>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
-                  <Radio className="w-5 h-5 animate-pulse" />
-                </div>
-              </div>
+              );
+            })()}
 
-              <div className="p-4 rounded-xl bg-[#111827] border border-amber-500/30 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400 block font-medium">Terputus / Tutup Browser</span>
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-amber-400">
-                      {cockpitData?.presenceMonitoring?.filter((u: any) => u.status === 'TERPUTUS').length || 0}
-                    </span>
-                    <span className="text-xs text-slate-500">Insiden Terdeteksi</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-400 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-              </div>
+            {/* KOTAK-KOTAK PRESENSI ANGGOTA PER POD (LEADER DI ATAS, MEMBER PERTAMA AKTIVASI BERIKUTNYA) */}
+            <div className="space-y-6">
+              {workspaces.map((ws: any, wsIdx: number) => {
+                const podUsers = (cockpitData?.presenceMonitoring || []).filter(
+                  (u: any) =>
+                    u.role !== 'SUPER_ADMIN' &&
+                    (u.workspaceId === ws.id || u.podName === ws.name),
+                );
 
-              <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400 block font-medium">Personel Offline</span>
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-2xl font-black text-slate-300">
-                      {cockpitData?.presenceMonitoring?.filter((u: any) => u.status === 'OFFLINE').length || 0}
-                    </span>
-                    <span className="text-xs text-slate-500">Tidak Aktif</span>
-                  </div>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 flex items-center justify-center">
-                  <Users className="w-5 h-5" />
-                </div>
-              </div>
-            </div>
+                const leaderUser = podUsers.find((u: any) => u.role === 'LEADER');
+                const memberUsers = podUsers
+                  .filter((u: any) => u.role !== 'LEADER')
+                  .sort((a: any, b: any) => {
+                    const timeA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
+                    const timeB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
+                    return timeA - timeB;
+                  });
 
-            {/* Presensi Table */}
-            <div className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
-                    <tr>
-                      <th className="py-3 px-4">Personel &amp; Peran</th>
-                      <th className="py-3 px-4">Pod Penugasan</th>
-                      <th className="py-3 px-4">Status Sesi</th>
-                      <th className="py-3 px-4">Lamanya Waktu Online</th>
-                      <th className="py-3 px-4">Catatan Disconnect &amp; Re-Login</th>
-                      <th className="py-3 px-4 text-right">Riwayat Sesi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {cockpitData?.presenceMonitoring?.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-500 italic">
-                          Belum ada personel yang terdaftar di organisasi ini.
-                        </td>
-                      </tr>
-                    ) : (
-                      cockpitData?.presenceMonitoring?.map((user: any) => {
-                        const isOnline = user.isOnline;
-                        const liveOnlineSeconds = isOnline && user.latestLoginAt
-                          ? Math.max(0, Math.floor((currentTime - new Date(user.latestLoginAt).getTime()) / 1000))
-                          : user.currentOnlineSeconds || 0;
+                const orderedUsers = leaderUser ? [leaderUser, ...memberUsers] : memberUsers;
 
-                        return (
-                          <tr key={user.userId} className="hover:bg-[#1E293B]/40 transition-colors">
-                            {/* Personel Name & Role */}
-                            <td className="py-3.5 px-4">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-lg bg-blue-950 border border-blue-700/50 text-blue-300 font-bold text-xs flex items-center justify-center shrink-0">
-                                  {user.fullName ? user.fullName.slice(0, 2).toUpperCase() : 'US'}
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-white">{user.fullName}</span>
-                                    <span
-                                      className={`text-[9px] font-extrabold px-2 py-0.5 rounded ${
-                                        user.role === 'SUPER_ADMIN'
-                                          ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                                          : user.role === 'LEADER'
-                                            ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                                            : 'bg-blue-950 text-blue-300 border border-blue-800'
-                                      }`}
-                                    >
-                                      {user.role === 'SUPER_ADMIN'
-                                        ? 'SUPER ADMIN'
-                                        : user.role === 'LEADER'
-                                          ? 'LEADER'
-                                          : 'MEMBER'}
-                                    </span>
-                                  </div>
-                                  <span className="text-[11px] text-slate-500 font-mono">@{user.username}</span>
-                                </div>
-                              </div>
-                            </td>
+                return (
+                  <div
+                    key={ws.id || wsIdx}
+                    className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
+                  >
+                    {/* Header Kotak Pod Presensi */}
+                    <div className="bg-[#0F172A] border-b border-slate-800 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400 font-black text-xs shadow-md">
+                          {wsIdx + 1}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {ws.isQuotaLocked ? (
+                              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                <Lock className="w-2.5 h-2.5" />
+                                <span>Kuota Terkunci ({ws.assignedQuota} Personel)</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                                <Unlock className="w-2.5 h-2.5" />
+                                <span>Menunggu Aktivasi Leader</span>
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Leader Terdaftar: <strong className="text-white">{ws.leaderName || 'Belum Terklaim'}</strong> • Total Anggota Aktif: <strong className="text-white">{orderedUsers.length}</strong>
+                          </p>
+                        </div>
+                      </div>
 
-                            {/* Pod Name */}
-                            <td className="py-3.5 px-4 font-semibold text-slate-300">
-                              {user.podName}
-                            </td>
+                      <div className="text-right sm:block hidden">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
+                          Struktur Tim Pod
+                        </span>
+                        <span className="text-xs font-mono font-bold text-slate-300">
+                          1 Leader + {Math.max(0, (ws.assignedQuota || orderedUsers.length) - 1)} Member
+                        </span>
+                      </div>
+                    </div>
 
-                            {/* Status */}
-                            <td className="py-3.5 px-4">
-                              {isOnline ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[11px] font-bold">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                  <span>ONLINE</span>
-                                </span>
-                              ) : user.status === 'TERPUTUS' ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-400 text-[11px] font-bold">
-                                  <AlertTriangle className="w-3 h-3 text-amber-400" />
-                                  <span>TERPUTUS</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-400 text-[11px] font-bold">
-                                  <span className="w-2 h-2 rounded-full bg-slate-500" />
-                                  <span>OFFLINE</span>
-                                </span>
-                              )}
-                            </td>
-
-                            {/* Online Duration */}
-                            <td className="py-3.5 px-4">
-                              {isOnline ? (
-                                <div className="space-y-0.5">
-                                  <div className="font-mono text-emerald-400 font-bold text-xs flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    <span>{formatDuration(liveOnlineSeconds)}</span>
-                                  </div>
-                                  <span className="text-[10px] text-slate-500 block">
-                                    Sejak: {new Date(user.latestLoginAt).toLocaleTimeString()}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="text-slate-400 text-xs">
-                                  <span className="text-slate-500 text-[11px] block">Sesi Terakhir:</span>
-                                  <span className="font-mono">{formatDuration(user.sessionHistory[0]?.durationSeconds || 0)}</span>
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Disconnect & Reconnect Notes */}
-                            <td className="py-3.5 px-4">
-                              {user.hadUnexpectedDisconnect ? (
-                                <div className="space-y-0.5 text-[11px]">
-                                  <div className="text-amber-400 flex items-center gap-1">
-                                    <span>Terputus:</span>
-                                    <strong className="font-mono">
-                                      {user.unexpectedDisconnectTime
-                                        ? new Date(user.unexpectedDisconnectTime).toLocaleTimeString()
-                                        : '-'}
-                                    </strong>
-                                  </div>
-                                  {user.reconnectedTime ? (
-                                    <div className="text-emerald-400 flex items-center gap-1">
-                                      <span>Login Kembali:</span>
-                                      <strong className="font-mono">
-                                        {new Date(user.reconnectedTime).toLocaleTimeString()}
-                                      </strong>
-                                      <span className="text-slate-500 font-mono">
-                                        (Jeda: {formatDuration(user.disconnectDowntimeSeconds)})
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-500 italic text-[10px]">
-                                      Belum login kembali
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-500 text-[11px] italic">
-                                  Normal (Tidak Ada Disconnect)
-                                </span>
-                              )}
-                            </td>
-
-                            {/* View History Button */}
-                            <td className="py-3.5 px-4 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedUserHistory(user)}
-                                className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
-                              >
-                                <Clock className="w-3.5 h-3.5 text-blue-400" />
-                                <span>Detail History</span>
-                              </button>
-                            </td>
+                    {/* Tabel Presensi Pod */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+                          <tr>
+                            <th className="py-3 px-4">Personel &amp; Peran</th>
+                            <th className="py-3 px-4">Kesiapan &amp; Beban Kerja</th>
+                            <th className="py-3 px-4">Lamanya Waktu Online</th>
+                            <th className="py-3 px-4">Catatan Disconnect &amp; Re-Login</th>
+                            <th className="py-3 px-4 text-right">Riwayat Sesi</th>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 font-medium">
+                          {orderedUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-500 italic">
+                                Belum ada personel yang teraktivasi di pod ini.
+                              </td>
+                            </tr>
+                          ) : (
+                            orderedUsers.map((user: any, uIdx: number) => {
+                              const isLeader = user.role === 'LEADER';
+                              return renderPresenceRow(
+                                user,
+                                isLeader ? (
+                                  <span className="w-5 h-5 rounded bg-amber-950 border border-amber-500/60 text-amber-300 flex items-center justify-center shrink-0">
+                                    <Crown className="w-3 h-3 text-amber-400" />
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-500 font-mono w-4 shrink-0 text-center">
+                                    #{uIdx}
+                                  </span>
+                                ),
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Modal Detail Riwayat Sesi */}
@@ -721,7 +894,7 @@ export default function SuperAdminCockpitPage() {
         {activeTab === 'TOKENS' && (
           <section className="space-y-6">
             <div>
-              <h2 className="text-base font-bold text-white">Hub Audit Token Sekali Pakai (Single-Use)</h2>
+              <h2 className="text-base font-bold text-white">Audit Token Sekali Pakai (Single-Use)</h2>
               <p className="text-xs text-slate-400">
                 Token dikelompokkan per Pod. Posisi paling atas adalah Leader Pod, diikuti oleh daftar token Member di bawahnya.
               </p>
@@ -739,7 +912,26 @@ export default function SuperAdminCockpitPage() {
                   );
                   // Strict separation: 1 Leader on Top, Members below
                   const leaderTokens = podTokens.filter((t: any) => t.role === 'LEADER');
-                  const memberTokens = podTokens.filter((t: any) => t.role !== 'LEADER');
+                  const rawMemberTokens = podTokens.filter((t: any) => t.role !== 'LEADER');
+
+                  // Urutkan Member: Member yang pertama login/aktivasi diletakkan paling atas setelah Leader, diikuti berurutan
+                  const memberTokens = [...rawMemberTokens].sort((a: any, b: any) => {
+                    // 1. Member yang sudah login/aktivasi (isUsed) berada di atas
+                    if (a.isUsed && !b.isUsed) return -1;
+                    if (!a.isUsed && b.isUsed) return 1;
+
+                    // 2. Urutan kronologis waktu aktivasi (usedAt paling awal di atas)
+                    if (a.isUsed && b.isUsed) {
+                      const timeA = a.usedAt ? new Date(a.usedAt).getTime() : 0;
+                      const timeB = b.usedAt ? new Date(b.usedAt).getTime() : 0;
+                      return timeA - timeB;
+                    }
+
+                    // 3. Token yang belum teraktivasi di paling bawah berurutan
+                    const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return createdA - createdB;
+                  });
 
                   return (
                     <div
@@ -754,17 +946,13 @@ export default function SuperAdminCockpitPage() {
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h3 className="text-sm font-extrabold text-white tracking-tight">{ws.name}</h3>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                                {ws.podCategory || 'Divisi'}
-                              </span>
                               {ws.isQuotaLocked ? (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
                                   <Lock className="w-2.5 h-2.5" />
                                   <span>Kuota Terkunci ({ws.assignedQuota} Personel)</span>
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1">
                                   <Unlock className="w-2.5 h-2.5" />
                                   <span>Menunggu Aktivasi Leader</span>
                                 </span>
@@ -809,6 +997,18 @@ export default function SuperAdminCockpitPage() {
                             ) : (
                               leaderTokens.map((tok: any) => {
                                 const isCopied = copiedToken === tok.token;
+                                const isLeaderActive = tok.usedBy || ws.leaderName || ws.isQuotaLocked;
+                                const isLeaderLoggedOut = isLeaderActive && !tok.isUserOnline;
+                                const leaderNeedsRegen =
+                                  isLeaderLoggedOut &&
+                                  (tok.needsRegeneration !== undefined
+                                    ? tok.needsRegeneration
+                                    : tok.rawIsUsed !== undefined
+                                      ? tok.rawIsUsed
+                                      : true);
+                                const isLeaderFreshTokenReady =
+                                  isLeaderLoggedOut && !leaderNeedsRegen && tok.rawIsUsed === false;
+
                                 return (
                                   <tr
                                     key={tok.id}
@@ -830,7 +1030,7 @@ export default function SuperAdminCockpitPage() {
                                       {tok.token}
                                     </td>
                                     <td className="py-3 px-4">
-                                      {tok.isUsed ? (
+                                      {tok.isUsed || ws.isQuotaLocked || ws.leaderName ? (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 flex items-center gap-1 w-fit">
                                           <CheckCircle2 className="w-2.5 h-2.5" />
                                           <span>TERAKTIVASI</span>
@@ -842,10 +1042,10 @@ export default function SuperAdminCockpitPage() {
                                       )}
                                     </td>
                                     <td className="py-3 px-4">
-                                      {tok.usedBy ? (
+                                      {tok.usedBy || ws.leaderName ? (
                                         <div className="space-y-0.5">
                                           <div className="flex items-center gap-1.5">
-                                            <span className="font-extrabold text-white">{tok.usedBy}</span>
+                                            <span className="font-extrabold text-white">{tok.usedBy || ws.leaderName}</span>
                                             {tok.isUserOnline ? (
                                               <span
                                                 className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
@@ -854,9 +1054,23 @@ export default function SuperAdminCockpitPage() {
                                             ) : null}
                                           </div>
                                           {!tok.isUserOnline && (
-                                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400">
-                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                              <span>(Sedang Logout)</span>
+                                            <div className="flex items-center gap-1 text-[10px] font-medium">
+                                              {tok.hadManualLogout ? (
+                                                <div className="flex items-center gap-1 text-slate-400">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                                  <span className="font-semibold">• (Logout)</span>
+                                                </div>
+                                              ) : tok.hadCloseBrowser ? (
+                                                <div className="flex items-center gap-1 text-amber-400 font-semibold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                                  <span>• (Logout Close Browser)</span>
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center gap-1 text-slate-500">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                                  <span>• (Offline)</span>
+                                                </div>
+                                              )}
                                             </div>
                                           )}
                                         </div>
@@ -872,25 +1086,57 @@ export default function SuperAdminCockpitPage() {
                                           className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                             isCopied
                                               ? 'bg-emerald-600 border-emerald-500 text-white'
-                                              : 'bg-[#0B0F19] border-amber-500/50 text-amber-200 hover:text-white hover:border-amber-400'
+                                              : isLeaderFreshTokenReady
+                                                ? 'bg-amber-600 border-amber-500 text-white hover:bg-amber-500 shadow-sm'
+                                                : 'bg-[#0B0F19] border-amber-500/50 text-amber-200 hover:text-white hover:border-amber-400'
                                           }`}
-                                          title="Salin tautan aktivasi leader"
+                                          title={
+                                            isLeaderFreshTokenReady
+                                              ? 'Salin tautan aktivasi baru untuk dibagikan ke leader'
+                                              : 'Salin tautan aktivasi leader'
+                                          }
                                         >
-                                          {isCopied ? 'Tersalin' : 'Salin Link'}
+                                          {isCopied ? 'Tersalin' : isLeaderFreshTokenReady ? 'Salin Link Baru' : 'Salin Link'}
                                         </button>
                                         <button
                                           type="button"
                                           disabled={regeneratingToken === tok.token}
                                           onClick={() => handleRegenerateToken(tok.token)}
-                                          className="px-2.5 py-1 rounded text-[11px] font-bold border bg-[#0B0F19] border-amber-500/50 text-amber-300 hover:border-amber-400 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                          title="Buat ulang token baru jika leader logout dan butuh link masuk kembali"
+                                          className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50 ${
+                                            leaderNeedsRegen
+                                              ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white shadow-md shadow-red-950/60 font-extrabold'
+                                              : isLeaderFreshTokenReady
+                                                ? 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/70 text-emerald-300'
+                                                : 'bg-[#0B0F19] border-amber-500/50 text-amber-300 hover:border-amber-400'
+                                          }`}
+                                          title={
+                                            leaderNeedsRegen
+                                              ? 'Leader sedang logout. Klik tombol merah ini terlebih dahulu untuk generate token baru agar leader bisa login kembali.'
+                                              : isLeaderFreshTokenReady
+                                                ? 'Token baru telah siap digunakan dan dapat dibagikan ke leader.'
+                                                : 'Buat ulang token baru jika leader logout dan butuh link masuk kembali'
+                                          }
                                         >
                                           <RefreshCw
                                             className={`w-3 h-3 ${
-                                              regeneratingToken === tok.token ? 'animate-spin text-amber-400' : ''
+                                              regeneratingToken === tok.token ? 'animate-spin' : ''
+                                            } ${
+                                              leaderNeedsRegen
+                                                ? 'text-white'
+                                                : isLeaderFreshTokenReady
+                                                  ? 'text-emerald-400'
+                                                  : 'text-amber-400'
                                             }`}
                                           />
-                                          <span>{regeneratingToken === tok.token ? 'Proses...' : 'Regenerate'}</span>
+                                          <span>
+                                            {regeneratingToken === tok.token
+                                              ? 'Proses...'
+                                              : leaderNeedsRegen
+                                                ? 'Regenerate'
+                                                : isLeaderFreshTokenReady
+                                                  ? 'Regenerated ✓'
+                                                  : 'Regenerate'}
+                                          </span>
                                         </button>
                                       </div>
                                     </td>
@@ -911,6 +1157,18 @@ export default function SuperAdminCockpitPage() {
                             ) : (
                               memberTokens.map((tok: any, mIdx: number) => {
                                 const isCopied = copiedToken === tok.token;
+                                const isMemberActive = Boolean(tok.usedBy) || tok.isUsed;
+                                const isMemberLoggedOut = isMemberActive && !tok.isUserOnline;
+                                const memberNeedsRegen =
+                                  isMemberLoggedOut &&
+                                  (tok.needsRegeneration !== undefined
+                                    ? tok.needsRegeneration
+                                    : tok.rawIsUsed !== undefined
+                                      ? tok.rawIsUsed
+                                      : true);
+                                const isMemberFreshTokenReady =
+                                  isMemberLoggedOut && !memberNeedsRegen && tok.rawIsUsed === false;
+
                                 return (
                                   <tr key={tok.id} className="hover:bg-slate-800/40 transition-colors">
                                     <td className="py-3 px-4">
@@ -949,9 +1207,23 @@ export default function SuperAdminCockpitPage() {
                                             ) : null}
                                           </div>
                                           {!tok.isUserOnline && (
-                                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400">
-                                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                                              <span>(Sedang Logout)</span>
+                                            <div className="flex items-center gap-1 text-[10px] font-medium">
+                                              {tok.hadManualLogout ? (
+                                                <div className="flex items-center gap-1 text-slate-400">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                                  <span className="font-semibold">• (Logout)</span>
+                                                </div>
+                                              ) : tok.hadCloseBrowser ? (
+                                                <div className="flex items-center gap-1 text-amber-400 font-semibold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                                  <span>• (Logout Close Browser)</span>
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center gap-1 text-slate-500">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                                  <span>• (Offline)</span>
+                                                </div>
+                                              )}
                                             </div>
                                           )}
                                         </div>
@@ -967,25 +1239,57 @@ export default function SuperAdminCockpitPage() {
                                           className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
                                             isCopied
                                               ? 'bg-emerald-600 border-emerald-500 text-white'
-                                              : 'bg-[#0B0F19] border-slate-700 text-slate-300 hover:text-white'
+                                              : isMemberFreshTokenReady
+                                                ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-sm'
+                                                : 'bg-[#0B0F19] border-slate-700 text-slate-300 hover:text-white'
                                           }`}
-                                          title="Salin tautan aktivasi member"
+                                          title={
+                                            isMemberFreshTokenReady
+                                              ? 'Salin tautan aktivasi baru untuk dibagikan ke member'
+                                              : 'Salin tautan aktivasi member'
+                                          }
                                         >
-                                          {isCopied ? 'Tersalin' : 'Salin Link'}
+                                          {isCopied ? 'Tersalin' : isMemberFreshTokenReady ? 'Salin Link Baru' : 'Salin Link'}
                                         </button>
                                         <button
                                           type="button"
                                           disabled={regeneratingToken === tok.token}
                                           onClick={() => handleRegenerateToken(tok.token)}
-                                          className="px-2.5 py-1 rounded text-[11px] font-bold border bg-[#0B0F19] border-blue-500/40 text-blue-300 hover:border-blue-400 transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                          title="Buat ulang token baru jika member logout dan butuh link masuk kembali"
+                                          className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50 ${
+                                            memberNeedsRegen
+                                              ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white shadow-md shadow-red-950/60 font-extrabold'
+                                              : isMemberFreshTokenReady
+                                                ? 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/70 text-emerald-300'
+                                                : 'bg-[#0B0F19] border-blue-500/40 text-blue-300 hover:border-blue-400'
+                                          }`}
+                                          title={
+                                            memberNeedsRegen
+                                              ? 'Member sedang logout. Klik tombol merah ini terlebih dahulu untuk generate token baru agar member bisa login kembali.'
+                                              : isMemberFreshTokenReady
+                                                ? 'Token baru telah siap digunakan dan dapat dibagikan ke member.'
+                                                : 'Buat ulang token baru jika member logout dan butuh link masuk kembali'
+                                          }
                                         >
                                           <RefreshCw
                                             className={`w-3 h-3 ${
-                                              regeneratingToken === tok.token ? 'animate-spin text-blue-400' : ''
+                                              regeneratingToken === tok.token ? 'animate-spin' : ''
+                                            } ${
+                                              memberNeedsRegen
+                                                ? 'text-white'
+                                                : isMemberFreshTokenReady
+                                                  ? 'text-emerald-400'
+                                                  : 'text-blue-400'
                                             }`}
                                           />
-                                          <span>{regeneratingToken === tok.token ? 'Proses...' : 'Regenerate'}</span>
+                                          <span>
+                                            {regeneratingToken === tok.token
+                                              ? 'Proses...'
+                                              : memberNeedsRegen
+                                                ? 'Regenerate'
+                                                : isMemberFreshTokenReady
+                                                  ? 'Regenerated ✓'
+                                                  : 'Regenerate'}
+                                          </span>
                                         </button>
                                       </div>
                                     </td>
@@ -1004,17 +1308,17 @@ export default function SuperAdminCockpitPage() {
           </section>
         )}
 
-        {/* TAB 3: CRISIS RADAR */}
+        {/* TAB 4: CRISIS & SLA RADAR */}
         {activeTab === 'CRISIS' && (
           <section className="space-y-4">
             <div>
-              <h2 className="text-base font-bold text-white">Radar Krisis &amp; Eskalasi Tingkat Tinggi</h2>
+              <h2 className="text-base font-bold text-white">Radar Krisis &amp; SLA Eskalasi</h2>
               <p className="text-xs text-slate-400">
-                Tiket dengan tingkat urgensi CRITICAL atau sentimen negatif tinggi yang terdeteksi oleh AI.
+                Tiket dengan tingkat urgensi CRITICAL yang dideteksi oleh AI serta tiket yang melampaui batas waktu respons SLA (&gt; 15 Menit).
               </p>
             </div>
 
-            {crisisTickets.length === 0 ? (
+            {crisisTickets.length === 0 && slaBreachedTickets.length === 0 ? (
               <div className="p-8 text-center bg-[#111827] border border-slate-800 rounded-2xl">
                 <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
                 <h3 className="text-sm font-bold text-white">Tidak Ada Krisis Aktif</h3>
@@ -1023,32 +1327,80 @@ export default function SuperAdminCockpitPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {crisisTickets.map((t: any) => (
-                  <div
-                    key={t.id}
-                    className="p-4 rounded-xl bg-red-950/30 border border-red-800/80 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs font-black text-red-400">
-                          #{t.ticketNumber}
-                        </span>
-                        <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
-                          {t.priority}
-                        </span>
-                        <span className="text-xs text-slate-400">di {t.podName}</span>
-                      </div>
-                      <h4 className="text-xs font-bold text-white">{t.title}</h4>
+              <div className="space-y-5">
+                {/* 1. Tiket Prioritas Kritis (CRITICAL) */}
+                {crisisTickets.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Eskalasi Krisis Tingkat Tinggi (AI Triage Detected)</span>
+                    </h3>
+                    <div className="space-y-3">
+                      {crisisTickets.map((t: any) => (
+                        <div
+                          key={t.id}
+                          className="p-4 rounded-xl bg-red-950/30 border border-red-800/80 flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs font-black text-red-400">
+                                #{t.ticketNumber}
+                              </span>
+                              <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
+                                {t.priority}
+                              </span>
+                              <span className="text-xs text-slate-400">di {t.podName}</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-white">{t.title}</h4>
+                          </div>
+                          <Link
+                            href="/dashboard"
+                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all"
+                          >
+                            Buka Tiket
+                          </Link>
+                        </div>
+                      ))}
                     </div>
-                    <Link
-                      href="/dashboard"
-                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all"
-                    >
-                      Buka Tiket
-                    </Link>
                   </div>
-                ))}
+                )}
+
+                {/* 2. Tiket Pelanggaran Batas Waktu SLA (> 15 Menit) */}
+                {slaBreachedTickets.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Pelanggaran Batas Waktu SLA (&gt; 15 Menit Belum Direspons)</span>
+                    </h3>
+                    <div className="space-y-3">
+                      {slaBreachedTickets.map((t: any) => (
+                        <div
+                          key={t.id}
+                          className="p-4 rounded-xl bg-amber-950/25 border border-amber-800/70 flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs font-black text-amber-400">
+                                #{t.ticketNumber}
+                              </span>
+                              <span className="text-[10px] font-bold bg-amber-900/60 text-amber-200 px-2 py-0.5 rounded">
+                                Terlambat {t.elapsedMinutes} Menit
+                              </span>
+                              <span className="text-xs text-slate-400">di {t.podName}</span>
+                            </div>
+                            <h4 className="text-xs font-bold text-white">{t.title}</h4>
+                          </div>
+                          <Link
+                            href="/dashboard"
+                            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all"
+                          >
+                            Buka Tiket
+                          </Link>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </section>

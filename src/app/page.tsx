@@ -507,7 +507,7 @@ export default function LandingPage() {
           {/* Left: Brand Logo & Title */}
           <div className="flex items-center">
             <a href="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-xl overflow-hidden border border-[#262A30] bg-[#0e183c] flex items-center justify-center shadow-lg shadow-black/40 group-hover:scale-105 transition-transform">
+              <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-lg shadow-black/40 group-hover:scale-105 transition-transform">
                 <img
                   src="/logo_warna_s.png"
                   alt="Sentirix Logo"
@@ -517,12 +517,12 @@ export default function LandingPage() {
               <div className="flex flex-col">
                 <span className="font-extrabold text-xl text-[#F8FAFC] tracking-tight flex items-center gap-2">
                   Sentirix
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#1A1E24] text-[#CBD5E1] border border-[#2F343B]">
-                    Enterprise
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/80">
+                    AI COPILOT
                   </span>
                 </span>
-                <span className="text-[11px] text-[#94A3B8] -mt-1 font-medium">
-                  Autonomous Support & Copilot
+                <span className="text-[9.5px] text-[#94A3B8] font-bold tracking-wider uppercase">
+                  AUTONOMOUS SUPPORT INTELLIGENCE
                 </span>
               </div>
             </a>
@@ -1405,7 +1405,7 @@ export default function LandingPage() {
       <footer className="border-t border-[#262A30] bg-[#0D0F12] py-12 text-center text-xs text-[#64748B]">
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-lg overflow-hidden border border-[#262A30] bg-[#0e183c] flex items-center justify-center">
+            <div className="w-6 h-6 rounded-lg overflow-hidden border border-slate-700 bg-white p-0.5 flex items-center justify-center">
               <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
             </div>
             <span className="font-bold text-[#CBD5E1]">Sentirix Inc.</span>
@@ -1452,14 +1452,14 @@ export default function LandingPage() {
             {/* Modal Header */}
             <div className="p-6 border-b border-[#262A30] bg-[#111317]">
               <div className="flex items-center gap-2.5 mb-2">
-                <div className="w-9 h-9 rounded-xl overflow-hidden border border-[#262A30] bg-[#0e183c] flex items-center justify-center shadow-sm">
+                <div className="w-9 h-9 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-sm">
                   <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#F8FAFC] tracking-tight">
                     Sentirix Access Portal
                   </h3>
-                  <p className="text-xs text-[#94A3B8]">Standard Corporate Identity Management</p>
+                  <p className="text-xs text-[#94A3B8]">Autonomous Support Intelligence</p>
                 </div>
               </div>
 

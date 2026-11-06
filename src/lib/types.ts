@@ -56,6 +56,12 @@ export interface WorkspaceMember {
   username: string;
   role: string;
   joinedAt: string;
+  isOnline?: boolean;
+  presenceStatus?: 'ONLINE' | 'TERPUTUS' | 'OFFLINE';
+  token?: string | null;
+  tokenIsUsed?: boolean;
+  needsRegeneration?: boolean;
+  freshTokenReady?: boolean;
 }
 
 export interface WorkspaceData {
@@ -68,6 +74,7 @@ export interface WorkspaceData {
   currentMembersCount: number;
   remainingSeats: number;
   members: WorkspaceMember[];
+  isLeader?: boolean;
 }
 
 export interface ValidateInviteResult {
@@ -151,6 +158,7 @@ export interface PodInfo {
 export interface OrganizationPodsResponse {
   organizationName: string;
   industry: string;
+  customIndustryDescription?: string | null;
   totalSeats: number;
   leadershipMode: 'UNIFIED' | 'DEDICATED';
   pods: PodInfo[];
@@ -163,7 +171,9 @@ export interface GeneratePodsResponse {
     category: string;
     description: string;
     recommendedSeats: number;
+    service?: string;
   }>;
+  defaultServices?: string[];
 }
 
 export interface SetupMultiPodPayload {

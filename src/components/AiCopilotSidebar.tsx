@@ -5,7 +5,6 @@ import { Ticket, Message } from '../lib/types';
 import { generateAiReply, summarizeThread } from '../lib/api';
 import {
   Sparkles,
-  Bot,
   FileText,
   Check,
   Copy,
@@ -13,7 +12,6 @@ import {
   BookOpen,
   Clock,
   ShieldCheck,
-  Star,
 } from 'lucide-react';
 
 interface AiCopilotSidebarProps {
@@ -81,12 +79,12 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
       {/* Header matching dashboard.jpg */}
       <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#7C3AED] flex items-center justify-center text-white shadow-2xs">
-            <Bot className="w-4 h-4" />
+          <div className="w-7 h-7 rounded-lg bg-[#2563EB] flex items-center justify-center text-white shadow-2xs">
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
             <h2 className="text-xs font-bold text-[#0F172A]">AI Copilot Hub</h2>
-            <p className="text-[10px] text-slate-500 font-medium">Gemini 2.5 Flesh Grounded</p>
+            <p className="text-[10px] text-slate-500 font-medium">Gemini 3.8 Flash Grounded</p>
           </div>
         </div>
         <span className="text-[10px] font-bold text-[#059669] bg-[#ECFDF5] px-2.5 py-0.5 rounded-full border border-[#A7F3D0] flex items-center gap-1 shadow-2xs">
@@ -100,10 +98,9 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
-              <Bot className="w-4 h-4 text-[#2563EB]" />
-              Reply Drafter (Fin AI style)
+              <FileText className="w-4 h-4 text-[#2563EB]" />
+              Reply Drafter
             </span>
-            <Star className="w-3.5 h-3.5 text-slate-400" />
           </div>
 
           {/* Tone Selector */}

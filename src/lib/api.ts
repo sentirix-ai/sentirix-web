@@ -13,7 +13,7 @@ import {
   SetupMultiPodPayload,
 } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 export async function fetchTickets(
   status?: string,
@@ -631,6 +631,8 @@ export async function setupMultiPodV2(payload: {
   }
 }
 
+
+
 export async function fetchLeaderTokenStatus(token: string): Promise<any> {
   try {
     const res = await fetch(
@@ -650,6 +652,7 @@ export async function lockLeaderQuota(payload: {
   chosenSubordinates: number;
 }): Promise<{
   success: boolean;
+  isReLogin?: boolean;
   leader?: any;
   workspace?: any;
   agentTokens?: Array<{ token: string; joinUrl: string }>;
@@ -747,6 +750,9 @@ export async function regenerateToken(token: string): Promise<{
     return { success: false, error: 'Network error connecting to backend.' };
   }
 }
+
+
+
 
 
 

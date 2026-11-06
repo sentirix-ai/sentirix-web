@@ -4,7 +4,8 @@ export interface UserSession {
   fullName?: string;
   email: string;
   phone?: string;
-  role: 'ADMIN' | 'USER';
+  role: 'ADMIN' | 'USER' | 'LEADER';
+  workspaceRole?: string;
   isGuestMember?: boolean;
   workspaceId?: string;
   workspaceName?: string;
@@ -419,17 +420,34 @@ export function setSession(session: UserSession): void {
   }
 }
 
-export function logoutUser(userId?: string): void {
+export async function logoutUser(userId?: string): Promise<void> {
   if (typeof window === 'undefined') return;
   const current = getSession();
   const targetId = userId || current?.id;
 
   if (targetId) {
-    fetch(`${API_BASE_URL}/auth/logout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: targetId, reason: 'MANUAL_LOGOUT' }),
-    }).catch(() => {});
+    const payload = JSON.stringify({ userId: targetId, reason: 'MANUAL_LOGOUT' });
+
+    // Use sendBeacon for guaranteed transmission across page unloads
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      try {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(`${API_BASE_URL}/auth/logout`, blob);
+      } catch {
+        // Fallback to fetch
+      }
+    }
+
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      });
+    } catch {
+      // Ignored on unload
+    }
   }
 
   // Clear this tab's session

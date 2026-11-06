@@ -86,18 +86,23 @@ export default function DashboardPage() {
       return;
     }
 
-    const isAdmin = session.role === 'ADMIN' || session.username.toLowerCase() === 'pungkyrama';
-    const isGuest = !!session.isGuestMember || !!(session as any).workspaceId;
+    const isSuperAdmin = session.username.toLowerCase() === 'pungkyrama' || (session.role === 'ADMIN' && !(session as any).workspaceId);
+    const isLeader =
+      !isSuperAdmin &&
+      (session.role === 'LEADER' ||
+        (session as any).workspaceRole === 'LEADER' ||
+        (!session.isGuestMember && !!(session as any).workspaceId));
+    const isGuest = !!session.isGuestMember && !isLeader;
 
     // If regular user has not yet completed onboarding, redirect to /onboarding
-    if (!isAdmin && !isGuest && !session.onboardingCompleted) {
+    if (!isSuperAdmin && !isLeader && !isGuest && !session.onboardingCompleted) {
       router.push('/onboarding');
       return;
     }
 
-    // If this is an invited guest member, verify that their session hasn't been purged
+    // If this is an invited guest agent member, verify that their session hasn't been purged
     const guestUser = session as any;
-    if (guestUser.workspaceId && guestUser.id) {
+    if (guestUser.workspaceId && guestUser.id && isGuest) {
       checkMemberStatus(guestUser.id).then((isActive) => {
         if (!isActive) {
           alert('The workspace owner has logged out. Your temporary agent session has ended.');
@@ -110,14 +115,22 @@ export default function DashboardPage() {
     setUser(session);
 
     // If Platform Owner (@pungkyrama), load owner analytics
-    if (isAdmin) {
+    if (isSuperAdmin) {
       loadAnalytics();
     }
 
-    // Load Workspace & Multi-Pod setup for regular users
-    if (!isAdmin && !guestUser.workspaceId) {
+    // Load Workspace & Multi-Pod setup for regular users & Leaders
+    if (!isSuperAdmin && session.username) {
+      if ((session as any).workspaceId) {
+        setSelectedPodId((session as any).workspaceId);
+      }
       fetchMyWorkspace(session.username).then((ws) => {
-        if (ws) setWorkspace(ws);
+        if (ws) {
+          setWorkspace(ws);
+          if (ws.workspaceId) {
+            setSelectedPodId(ws.workspaceId);
+          }
+        }
       });
       fetchOrganizationPods(session.username).then((res) => {
         if (res) {
@@ -362,6 +375,9 @@ export default function DashboardPage() {
   };
 
   const handleLogout = async () => {
+    try {
+      sessionStorage.setItem('is_manual_logout', 'true');
+    } catch {}
     if (user) {
       const isMember = !!(user as any)?.isGuestMember || !!(user as any)?.workspaceId;
       if (isMember) {
@@ -380,7 +396,7 @@ export default function DashboardPage() {
         }
       }
     }
-    logoutUser();
+    await logoutUser(user?.id);
     window.location.href = '/';
   };
 

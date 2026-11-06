@@ -37,7 +37,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { getSession, setSession, UserSession } from '../../lib/auth';
-import { generatePodsForIndustry, setupMultiPodV2, regenerateToken } from '../../lib/api';
+import { generatePodsForIndustry, setupMultiPodV2, regenerateToken, fetchSuperAdminCockpit } from '../../lib/api';
 
 interface IndustryOption {
   id: string;
@@ -52,99 +52,192 @@ const INDUSTRY_PRESETS: IndustryOption[] = [
   {
     id: 'ECOMMERCE',
     name: 'E-Commerce & D2C Brands',
-    tagline: 'WISMO tracking, RMA returns, checkout vouchers, VIP buyers',
+    tagline: 'WISMO tracking, RMA returns, checkout vouchers, VIP buyers, merchant onboarding',
     icon: ShoppingCart,
     accentColor: 'from-emerald-500/20 to-teal-500/10 border-emerald-500/40 text-emerald-400',
-    defaultServices: ['WISMO & Carrier Exceptions', 'Returns, Exchanges & Damaged Claims', 'Checkout & Payments', 'VIP Concierge Support'],
+    defaultServices: [
+      'WISMO & Carrier Exceptions',
+      'Returns, Exchanges & Damaged Claims',
+      'Checkout, Payments & Promotions',
+      'VIP Concierge & High-LTV Buyers',
+      'Merchant Onboarding & Catalog Compliance',
+      'Product Quality & Brand Protection',
+    ],
   },
   {
     id: 'LOGISTICS',
     name: 'Logistics, Freight & 3PLs',
-    tagline: 'Interstate linehaul, last-mile RTS, freight damage, COD settlement',
+    tagline: 'Linehaul transit, last-mile RTS, freight damage, COD settlement, fleet dispatch',
     icon: Truck,
     accentColor: 'from-blue-500/20 to-indigo-500/10 border-blue-500/40 text-blue-400',
-    defaultServices: ['Linehaul & Hub Transit', 'Last-Mile Route Exceptions', 'Freight Damage & Claims', 'COD & Shipper Billing'],
+    defaultServices: [
+      'Linehaul & Transit Hub Exceptions',
+      'Last-Mile & Delivery Route Exceptions',
+      'Freight Damage & Insurance Claims',
+      'B2B Shipper Accounts & COD Settlement',
+      'Fleet Dispatch & Special Handling',
+      'Courier Misconduct & Driver Operations',
+    ],
   },
   {
     id: 'FINTECH',
     name: 'FinTech & Digital Payments',
-    tagline: 'ACH disputes, biometric KYC, chargeback defense, BNPL lending',
+    tagline: 'ACH disputes, biometric KYC, chargeback defense, BNPL lending, treasury clearing',
     icon: CreditCard,
     accentColor: 'from-purple-500/20 to-pink-500/10 border-purple-500/40 text-purple-400',
-    defaultServices: ['ACH & Wire Transfer Disputes', 'Biometric KYC & Account Security', 'Fraud & Chargeback Defense', 'Payment Gateway & Webhooks'],
+    defaultServices: [
+      'ACH, Wire & Real-Time Disputes',
+      'Biometric KYC & Account Security',
+      'Fraud, Scam & Chargeback Defense',
+      'B2B Payment Gateway & Webhooks',
+      'Digital Lending, BNPL & Collections',
+      'Treasury, Settlement & Clearing',
+    ],
   },
   {
     id: 'SAAS',
     name: 'B2B SaaS & Tech Enterprise',
-    tagline: 'REST APIs, webhooks, Okta/SAML SSO, SLA downtime incidents',
+    tagline: 'REST APIs, webhooks, Okta/SAML SSO, SLA downtime incidents, subscription invoicing',
     icon: Laptop,
     accentColor: 'from-cyan-500/20 to-blue-500/10 border-cyan-500/40 text-cyan-400',
-    defaultServices: ['Tier-1 User Admin Access', 'Tier-2 API & Webhooks', 'Tier-3 Engineering Escalations', 'Enterprise SAML SSO & SLA'],
+    defaultServices: [
+      'Tier-1 User Access & Admin Onboarding',
+      'Tier-2 API, Webhooks & Developer Interop',
+      'Tier-3 Application Bug & Engineering',
+      'Enterprise Security, SAML SSO & SCIM',
+      'Subscription Invoicing, Tax & Procurement',
+      'P0/P1 Downtime & SLA Escalations',
+    ],
   },
   {
     id: 'HEALTHCARE',
     name: 'Healthcare & Telemedicine',
-    tagline: 'Doctor video visits, Rx pharmacy delivery, HIPAA health records',
+    tagline: 'Doctor video visits, Rx pharmacy delivery, HIPAA records, clinical triage',
     icon: HeartPulse,
     accentColor: 'from-rose-500/20 to-red-500/10 border-rose-500/40 text-rose-400',
-    defaultServices: ['Urgent Clinical Triage', 'Doctor Appointments & Video Call', 'Digital Rx & Pharmacy Fulfillment', 'Health Insurance & Prior Auth'],
+    defaultServices: [
+      'Urgent Triage & Clinical Escalations',
+      'Doctor Appointments & Telehealth Video',
+      'Digital Prescriptions & Pharmacy Delivery',
+      'Health Insurance Claims & Prior Auth',
+      'Electronic Health Records & HIPAA Privacy',
+      'Chronic Care & Patient Follow-up',
+    ],
   },
   {
     id: 'REAL_ESTATE',
     name: 'Real Estate & PropTech',
-    tagline: 'Tenant emergency repairs, lease agreements, security deposits',
+    tagline: 'Tenant emergency repairs, lease agreements, security deposits, HOA compliance',
     icon: Home,
     accentColor: 'from-teal-500/20 to-emerald-500/10 border-teal-500/40 text-teal-400',
-    defaultServices: ['Tenant Emergency Maintenance', 'Lease Agreements & Move-in', 'Rent Collection & Deposit Refund', 'HOA Compliance & Amenities'],
+    defaultServices: [
+      'Tenant Emergency Maintenance & Repairs',
+      'Lease Agreements, Move-in & Handover',
+      'Rent Collection & Security Deposits',
+      'HOA Compliance, Noise & Violations',
+      'Property Amenities & Facilities',
+      'Landlord Relations & Vendor Work Orders',
+    ],
   },
   {
     id: 'TRAVEL',
     name: 'Travel, Hospitality & Airlines',
-    tagline: 'Flight rescheduling, hotel overbooking, emergency trip disruption',
+    tagline: 'Flight rescheduling, hotel overbooking, 24/7 trip disruption, MICE, rental cars',
     icon: Plane,
     accentColor: 'from-amber-500/20 to-orange-500/10 border-amber-500/40 text-amber-400',
-    defaultServices: ['Flight Rescheduling & Disruptions', 'Hotel Bookings & Overbooked Rooms', '24/7 Trip Emergency Assistance', 'Corporate Travel & Group MICE'],
+    defaultServices: [
+      'Flight Rescheduling & Disruptions',
+      'Hotel Bookings & Property Disputes',
+      'Trip Disruptions & 24/7 Emergency',
+      'Corporate Travel & MICE Groups',
+      'Rental Car & Airport Ground Transport',
+      'Travel Insurance & Cancellation Claims',
+    ],
   },
   {
     id: 'GAMING',
     name: 'Gaming & Interactive Media',
-    tagline: 'Account recovery, in-game item refunds, anti-cheat ban appeals',
+    tagline: 'Account recovery, in-game item refunds, anti-cheat ban appeals, tournament support',
     icon: Gamepad2,
     accentColor: 'from-violet-500/20 to-fuchsia-500/10 border-violet-500/40 text-violet-400',
-    defaultServices: ['Account Recovery & Stolen Items', 'In-Game Purchases & Microtransactions', 'Toxicity & Ban Appeals', 'Server Lag & Game Client Bugs'],
+    defaultServices: [
+      'Account Security, 2FA & Stolen Items',
+      'In-Game Purchases & Currency Refunds',
+      'Player Toxicity, Cheating & Bans',
+      'Server Latency, Bugs & Client Crashes',
+      'Guilds, Clan Support & Community',
+      'Esports Tournaments & Anti-Cheat',
+    ],
   },
   {
     id: 'TELECOM',
     name: 'Telecommunications & ISPs',
-    tagline: 'Fiber network outages, technician dispatch, modem router diagnostics',
+    tagline: 'Fiber network outages, technician dispatch, modem router diagnostics, eSIM porting',
     icon: Wifi,
     accentColor: 'from-sky-500/20 to-cyan-500/10 border-sky-500/40 text-sky-400',
-    defaultServices: ['Network Outage Escalations', 'Field Technician On-Site Dispatch', 'Modem & Hardware Diagnostics', 'Billing Invoices & Plan Renewals'],
+    defaultServices: [
+      'Network Outage & Area Downtime',
+      'Field Technician On-Site Dispatch',
+      'Modem/Router & Wi-Fi Diagnostics',
+      'Billing Invoices & Rate Expirations',
+      'SIM Card, eSIM & Number Porting',
+      'Enterprise Dedicated Fiber & SLA Lines',
+    ],
   },
   {
     id: 'AUTOMOTIVE',
     name: 'Automotive & EV Mobility',
-    tagline: 'Roadside towing, EV charging stations, car rental damage claims',
+    tagline: 'Roadside towing, EV charging stations, warranty recall servicing, damage claims',
     icon: Car,
     accentColor: 'from-orange-500/20 to-red-500/10 border-orange-500/40 text-orange-400',
-    defaultServices: ['Roadside Assistance & Towing', 'EV Charging Station App Billing', 'Vehicle Warranty & Recall Servicing', 'Car Rental Damage & Toll Disputes'],
+    defaultServices: [
+      'Roadside Assistance & Towing',
+      'EV Charging Station & App Billing',
+      'Vehicle Warranty & Recall Servicing',
+      'Car Rental Damage & Toll Disputes',
+      'Fleet Telematics & Commercial Vehicle',
+      'Auto Insurance Claims & Accident Reports',
+    ],
   },
   {
     id: 'PROFESSIONAL_SERVICES',
     name: 'Legal & CPA Tax Services',
-    tagline: 'IRS tax filing, client retainer agreements, attorney scheduling',
+    tagline: 'IRS tax filing, client retainer agreements, attorney scheduling, document vault',
     icon: Scale,
     accentColor: 'from-yellow-500/20 to-amber-500/10 border-yellow-500/40 text-yellow-400',
-    defaultServices: ['IRS Tax Filing & W-2 Collection', 'Client Retainer Engagements', 'Attorney & CPA Appointments', 'Secure Document Vault & Compliance'],
+    defaultServices: [
+      'Tax Filing Deadlines & IRS Documents',
+      'Client Retainer Onboarding & Scope',
+      'Attorney & Consultant Scheduling',
+      'Secure Document Vault & Compliance',
+      'Billing Invoices, Trust & Retainers',
+      'Corporate Entity Formation & Filings',
+    ],
   },
   {
     id: 'EDTECH',
     name: 'Education & Bootcamps',
-    tagline: 'LMS virtual classrooms, tuition financial aid, degree credentials',
+    tagline: 'LMS virtual classrooms, tuition financial aid, degree credentials, proctoring',
     icon: GraduationCap,
     accentColor: 'from-indigo-500/20 to-blue-500/10 border-indigo-500/40 text-indigo-400',
-    defaultServices: ['LMS Virtual Classroom Access', 'Tuition Payments & Financial Aid', 'Academic Advising & Tutors', 'Degree & Certificate Issuance'],
+    defaultServices: [
+      'LMS Platform & Virtual Classrooms',
+      'Tuition Payments, Aid & Billing',
+      'Academic Advising & Tutor Support',
+      'Certification & Degree Verification',
+      'Admissions, Placement & Counseling',
+      'Exam Integrity & Proctoring Support',
+    ],
   },
+];
+
+const CUSTOM_INDUSTRY_DEFAULT_SERVICES = [
+  'Frontline Operations & Ticket Triage',
+  'Billing Invoices & Payment Disputes',
+  'Product Quality & Warranty Claims',
+  'Technical Diagnostics & Application Support',
+  'Account Security & Profile Management',
+  'Executive & High-Priority SLA Escalations',
 ];
 
 interface PodDraft {
@@ -217,6 +310,24 @@ export default function TitaniumOnboardingPage() {
         localStorage.removeItem('sentirix_planned_capacity');
       }
     } catch {}
+
+    // Handle redirection from Super Admin Cockpit "Refresh Team" (?step=2)
+    try {
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const stepParam = urlParams.get('step');
+        if (stepParam === '2') {
+          setCurrentStep(2);
+          fetchSuperAdminCockpit(active.username).then((data) => {
+            if (data?.organization) {
+              if (data.organization.name) setOrganizationName(data.organization.name);
+              if (data.organization.industry) setSelectedIndustry(data.organization.industry);
+              if (data.organization.totalSeats) setTypedMembers(data.organization.totalSeats);
+            }
+          }).catch(() => {});
+        }
+      }
+    } catch {}
   }, [router]);
 
   // Load pods when entering Step 3
@@ -225,12 +336,9 @@ export default function TitaniumOnboardingPage() {
     setErrorMessage(null);
 
     const preset = INDUSTRY_PRESETS.find((p) => p.id === selectedIndustry);
-    const services = preset ? [...preset.defaultServices] : [
-      'Layanan Informasi Umum',
-      'Pengaduan Masalah Pelanggan',
-      'Penagihan & Administrasi',
-      'Eskalasi Khusus Manajemen',
-    ];
+    let services = preset
+      ? [...preset.defaultServices]
+      : [...CUSTOM_INDUSTRY_DEFAULT_SERVICES];
     setAvailableServices(services);
 
     try {
@@ -240,21 +348,43 @@ export default function TitaniumOnboardingPage() {
       );
 
       if (aiResult?.pods && aiResult.pods.length > 0) {
+        // If backend or AI provided dynamic custom services, synchronize availableServices!
+        if (aiResult.defaultServices && aiResult.defaultServices.length > 0) {
+          services = [...aiResult.defaultServices];
+          setAvailableServices(services);
+        } else if (selectedIndustry === 'OTHER') {
+          const dynamicServices = aiResult.pods.map((p: any) =>
+            p.service?.trim() || p.name.replace(/\s+Pod$/i, '').trim()
+          );
+          if (dynamicServices.length > 0) {
+            services = dynamicServices;
+            setAvailableServices(dynamicServices);
+          }
+        }
+
         // Adjust AI pods count to match calculatedPodCount
-        let targetPods = aiResult.pods.map((p, idx) => ({
-          name: p.name,
-          podCategory: p.category || 'GENERAL',
-          description: p.description || '',
-          services: [services[idx % services.length] || 'Layanan Utama'],
-        }));
+        let targetPods = aiResult.pods.map((p, idx) => {
+          const podSvc =
+            p.service?.trim() ||
+            services[idx % services.length] ||
+            p.name.replace(/\s+Pod$/i, '').trim() ||
+            'Layanan Utama';
+          return {
+            name: p.name,
+            podCategory: p.category || 'GENERAL',
+            description: p.description || '',
+            services: [podSvc],
+          };
+        });
 
         while (targetPods.length < calculatedPodCount) {
           const num = targetPods.length + 1;
+          const fallbackSvc = services[(num - 1) % services.length] || `Layanan Pod #${num}`;
           targetPods.push({
             name: `Pod Spesialisasi ${num}`,
             podCategory: 'GENERAL',
             description: `Unit penanganan operasional spesialisasi #${num}`,
-            services: [services[(num - 1) % services.length] || 'Layanan Pendukung'],
+            services: [fallbackSvc],
           });
         }
 
@@ -279,9 +409,9 @@ export default function TitaniumOnboardingPage() {
     for (let i = 1; i <= count; i++) {
       const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Layanan Pod #${i}`;
       list.push({
-        name: `Pod Spesialisasi ${i}`,
+        name: `${defaultSvc} Pod`,
         podCategory: 'GENERAL',
-        description: `Penanganan operasional fokus untuk unit #${i}`,
+        description: `Unit operasional penanganan fokus untuk ${defaultSvc}`,
         services: [defaultSvc],
       });
     }
@@ -439,6 +569,15 @@ export default function TitaniumOnboardingPage() {
       <div className="w-full max-w-4xl relative z-10">
         {/* Header Breadcrumbs */}
         <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-700 bg-white p-0.5 flex items-center justify-center shadow-md">
+              <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+            </div>
+            <span className="font-extrabold text-base text-white tracking-tight">Sentirix</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
+              AI COPILOT
+            </span>
+          </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
             {currentStep === 4 ? 'Aktivasi Token Kepemimpinan Leader' : 'Pengaturan Arsitektur Multi-Pod'}
           </h1>
