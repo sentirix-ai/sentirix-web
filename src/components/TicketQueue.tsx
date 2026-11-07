@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Ticket, Sentiment, Priority } from '../lib/types';
-import { Search, Flame, AlertCircle, Smile, Minus, Tag } from 'lucide-react';
+import { Search, Flame, AlertCircle, Smile, Minus, Tag, Globe, Smartphone, Mail, Sparkles, Ticket as TicketIcon } from 'lucide-react';
 
 interface TicketQueueProps {
   tickets: Ticket[];
@@ -85,6 +85,42 @@ export const TicketQueue: React.FC<TicketQueueProps> = ({
     }
   };
 
+  const getChannelPill = (tags?: string[]) => {
+    if (tags?.includes('agent-inbound')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+          <TicketIcon className="w-2.5 h-2.5 text-purple-600" />
+          <span>Support Inbound</span>
+        </span>
+      );
+    }
+    if (tags?.includes('inbound-portal')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]">
+          <Sparkles className="w-2.5 h-2.5 text-[#2563EB]" />
+          <span>Demo Portal</span>
+        </span>
+      );
+    }
+    if (tags?.includes('mobile-app')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <Smartphone className="w-2.5 h-2.5" />
+          <span>App</span>
+        </span>
+      );
+    }
+    if (tags?.includes('email') || tags?.includes('inbound-email')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+          <Mail className="w-2.5 h-2.5" />
+          <span>Email</span>
+        </span>
+      );
+    }
+    return null;
+  };
+
   const filterTabs = ['ALL', 'NEW', 'OPEN', 'PENDING', 'RESOLVED'];
 
   return (
@@ -164,6 +200,7 @@ export const TicketQueue: React.FC<TicketQueueProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                  {getChannelPill(t.tags)}
                   {t.workspaceName && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />

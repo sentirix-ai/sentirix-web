@@ -9,6 +9,12 @@ import {
   ShieldAlert,
   Clock,
   ArrowRightLeft,
+  Globe,
+  Smartphone,
+  Mail,
+  FileText,
+  Sparkles,
+  Ticket as TicketIcon,
 } from 'lucide-react';
 
 interface TicketDetailProps {
@@ -34,6 +40,47 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'PUBLIC_REPLY' | 'INTERNAL_NOTE'>('PUBLIC_REPLY');
   const [isSending, setIsSending] = useState(false);
+
+  const getChannelBadge = (tags?: string[]) => {
+    if (tags?.includes('agent-inbound')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
+          <TicketIcon className="w-3 h-3 text-purple-600" />
+          <span>Support Inbound</span>
+        </span>
+      );
+    }
+    if (tags?.includes('inbound-portal')) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE] shadow-2xs">
+          <Sparkles className="w-3 h-3 text-[#2563EB]" />
+          <span>Demo Portal Showcase</span>
+        </span>
+      );
+    }
+    if (tags?.includes('mobile-app')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+          <Smartphone className="w-3 h-3 text-emerald-600" />
+          <span>Mobile App</span>
+        </span>
+      );
+    }
+    if (tags?.includes('email') || tags?.includes('inbound-email')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+          <Mail className="w-3 h-3 text-amber-600" />
+          <span>Email Inbound</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 shadow-2xs">
+        <FileText className="w-3 h-3 text-slate-400" />
+        <span>Manual / Helpdesk</span>
+      </span>
+    );
+  };
 
   if (!ticket) {
     return (
@@ -91,6 +138,8 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
               <Clock className="w-3.5 h-3.5 text-slate-400" />
               Created {new Date(ticket.createdAt).toLocaleDateString()}
             </span>
+            <span>•</span>
+            {getChannelBadge(ticket.tags)}
           </div>
         </div>
 

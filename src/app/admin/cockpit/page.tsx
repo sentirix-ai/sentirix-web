@@ -25,9 +25,14 @@ import {
   ExternalLink,
   Bell,
   X,
+  Globe,
+  Smartphone,
+  Mail,
+  Code2,
+  Trash2,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
-import { fetchSuperAdminCockpit, regenerateToken } from '../../../lib/api';
+import { fetchSuperAdminCockpit, regenerateToken, cleanupDemoTickets } from '../../../lib/api';
 
 const INDUSTRY_DISPLAY_NAMES: Record<string, string> = {
   PROFESSIONAL_SERVICES: 'Legal & CPA Tax Services',
@@ -57,8 +62,11 @@ export default function SuperAdminCockpitPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [copiedChannelItem, setCopiedChannelItem] = useState<string | null>(null);
+  const [isCleaningDemo, setIsCleaningDemo] = useState(false);
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRESENCE' | 'TOKENS' | 'CRISIS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRESENCE' | 'TOKENS' | 'CRISIS' | 'CHANNELS'>('OVERVIEW');
   const [selectedUserHistory, setSelectedUserHistory] = useState<any | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
 
@@ -122,6 +130,29 @@ export default function SuperAdminCockpitPage() {
     navigator.clipboard.writeText(url);
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2500);
+  };
+
+  const handleCopyChannel = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedChannelItem(id);
+    setTimeout(() => setCopiedChannelItem(null), 2500);
+  };
+
+  const handleCleanupDemo = async () => {
+    try {
+      setIsCleaningDemo(true);
+      const res = await cleanupDemoTickets();
+      setDemoNotice(`Berhasil membersihkan ${res.count} tiket demo dari database & antrean.`);
+      if (session) {
+        await loadData(session, false);
+      }
+      setTimeout(() => setDemoNotice(null), 4000);
+    } catch {
+      setDemoNotice('Gagal membersihkan tiket demo.');
+      setTimeout(() => setDemoNotice(null), 3000);
+    } finally {
+      setIsCleaningDemo(false);
+    }
   };
 
   const handleRegenerateToken = async (oldToken: string) => {
@@ -469,6 +500,11 @@ export default function SuperAdminCockpitPage() {
               label: 'Radar Krisis & SLA',
               icon: AlertTriangle,
               count: (stats.crisisCount || 0) + (stats.slaBreachedCount || 0),
+            },
+            {
+              id: 'CHANNELS',
+              label: 'Kanal Masuk & Integrasi Portal',
+              icon: Globe,
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1403,6 +1439,290 @@ export default function SuperAdminCockpitPage() {
                 )}
               </div>
             )}
+          </section>
+        )}
+
+        {/* Tab 5: Kanal Masuk & Integrasi Portal */}
+        {activeTab === 'CHANNELS' && (
+          <section className="space-y-6 animate-fadeIn">
+            {/* Header Deskripsi */}
+            <div className="p-6 rounded-2xl bg-[#111827] border border-slate-800 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-5 h-5 text-blue-400" />
+                    <h2 className="text-base font-bold text-white tracking-tight">
+                      Pusat Kendali Kanal Masuk &amp; Integrasi Pelanggan (Inbound Gateways)
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
+                    Kelola dan distribusikan jembatan komunikasi antara pelanggan Pihak A dengan meja kerja Helpdesk (Leader &amp; Member).
+                    Semua keluhan yang masuk dari ketiga saluran ini otomatis di-triage oleh <strong className="text-blue-400">Gemini 3.8 Flash Grounded</strong> dan didistribusikan ke Pod yang tepat.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isCleaningDemo}
+                    onClick={handleCleanupDemo}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                    title="Hapus seluruh tiket demo showcase yang dibuat saat simulasi"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>{isCleaningDemo ? 'Membersihkan...' : 'Bersihkan Tiket Demo'}</span>
+                  </button>
+
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs font-semibold shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>3 Saluran Integrasi Aktif</span>
+                  </div>
+                </div>
+              </div>
+
+              {demoNotice && (
+                <div className="mt-3 p-3 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{demoNotice}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Grid 3 Saluran Masuk Utama */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* Saluran 1: Portal Bantuan Pelanggan (Web & HP Responsive) */}
+              <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400">
+                      <Globe className="w-5 h-5" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full">
+                      ● Live Web &amp; HP
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-white">1. Portal Web Pelanggan</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Customer Support Portal mandiri. Tampilan otomatis responsif di browser ponsel (Android/iOS) tanpa perlu download aplikasi.
+                    </p>
+                  </div>
+
+                  {/* URL Box */}
+                  <div className="space-y-1.5 pt-2">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Tautan Resmi Portal:
+                    </label>
+                    <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-blue-400">
+                      <span className="truncate flex-1">http://localhost:3000/portal</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyChannel('http://localhost:3000/portal', 'portal-url')}
+                        className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
+                        title="Salin Tautan"
+                      >
+                        {copiedChannelItem === 'portal-url' ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Tersalin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Salin</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
+                    <span className="font-semibold text-slate-300 block">Rekomendasi Penempatan:</span>
+                    <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[10.5px]">
+                      <li>Tempel di menu footer website resmi Pihak A</li>
+                      <li>Pasang di bio Instagram / Twitter CS</li>
+                      <li>Template balasan otomatis WhatsApp Business</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <Link
+                    href="/portal"
+                    target="_blank"
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-700"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Buka Tampilan Portal (Preview)</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Saluran 2: Integrasi Aplikasi Mobile (REST API) */}
+              <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400">
+                      <Smartphone className="w-5 h-5" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full">
+                      ● REST API v1
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-white">2. Integrasi Aplikasi Mobile HP</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Untuk tombol "Laporkan Masalah" di dalam aplikasi Android / iOS Pihak A. Pengguna tidak perlu keluar dari aplikasi HP.
+                    </p>
+                  </div>
+
+                  {/* API Box */}
+                  <div className="space-y-1.5 pt-2">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Endpoint Ingestion API:
+                    </label>
+                    <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-emerald-400">
+                      <span className="truncate flex-1">POST /api/v1/tickets</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyChannel('http://localhost:4000/api/v1/tickets', 'api-url')}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
+                        title="Salin Endpoint"
+                      >
+                        {copiedChannelItem === 'api-url' ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Tersalin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Salin</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
+                    <span className="font-semibold text-slate-300 block">Format Payload JSON:</span>
+                    <pre className="text-[10px] font-mono text-slate-400 bg-[#0B0F19] p-2 rounded-lg border border-slate-800 overflow-x-auto">
+{`{
+  "title": "Kendala Transaksi",
+  "description": "Uraian masalah...",
+  "customerName": "Nama User",
+  "tags": ["mobile-app", "billing"]
+}`}
+                    </pre>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyChannel(
+`curl -X POST http://localhost:4000/api/v1/tickets \\
+  -H "Content-Type: application/json" \\
+  -d '{"title":"API Test Ticket","description":"Test keluhan dari HP","customerName":"Customer Testing"}'`,
+                      'curl-sample'
+                    )}
+                    className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-700 cursor-pointer"
+                  >
+                    <Code2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{copiedChannelItem === 'curl-sample' ? 'cURL Tersalin!' : 'Salin Contoh Request (cURL)'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Saluran 3: Integrasi Email Forwarding */}
+              <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-amber-950 border border-amber-800 flex items-center justify-center text-amber-400">
+                      <Mail className="w-5 h-5" />
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-950/80 text-amber-400 border border-amber-800/80 px-2.5 py-0.5 rounded-full">
+                      ● Email Gateway
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-white">3. Integrasi Forwarding Email</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Customer kirim email via Gmail/Outlook mereka ke help@perusahaanA.com, otomatis diteruskan menjadi tiket di Sentirix.
+                    </p>
+                  </div>
+
+                  {/* Email Inbound Box */}
+                  <div className="space-y-1.5 pt-2">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Alamat Gateway Terusan:
+                    </label>
+                    <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-amber-400">
+                      <span className="truncate flex-1">inbound@tickets.sentirix.com</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyChannel('inbound@tickets.sentirix.com', 'email-gw')}
+                        className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
+                        title="Salin Email Gateway"
+                      >
+                        {copiedChannelItem === 'email-gw' ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Tersalin</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Salin</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
+                    <span className="font-semibold text-slate-300 block">3 Langkah Pengaturan Cepat:</span>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-400 text-[10.5px]">
+                      <li>Buka Google Workspace / cPanel email Pihak A</li>
+                      <li>Buat Forward Rule: help@perusahaan.com ➔ inbound@tickets.sentirix.com</li>
+                      <li>Balasan Public Reply agen otomatis dikirim balik ke Gmail customer</li>
+                    </ol>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <div className="py-2.5 px-3 rounded-xl bg-amber-950/20 border border-amber-800/40 text-amber-300 text-center text-xs font-semibold">
+                    Zero-Install (Customer Pakai Gmail Biasa)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Architecture Flow Banner */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/40 border border-blue-900/40 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Sentirix Unified Message Lifecycle Active</h4>
+                  <p className="text-[11px] text-slate-400">
+                    Seluruh pesan dari Web Portal, Mobile App, maupun Email bermuara pada satu antrean meja kerja Pod, dipantau live oleh Radar Krisis SLA (&lt; 15 Menit).
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                href="/dashboard"
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-md shadow-blue-500/20"
+              >
+                <span>Lihat Meja Kerja Pod</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </section>
         )}
       </main>

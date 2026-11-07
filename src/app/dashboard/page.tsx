@@ -29,7 +29,7 @@ import { Navbar } from '../../components/Navbar';
 import { TicketQueue } from '../../components/TicketQueue';
 import { TicketDetail } from '../../components/TicketDetail';
 import { AiCopilotSidebar } from '../../components/AiCopilotSidebar';
-import { NewTicketModal } from '../../components/NewTicketModal';
+import { NewTicketModal, NewTicketPayload } from '../../components/NewTicketModal';
 import { TeamInviteModal } from '../../components/TeamInviteModal';
 import { OwnerAnalyticsView } from '../../components/OwnerAnalyticsView';
 import { AdminCockpitView } from '../../components/AdminCockpitView';
@@ -364,8 +364,30 @@ export default function DashboardPage() {
     );
   };
 
-  const handleCreateTicketSubmit = async (title: string, description: string) => {
-    const created = await createTicket(title, description);
+  const handleCreateTicketSubmit = async (payload: NewTicketPayload) => {
+    const contactInfo = payload.customerPhone?.trim()
+      ? `Email: ${payload.customerEmail.trim()} | Phone: ${payload.customerPhone.trim()}`
+      : `Email: ${payload.customerEmail.trim()}`;
+    const refInfo = payload.referenceId?.trim() ? ` | Order/TRX: ${payload.referenceId.trim()}` : '';
+    const fullDescription = `${payload.description.trim()}\n\n[Customer Contact: ${contactInfo}${refInfo}]`;
+    const tags = ['agent-inbound', 'customer-care'];
+    if (payload.referenceId?.trim()) {
+      tags.push(`ref:${payload.referenceId.trim().replace(/\s+/g, '_')}`);
+    }
+
+    const targetWorkspaceId =
+      selectedPodId && selectedPodId !== 'ALL'
+        ? selectedPodId
+        : (user as any)?.workspaceId || undefined;
+
+    const created = await createTicket({
+      title: payload.title,
+      description: fullDescription,
+      customerName: payload.customerName,
+      tags,
+      customerId: `cust-${Date.now().toString(36)}`,
+      workspaceId: targetWorkspaceId,
+    });
     setTickets((prev) => [created, ...prev]);
     setSelectedTicket(created);
   };

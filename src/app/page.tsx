@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   Bot,
   Sparkles,
@@ -38,6 +39,8 @@ import {
   Flame,
   ShieldAlert,
   Copy,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import {
   loginUser,
@@ -503,9 +506,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#0D0F12] text-[#F8FAFC] font-sans selection:bg-[#262A30] selection:text-[#F8FAFC]">
       {/* 1. TOP CORPORATE NAVIGATION BAR */}
       <header className="border-b border-[#262A30]/80 bg-[#0D0F12]/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between relative">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           {/* Left: Brand Logo & Title */}
-          <div className="flex items-center">
+          <div className="flex items-center shrink-0">
             <a href="/" className="flex items-center gap-3 group">
               <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-lg shadow-black/40 group-hover:scale-105 transition-transform">
                 <img
@@ -528,8 +531,8 @@ export default function LandingPage() {
             </a>
           </div>
 
-          {/* Center: Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-7 text-sm font-semibold text-[#94A3B8] absolute left-1/2 -translate-x-1/2">
+          {/* Center: Navigation Links (Pure, Elegant & Spacious) */}
+          <nav className="hidden lg:flex items-center gap-7 text-sm font-semibold text-[#94A3B8]">
             <a href="#features" className="hover:text-[#F8FAFC] transition-colors">
               Platform
             </a>
@@ -552,7 +555,7 @@ export default function LandingPage() {
           </nav>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={() => {
                 setAuthMode('LOGIN');
@@ -1015,6 +1018,62 @@ export default function LandingPage() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* End-to-End Live Customer Ingestion Portal Showcase Card */}
+        <div className="mt-8 p-6 sm:p-8 rounded-2xl bg-gradient-to-r from-[#11141A] via-[#141A24] to-[#11141A] border border-blue-500/30 shadow-2xl shadow-blue-950/20 relative overflow-hidden">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute -top-24 -right-24 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+            <div className="space-y-3 max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/30 text-[10px] font-bold text-blue-400 tracking-wider uppercase flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5" />
+                  Live Ingestion Portal Showcase
+                </span>
+                <span className="text-[11px] text-emerald-400 font-mono font-medium flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Sub-80ms Real-Time Ingest
+                </span>
+                <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">• Rapid Priority Resolution</span>
+              </div>
+
+              <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                Want to Experience the End-to-End Flow as a Customer?
+              </h3>
+
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                Open the customer self-service resolution portal. Select a sample scenario (payment double charge, delivery delay, or account verification) and watch the complaint get triaged and routed into agent pod queues in real time with Gemini AI.
+              </p>
+
+              {/* Quick Scenario Pills Preview */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400 font-mono">
+                <span className="px-2 py-0.5 rounded bg-[#1A1F2B] border border-[#2A3245] text-slate-300">
+                  💳 Billing: Duplicate Payment Refund
+                </span>
+                <span className="px-2 py-0.5 rounded bg-[#1A1F2B] border border-[#2A3245] text-slate-300">
+                  📦 Orders: Delayed Package Status
+                </span>
+                <span className="px-2 py-0.5 rounded bg-[#1A1F2B] border border-[#2A3245] text-slate-300">
+                  🔒 Account: Missing SMS OTP Code
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
+              <a
+                href="/portal"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-6 py-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm shadow-xl shadow-blue-600/30 transition-all flex items-center justify-center gap-2.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Sparkles className="w-4 h-4 text-blue-200" />
+                <span>Open Customer Care Portal</span>
+                <ExternalLink className="w-4 h-4 ml-0.5 text-blue-200" />
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 

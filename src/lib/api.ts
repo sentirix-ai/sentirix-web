@@ -751,6 +751,18 @@ export async function regenerateToken(token: string): Promise<{
   }
 }
 
+export async function cleanupDemoTickets(): Promise<{ count: number }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/tickets/demo/cleanup`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to cleanup demo tickets');
+    return await res.json();
+  } catch {
+    return { count: 0 };
+  }
+}
+
 
 
 

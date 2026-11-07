@@ -13,6 +13,7 @@ import {
   WifiOff,
   Camera,
   Check,
+  Globe,
 } from 'lucide-react';
 import { UserSession } from '../lib/auth';
 import { WorkspaceData, PodInfo } from '../lib/types';
@@ -60,6 +61,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       workspace?.isLeader ||
       (!user?.isGuestMember && !!(user as any)?.workspaceId));
   const isAgent = !isSuperAdmin && !isLeader;
+  const [copiedPortal, setCopiedPortal] = useState(false);
+
+  const handleCopyPortal = () => {
+    navigator.clipboard.writeText('http://localhost:3000/portal');
+    setCopiedPortal(true);
+    setTimeout(() => setCopiedPortal(false), 2200);
+  };
 
   return (
     <header className="h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs">
@@ -107,6 +115,27 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Plus className="w-4 h-4" />
             <span>+ New Ticket</span>
+          </button>
+        )}
+
+        {/* Share Customer Portal Link Button */}
+        {!isSuperAdmin && (
+          <button
+            onClick={handleCopyPortal}
+            className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+            title="Salin tautan portal pengaduan untuk dibagikan ke pelanggan"
+          >
+            {copiedPortal ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="text-emerald-700">Tersalin!</span>
+              </>
+            ) : (
+              <>
+                <Globe className="w-3.5 h-3.5 text-blue-600" />
+                <span>Portal Link</span>
+              </>
+            )}
           </button>
         )}
 
