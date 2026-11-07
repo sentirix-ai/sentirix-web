@@ -44,10 +44,12 @@ export default function DashboardPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
+  const [openTicketTabs, setOpenTicketTabs] = useState<Ticket[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [composerText, setComposerText] = useState('');
+  const [draftsByTicket, setDraftsByTicket] = useState<Record<string, string>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [collisionAgent, setCollisionAgent] = useState<string | null>(null);
@@ -171,6 +173,11 @@ export default function DashboardPage() {
     ) {
       setSelectedTicket(filtered[0] || null);
     }
+
+    setOpenTicketTabs((prev) => {
+      if (prev.length > 0) return prev;
+      return filtered.slice(0, 3);
+    });
   }, [statusFilter, searchQuery, selectedTicket, user]);
 
   useEffect(() => {
@@ -340,8 +347,144 @@ export default function DashboardPage() {
 
   // Handlers
   const handleSelectTicket = (ticket: Ticket) => {
+    if (selectedTicket) {
+      setDraftsByTicket((prev) => ({
+        ...prev,
+        [selectedTicket.id]: composerText,
+      }));
+    }
     setSelectedTicket(ticket);
+    setComposerText(draftsByTicket[ticket.id] || '');
     setCollisionAgent(null);
+    setOpenTicketTabs((prev) => {
+      if (prev.some((t) => t.id === ticket.id)) return prev;
+      if (prev.length >= 5) {
+        return [...prev.slice(0, 4), ticket];
+      }
+      return [...prev, ticket];
+    });
+  };
+
+  const handleSelectTicketTab = (ticket: Ticket) => {
+    if (selectedTicket) {
+      setDraftsByTicket((prev) => ({
+        ...prev,
+        [selectedTicket.id]: composerText,
+      }));
+    }
+    setSelectedTicket(ticket);
+    setComposerText(draftsByTicket[ticket.id] || '');
+    setCollisionAgent(null);
+  };
+
+  const handleCloseTicketTab = (ticketId: string) => {
+    setOpenTicketTabs((prev) => {
+      const remaining = prev.filter((t) => t.id !== ticketId);
+      if (selectedTicket?.id === ticketId) {
+        if (remaining.length > 0) {
+          const nextTicket = remaining[0];
+          setSelectedTicket(nextTicket);
+          setComposerText(draftsByTicket[nextTicket.id] || '');
+        }
+      }
+      return remaining;
+    });
+  };
+
+  const handleAddTicketTab = async () => {
+    if (openTicketTabs.length >= 5) return;
+    // 1. First look for an existing unclaimed ticket in the queue
+    let nextTicket = tickets.find((t) => !openTicketTabs.some((tab) => tab.id === t.id));
+
+    // 2. If all existing tickets are already active in tabs, pull/create the next customer case
+    if (!nextTicket) {
+      const demoPool = [
+        {
+          title: 'Order delivery delayed past estimated arrival time',
+          description:
+            'Package ORD-98214 is 2 days overdue. Customer inquired via portal regarding tracking status and requested expedited dispatch.',
+          customerName: 'Marcus Bennett',
+          tags: ['agent-inbound', 'customer-care', 'logistics'],
+        },
+        {
+          title: 'Unable to receive two-factor SMS authentication code',
+          description:
+            'Customer reports OTP text message is not arriving on phone +1 (555) 019-4821 during portal sign-in. Account verification required.',
+          customerName: 'Elena Rostova',
+          tags: ['agent-inbound', 'customer-care', 'auth'],
+        },
+        {
+          title: 'Subscription billed twice on corporate credit card',
+          description:
+            'Monthly invoice was charged twice ($45.00 x 2) on Nov 7. Customer requested refund for duplicate transaction.',
+          customerName: 'David Chen',
+          tags: ['agent-inbound', 'customer-care', 'billing'],
+        },
+        {
+          title: 'Damaged item received inside sealed shipping box',
+          description:
+            'Customer opened package and found item screen cracked. Photos attached. Requested replacement or return label.',
+          customerName: 'Sophia Taylor',
+          tags: ['agent-inbound', 'customer-care', 'claims'],
+        },
+      ];
+
+      const candidate =
+        demoPool.find((p) => !openTicketTabs.some((t) => t.customerName === p.customerName)) ||
+        demoPool[0];
+
+      try {
+        const created = await createTicket({
+          title: candidate.title,
+          description: candidate.description,
+          customerName: candidate.customerName,
+          tags: candidate.tags,
+          customerId: `cust-${Date.now().toString(36)}`,
+          workspaceId: selectedPodId !== 'ALL' ? selectedPodId : undefined,
+        });
+        nextTicket = created;
+        setTickets((prev) => [created, ...prev]);
+      } catch {
+        const fallbackTicket: Ticket = {
+          id: `tick-${Date.now()}`,
+          ticketNumber: Math.floor(Math.random() * 8000) + 1000,
+          title: candidate.title,
+          description: candidate.description,
+          customerName: candidate.customerName,
+          customerId: `cust-${Date.now().toString(36)}`,
+          status: 'NEW',
+          priority: 'HIGH',
+          sentiment: 'URGENT',
+          tags: candidate.tags,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        nextTicket = fallbackTicket;
+        setTickets((prev) => [fallbackTicket, ...prev]);
+      }
+    }
+
+    if (nextTicket) {
+      if (selectedTicket) {
+        setDraftsByTicket((prev) => ({
+          ...prev,
+          [selectedTicket.id]: composerText,
+        }));
+      }
+      setOpenTicketTabs((prev) => [...prev, nextTicket!]);
+      setSelectedTicket(nextTicket);
+      setComposerText(draftsByTicket[nextTicket.id] || '');
+    }
+  };
+
+  const handleComposerChange = (text: string) => {
+    setComposerText(text);
+    if (selectedTicket) {
+      setDraftsByTicket((prev) => ({
+        ...prev,
+        [selectedTicket.id]: text,
+      }));
+    }
   };
 
   const handleSendMessage = async (
@@ -353,6 +496,12 @@ export default function DashboardPage() {
     const newMsg = await createMessage(selectedTicket.id, content, type);
     newMsg.senderName = type === 'INTERNAL_NOTE' ? `${senderName} (Internal)` : senderName;
     setMessages((prev) => [...prev, newMsg]);
+    // Clear draft for this ticket upon successful send
+    setDraftsByTicket((prev) => {
+      const copy = { ...prev };
+      delete copy[selectedTicket.id];
+      return copy;
+    });
   };
 
   const handleStatusChange = async (status: TicketStatus) => {
@@ -393,7 +542,7 @@ export default function DashboardPage() {
   };
 
   const handleInsertDraftToComposer = (draftText: string) => {
-    setComposerText(draftText);
+    handleComposerChange(draftText);
   };
 
   const handleLogout = async () => {
@@ -463,8 +612,12 @@ export default function DashboardPage() {
           onStatusChange={handleStatusChange}
           collisionAgent={collisionAgent}
           composerText={composerText}
-          onComposerTextChange={setComposerText}
+          onComposerTextChange={handleComposerChange}
           onOpenTransferModal={() => setIsTransferModalOpen(true)}
+          openTicketTabs={openTicketTabs}
+          onSelectTicketTab={handleSelectTicketTab}
+          onCloseTicketTab={handleCloseTicketTab}
+          onAddTicketTab={handleAddTicketTab}
         />
 
         {/* Panel 3: Right AI Copilot Hub */}

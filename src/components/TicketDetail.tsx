@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Ticket, Message, TicketStatus } from '../lib/types';
 import {
   Send,
@@ -15,6 +15,10 @@ import {
   FileText,
   Sparkles,
   Ticket as TicketIcon,
+  Plus,
+  Layers,
+  X,
+  AlertCircle,
 } from 'lucide-react';
 
 interface TicketDetailProps {
@@ -26,6 +30,10 @@ interface TicketDetailProps {
   composerText: string;
   onComposerTextChange: (text: string) => void;
   onOpenTransferModal?: () => void;
+  openTicketTabs?: Ticket[];
+  onSelectTicketTab?: (ticket: Ticket) => void;
+  onCloseTicketTab?: (ticketId: string) => void;
+  onAddTicketTab?: () => void;
 }
 
 export const TicketDetail: React.FC<TicketDetailProps> = ({
@@ -37,9 +45,48 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
   composerText,
   onComposerTextChange,
   onOpenTransferModal,
+  openTicketTabs,
+  onSelectTicketTab,
+  onCloseTicketTab,
+  onAddTicketTab,
 }) => {
   const [activeTab, setActiveTab] = useState<'PUBLIC_REPLY' | 'INTERNAL_NOTE'>('PUBLIC_REPLY');
   const [isSending, setIsSending] = useState(false);
+  const [ticketToConfirmClose, setTicketToConfirmClose] = useState<Ticket | null>(null);
+
+  const handleAttemptCloseTab = (tabTicket: Ticket) => {
+    // If ticket is already resolved or pending, close immediately without prompting
+    if (tabTicket.status === 'RESOLVED' || tabTicket.status === 'PENDING') {
+      onCloseTicketTab && onCloseTicketTab(tabTicket.id);
+    } else {
+      // Unresolved active ticket (NEW, OPEN) - trigger corporate soft confirmation guardrail
+      setTicketToConfirmClose(tabTicket);
+    }
+  };
+
+  const handleConfirmClose = () => {
+    if (ticketToConfirmClose) {
+      onCloseTicketTab && onCloseTicketTab(ticketToConfirmClose.id);
+      setTicketToConfirmClose(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!ticketToConfirmClose) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setTicketToConfirmClose(null);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConfirmClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [ticketToConfirmClose]);
 
   const getChannelBadge = (tags?: string[]) => {
     if (tags?.includes('agent-inbound')) {
@@ -105,6 +152,98 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 
   return (
     <main className="flex-1 flex flex-col h-[calc(100vh-4rem)] bg-white overflow-hidden">
+      {/* Multi-Terminal Workspace Tab Bar (On-Demand Pull Concurrency) */}
+      <div className="bg-slate-100/90 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto shrink-0 select-none">
+        {/* Left: Open Active Terminal Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+          {openTicketTabs && openTicketTabs.length > 0 ? (
+            openTicketTabs.map((tabTicket) => {
+              const isActive = tabTicket.id === ticket.id;
+              return (
+                <div
+                  key={tabTicket.id}
+                  onClick={() => onSelectTicketTab && onSelectTicketTab(tabTicket)}
+                  className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all cursor-pointer border ${
+                    isActive
+                      ? 'bg-white text-slate-900 border-slate-200/90 shadow-xs font-bold border-t-2 border-t-[#2563EB]'
+                      : 'bg-slate-200/40 hover:bg-slate-200/80 text-slate-600 border-transparent hover:border-slate-200'
+                  }`}
+                >
+                  {/* Status Indicator Dot */}
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      isActive ? 'bg-[#2563EB]' : 'bg-emerald-500 animate-pulse'
+                    }`}
+                    title={isActive ? 'Active Workspace' : 'Active Customer Session'}
+                  />
+
+                  {/* Ticket Number & Customer Name */}
+                  <span className="font-mono text-[11px] text-slate-500 font-semibold">
+                    #{tabTicket.ticketNumber}
+                  </span>
+                  <span className="truncate max-w-[110px] sm:max-w-[130px]">
+                    {tabTicket.customerName || tabTicket.title}
+                  </span>
+
+                  {/* Close Tab Button */}
+                  {openTicketTabs.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleAttemptCloseTab(tabTicket);
+                      }}
+                      className="opacity-50 group-hover:opacity-100 p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-all cursor-pointer ml-0.5"
+                      title="Close ticket terminal"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          ) : null}
+
+          {/* [+] Button to Add / Claim Next Ticket Terminal */}
+          <button
+            type="button"
+            onClick={onAddTicketTab}
+            disabled={openTicketTabs && openTicketTabs.length >= 5}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0"
+            title={
+              openTicketTabs && openTicketTabs.length >= 5
+                ? 'Maximum workload capacity reached (5/5 Terminals)'
+                : 'Click to add another terminal and claim the next queued ticket'
+            }
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="text-[11px]">
+              {openTicketTabs && openTicketTabs.length >= 5 ? 'Max (5/5)' : 'Add Terminal'}
+            </span>
+          </button>
+        </div>
+
+        {/* Right: Workload Capacity Meter */}
+        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-[11px] text-slate-500 font-medium shrink-0 shadow-2xs">
+          <Layers className="w-3.5 h-3.5 text-blue-600" />
+          <span>Workload:</span>
+          <div className="flex items-center gap-1 font-mono font-bold text-slate-700">
+            <span>{openTicketTabs ? openTicketTabs.length : 1}/5</span>
+            <div className="flex items-center gap-0.5 ml-1">
+              {[1, 2, 3, 4, 5].map((slot) => (
+                <div
+                  key={slot}
+                  className={`w-1.5 h-3 rounded-xs ${
+                    slot <= (openTicketTabs ? openTicketTabs.length : 1)
+                      ? 'bg-blue-600'
+                      : 'bg-slate-200'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
       {/* Collision Alert Banner */}
       {collisionAgent && (
         <div className="bg-amber-500 text-slate-900 px-4 py-2 text-xs font-semibold flex items-center justify-between border-b border-amber-600 animate-pulse">
@@ -287,6 +426,84 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Corporate Soft Confirmation Modal - "Guardrails Instead of Handcuffs" */}
+      {ticketToConfirmClose && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setTicketToConfirmClose(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 relative animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button top right */}
+            <button
+              type="button"
+              onClick={() => setTicketToConfirmClose(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header with Alert Icon */}
+            <div className="flex items-start gap-4">
+              <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0 text-amber-600 shadow-2xs">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 pr-6">
+                <h3 className="text-base font-bold text-slate-900">
+                  Close Active Ticket Terminal?
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                  Active customer session safeguard
+                </p>
+              </div>
+            </div>
+
+            {/* Ticket Snapshot Card */}
+            <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-mono font-bold text-slate-700">
+                  #{ticketToConfirmClose.ticketNumber}
+                </span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                  Status: {ticketToConfirmClose.status}
+                </span>
+              </div>
+              <div className="text-xs font-semibold text-slate-900 truncate">
+                {ticketToConfirmClose.customerName || 'Customer'} — {ticketToConfirmClose.title}
+              </div>
+            </div>
+
+            {/* Gartner Explanatory Guideline Text */}
+            <p className="mt-3.5 text-xs text-slate-600 leading-relaxed">
+              Ticket <span className="font-semibold text-slate-800">#{ticketToConfirmClose.ticketNumber}</span> ({ticketToConfirmClose.customerName}) is currently active and has not been resolved. Are you sure you want to close this terminal tab? The ticket will safely remain in the queue for later handling.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setTicketToConfirmClose(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Keep Working
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClose}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer shadow-xs"
+              >
+                Close Terminal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

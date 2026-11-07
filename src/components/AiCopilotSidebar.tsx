@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Ticket, Message } from '../lib/types';
 import { generateAiReply, summarizeThread } from '../lib/api';
 import {
@@ -33,7 +33,29 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryPoints, setSummaryPoints] = useState<string[] | null>(null);
 
+  // Per-Ticket Memory Cache so switching tabs restores that ticket's AI draft
+  const [aiDraftsByTicket, setAiDraftsByTicket] = useState<
+    Record<string, { draft: string; sources: string[] }>
+  >({});
+  const [summariesByTicket, setSummariesByTicket] = useState<Record<string, string[]>>({});
+
   const [copied, setCopied] = useState(false);
+
+  // Synchronize AI Draft & Summary whenever ticket tab switches
+  useEffect(() => {
+    if (!ticket) {
+      setAiDraft(null);
+      setGroundedSources([]);
+      setSummaryPoints(null);
+      return;
+    }
+    const cached = aiDraftsByTicket[ticket.id];
+    setAiDraft(cached?.draft || null);
+    setGroundedSources(cached?.sources || []);
+
+    const cachedSummary = summariesByTicket[ticket.id];
+    setSummaryPoints(cachedSummary || null);
+  }, [ticket?.id]);
 
   if (!ticket) {
     return (
@@ -50,6 +72,11 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
       const result = await generateAiReply(ticket.title, ticket.description, history, tone);
       setAiDraft(result.draft);
       setGroundedSources(result.groundedSources);
+      // Cache draft per ticket
+      setAiDraftsByTicket((prev) => ({
+        ...prev,
+        [ticket.id]: { draft: result.draft, sources: result.groundedSources },
+      }));
     } finally {
       setIsDrafting(false);
     }
@@ -61,6 +88,11 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
       const result = await summarizeThread(ticket.title, history);
       setSummaryPoints(result.bulletPoints);
+      // Cache summary per ticket
+      setSummariesByTicket((prev) => ({
+        ...prev,
+        [ticket.id]: result.bulletPoints,
+      }));
     } finally {
       setIsSummarizing(false);
     }
