@@ -475,6 +475,26 @@ function JoinWorkspaceContent() {
                     {cleanPodName(tokenData?.workspace?.name)}
                   </h2>
                 </div>
+
+                {tokenData?.workspace?.services && tokenData.workspace.services.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/60">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                      Covered Domain Services:
+                    </span>
+                    <div className="space-y-1">
+                      {tokenData.workspace.services.map((svc: string, sIdx: number) => (
+                        <div
+                          key={svc}
+                          className="text-[11px] text-slate-300 flex items-start gap-1.5 font-medium leading-relaxed"
+                        >
+                          <span className="text-blue-400 font-bold shrink-0">({sIdx + 1})</span>
+                          <span>{svc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
                   <span className="text-slate-400">Locked Team Capacity:</span>
                   <strong className="text-emerald-400 font-bold">
@@ -723,6 +743,26 @@ function JoinWorkspaceContent() {
                     {cleanPodName(tokenData?.workspace?.name)}
                   </h2>
                 </div>
+
+                {tokenData?.workspace?.services && tokenData.workspace.services.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/60">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                      Covered Domain Services:
+                    </span>
+                    <div className="space-y-1">
+                      {tokenData.workspace.services.map((svc: string, sIdx: number) => (
+                        <div
+                          key={svc}
+                          className="text-[11px] text-slate-300 flex items-start gap-1.5 font-medium leading-relaxed"
+                        >
+                          <span className="text-blue-400 font-bold shrink-0">({sIdx + 1})</span>
+                          <span>{svc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {tokenData?.leaderName && (
                   <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
                     <span className="text-slate-400">Team Lead:</span>
@@ -781,6 +821,26 @@ function JoinWorkspaceContent() {
                     {cleanPodName(tokenData?.workspace?.name)}
                   </h2>
                 </div>
+
+                {tokenData?.workspace?.services && tokenData.workspace.services.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/60">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                      Covered Domain Services:
+                    </span>
+                    <div className="space-y-1">
+                      {tokenData.workspace.services.map((svc: string, sIdx: number) => (
+                        <div
+                          key={svc}
+                          className="text-[11px] text-slate-300 flex items-start gap-1.5 font-medium leading-relaxed"
+                        >
+                          <span className="text-blue-400 font-bold shrink-0">({sIdx + 1})</span>
+                          <span>{svc}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {tokenData?.leaderName && (
                   <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
                     <span className="text-slate-400">Team Lead:</span>

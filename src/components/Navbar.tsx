@@ -58,8 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     !isSuperAdmin &&
     (user?.role === 'LEADER' ||
       (user as any)?.workspaceRole === 'LEADER' ||
-      workspace?.isLeader ||
-      (!user?.isGuestMember && !!(user as any)?.workspaceId));
+      workspace?.isLeader === true);
   const isAgent = !isSuperAdmin && !isLeader;
   const [copiedPortal, setCopiedPortal] = useState(false);
 

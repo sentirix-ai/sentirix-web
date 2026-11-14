@@ -24,7 +24,7 @@ import {
   fetchOwnerAnalytics,
   fetchOrganizationPods,
 } from '../../lib/api';
-import { getSession, logoutUser, UserSession } from '../../lib/auth';
+import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
 import { Navbar } from '../../components/Navbar';
 import { TicketQueue } from '../../components/TicketQueue';
 import { TicketDetail } from '../../components/TicketDetail';
@@ -320,6 +320,56 @@ export default function DashboardPage() {
           }
         }
       });
+
+      // Listen for leadership reassignment by Super Admin (Instant Eviction & Token Disarm)
+      socket.on(
+        'team:leader_reassigned',
+        (payload: {
+          workspaceId: string;
+          workspaceName: string;
+          demotedUserId: string | null;
+          demotedUserName: string | null;
+          newLeaderId: string;
+          newLeaderName: string;
+        }) => {
+          const session = getSession();
+          if (!session) return;
+
+          // If current user is the demoted leader (e.g. Sari)
+          if (session.id === payload.demotedUserId) {
+            setIsTeamModalOpen(false);
+            const updatedSession: UserSession = {
+              ...session,
+              role: 'USER',
+              workspaceRole: 'AGENT',
+            };
+            setSession(updatedSession);
+            setUser(updatedSession as any);
+            setWorkspace((prev) =>
+              prev ? { ...prev, isLeader: false, inviteToken: '', inviteUrl: '', members: [] } : null,
+            );
+            alert(
+              `Leadership Authority Reassigned: Super Admin has appointed ${payload.newLeaderName} as the new Pod Leader of ${payload.workspaceName}. Your team management modal has been closed and leader permissions have been revoked.`,
+            );
+          }
+
+          // If current user is the promoted new leader (e.g. Tita)
+          if (session.id === payload.newLeaderId) {
+            const updatedSession: UserSession = {
+              ...session,
+              role: 'LEADER',
+              workspaceRole: 'LEADER',
+            };
+            setSession(updatedSession);
+            setUser(updatedSession as any);
+            if (session.username) {
+              fetchMyWorkspace(session.username).then((ws) => {
+                if (ws) setWorkspace(ws);
+              });
+            }
+          }
+        },
+      );
     } catch {
       setIsConnected(false);
     }

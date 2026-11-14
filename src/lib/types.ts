@@ -75,6 +75,8 @@ export interface WorkspaceData {
   remainingSeats: number;
   members: WorkspaceMember[];
   isLeader?: boolean;
+  isQuotaLocked?: boolean;
+  assignedQuota?: number;
 }
 
 export interface ValidateInviteResult {

@@ -725,7 +725,7 @@ export async function fetchSuperAdminCockpit(identifier: string): Promise<any> {
   }
 }
 
-export async function regenerateToken(token: string): Promise<{
+export async function regenerateToken(token: string, identifier?: string): Promise<{
   success: boolean;
   oldToken?: string;
   newToken?: string;
@@ -739,7 +739,7 @@ export async function regenerateToken(token: string): Promise<{
     const res = await fetch(`${API_BASE_URL}/workspace/regenerate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, identifier }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

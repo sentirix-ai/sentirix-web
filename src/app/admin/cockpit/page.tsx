@@ -47,7 +47,14 @@ import {
 
 const cleanPodName = (name?: string) => {
   if (!name) return '';
-  return name.replace(/\s+Pod$/i, '').trim();
+  const trimmed = name.replace(/\s+Pod$/i, '').trim();
+  if (trimmed.toLowerCase().includes('tax filing')) {
+    return 'Tax & IRS Compliance Operations';
+  }
+  if (trimmed.toLowerCase().includes('client retainer')) {
+    return 'Client Retainer & Contract Operations';
+  }
+  return trimmed;
 };
 
 const INDUSTRY_DISPLAY_NAMES: Record<string, string> = {
@@ -467,26 +474,23 @@ export default function SuperAdminCockpitPage() {
         <td className="py-3.5 px-4">
           <div className="flex items-center gap-3">
             {badgePrefix}
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-white">{user.fullName}</span>
-                <span
-                  className={`text-[9px] font-extrabold px-2 py-0.5 rounded ${
-                    user.role === 'SUPER_ADMIN'
-                      ? 'bg-purple-950 text-purple-300 border border-purple-800'
-                      : user.role === 'LEADER'
-                        ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                        : 'bg-blue-950 text-blue-300 border border-blue-800'
-                  }`}
-                >
-                  {user.role === 'SUPER_ADMIN'
-                    ? 'SUPER ADMIN'
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-white">{user.fullName}</span>
+              <span
+                className={`text-[9px] font-extrabold px-2 py-0.5 rounded ${
+                  user.role === 'SUPER_ADMIN'
+                    ? 'bg-purple-950 text-purple-300 border border-purple-800'
                     : user.role === 'LEADER'
-                      ? 'LEADER'
-                      : 'AGENT'}
-                </span>
-              </div>
-              <span className="text-[11px] text-slate-500 font-mono">@{user.username}</span>
+                      ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                      : 'bg-blue-950 text-blue-300 border border-blue-800'
+                }`}
+              >
+                {user.role === 'SUPER_ADMIN'
+                  ? 'SUPER ADMIN'
+                  : user.role === 'LEADER'
+                    ? 'LEADER'
+                    : 'AGENT'}
+              </span>
             </div>
           </div>
         </td>
@@ -828,8 +832,8 @@ export default function SuperAdminCockpitPage() {
                     </div>
 
                     <div>
-                      <h3 className="text-sm font-extrabold text-white">
-                        {getSectorName(org.industry, org.customIndustryDescription)}
+                      <h3 className="text-sm font-extrabold text-white leading-snug">
+                        {cleanPodName(ws.name)}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-1.5">
                         <span className="text-xs text-slate-400">Leader:</span>
@@ -1070,7 +1074,7 @@ export default function SuperAdminCockpitPage() {
                                   </span>
                                 ) : (
                                   <span className="text-[10px] text-slate-500 font-mono w-4 shrink-0 text-center">
-                                    #{uIdx}
+                                    {leaderUser ? uIdx : uIdx + 1}
                                   </span>
                                 ),
                               );
@@ -1095,8 +1099,14 @@ export default function SuperAdminCockpitPage() {
                         Login &amp; Logout History: {selectedUserHistory.fullName}
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Role: <strong className="text-white">{selectedUserHistory.role}</strong> &bull; Pod:{' '}
-                        <strong className="text-white">{selectedUserHistory.podName}</strong>
+                        Role:{' '}
+                        <strong className="text-white">
+                          {selectedUserHistory.role === 'LEADER'
+                            ? 'Pod Leader'
+                            : selectedUserHistory.role === 'SUPER_ADMIN'
+                              ? 'Executive Super Admin'
+                              : 'Frontline Agent'}
+                        </strong>
                       </p>
                     </div>
                     <button
@@ -1345,24 +1355,6 @@ export default function SuperAdminCockpitPage() {
                               )}
                             </div>
 
-                            {/* Domain Services List directly below Quota Locked */}
-                            {ws.services && ws.services.length > 0 && (
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                  Domain Services:
-                                </span>
-                                {ws.services.map((svc: string, sIdx: number) => (
-                                  <span
-                                    key={svc}
-                                    className="text-[11px] font-medium bg-[#0B0F19] text-blue-300 px-2.5 py-0.5 rounded-md border border-slate-800 flex items-center gap-1"
-                                  >
-                                    <span className="text-blue-400 font-bold">({sIdx + 1})</span>
-                                    <span>{svc}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
                             <p className="text-[11px] text-slate-400">
                               Assigned Leader: <strong className="text-white">{ws.leaderName || 'Unclaimed'}</strong> &bull; Active Personnel: <strong className="text-white">{orderedUsers.length}</strong>
                             </p>
@@ -1385,15 +1377,16 @@ export default function SuperAdminCockpitPage() {
                           <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                             <tr>
                               <th className="py-3 px-4">Personnel &amp; Role</th>
-                              <th className="py-3 px-4">Account Identifier</th>
-                              <th className="py-3 px-4">Operational Status</th>
+                              <th className="py-3 px-4">Served Today (Daily)</th>
+                              <th className="py-3 px-4">Lifetime Served</th>
+                              <th className="py-3 px-4">Avg Handling Time</th>
                               <th className="py-3 px-4 text-right">Super Admin Authority</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60 font-medium">
                             {filteredUsers.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="py-8 text-center text-slate-500 italic">
+                                <td colSpan={5} className="py-8 text-center text-slate-500 italic">
                                   {personnelSearchQuery.trim()
                                     ? `No personnel found matching "${personnelSearchQuery}" in this pod.`
                                     : 'No personnel activated in this pod yet.'}
@@ -1402,6 +1395,11 @@ export default function SuperAdminCockpitPage() {
                             ) : (
                               filteredUsers.map((user: any) => {
                                 const isLeader = user.role === 'LEADER';
+                                const memberIndex = memberUsers.findIndex(
+                                  (m: any) => (m.userId || m.id) === (user.userId || user.id),
+                                );
+                                const memberNumber = memberIndex !== -1 ? memberIndex + 1 : 1;
+
                                 return (
                                   <tr
                                     key={user.userId || user.id}
@@ -1409,46 +1407,65 @@ export default function SuperAdminCockpitPage() {
                                   >
                                     {/* Personnel & Role */}
                                     <td className="py-3.5 px-4">
-                                      <div className="flex items-center gap-2.5">
-                                        <span className="font-bold text-white text-xs">
-                                          {user.fullName || user.username}
-                                        </span>
+                                      <div className="flex items-center gap-3">
                                         {isLeader ? (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                                            <Crown className="w-2.5 h-2.5" />
-                                            <span>Pod Leader</span>
+                                          <span className="w-5 h-5 rounded bg-amber-950 border border-amber-500/60 text-amber-300 flex items-center justify-center shrink-0">
+                                            <Crown className="w-3 h-3 text-amber-400" />
                                           </span>
                                         ) : (
-                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-300 border border-blue-500/40">
-                                            Frontline Agent
+                                          <span className="text-[10px] text-slate-500 font-mono w-4 shrink-0 text-center">
+                                            {memberNumber}
                                           </span>
                                         )}
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-bold text-white text-xs">
+                                            {user.fullName || user.username}
+                                          </span>
+                                          {isLeader ? (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                              <span>Pod Leader</span>
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-300 border border-blue-500/40">
+                                              Frontline Agent
+                                            </span>
+                                          )}
+                                        </div>
                                       </div>
                                     </td>
 
-                                    {/* Account Identifier */}
-                                    <td className="py-3.5 px-4">
-                                      <span className="font-mono text-[11px] text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-800">
-                                        {user.userId || user.id}
-                                      </span>
-                                    </td>
-
-                                    {/* Operational Status */}
+                                    {/* 1. Customers Served Today (Resets Daily at 00:00) */}
                                     <td className="py-3.5 px-4">
                                       <div className="flex items-center gap-2">
-                                        <span
-                                          className={`w-2 h-2 rounded-full ${
-                                            user.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
-                                          }`}
-                                        />
-                                        <span
-                                          className={`text-xs font-semibold ${
-                                            user.isOnline ? 'text-emerald-400' : 'text-slate-500'
-                                          }`}
-                                        >
-                                          {user.isOnline ? 'Active Online' : 'Offline'}
+                                        <span className="font-mono font-black text-white text-xs bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg shadow-inner">
+                                          {user.customersServedToday ?? 0}
                                         </span>
+                                        <span className="text-[11px] text-slate-400 font-medium">Customers</span>
                                       </div>
+                                    </td>
+
+                                    {/* 2. Lifetime Customers Served (Cumulative, No Reset) */}
+                                    <td className="py-3.5 px-4">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-mono font-black text-emerald-400 text-xs bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1 rounded-lg shadow-inner">
+                                          {user.lifetimeCustomersServed ?? 0}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400 font-medium">Total</span>
+                                      </div>
+                                    </td>
+
+                                    {/* 3. Average Handling Time (AHT) */}
+                                    <td className="py-3.5 px-4">
+                                      {user.avgHandlingTimeSeconds && user.avgHandlingTimeSeconds > 0 ? (
+                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-950/40 border border-blue-500/30">
+                                          <Clock className="w-3 h-3 text-blue-400" />
+                                          <span className="font-mono text-xs font-bold text-blue-300">
+                                            {formatDuration(user.avgHandlingTimeSeconds)}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-500 text-xs font-mono">&mdash;</span>
+                                      )}
                                     </td>
 
                                     {/* Super Admin Authority (Action) */}
@@ -1767,7 +1784,7 @@ export default function SuperAdminCockpitPage() {
                                   <tr key={tok.id} className="hover:bg-slate-800/40 transition-colors">
                                     <td className="py-3 px-4">
                                       <div className="flex items-center gap-2 pl-3">
-                                        <span className="text-[10px] text-slate-500 font-mono">#{mIdx + 1}</span>
+                                        <span className="text-[10px] text-slate-500 font-mono">{mIdx + 1}</span>
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
                                           AGENT
                                         </span>
@@ -1922,26 +1939,18 @@ export default function SuperAdminCockpitPage() {
                       {crisisTickets.map((t: any) => (
                         <div
                           key={t.id}
-                          className="p-4 rounded-xl bg-red-950/30 border border-red-800/80 flex items-center justify-between"
+                          className="p-4 rounded-xl bg-red-950/30 border border-red-800/80"
                         >
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono text-xs font-black text-red-400">
-                                #{t.ticketNumber}
-                              </span>
-                              <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
-                                {t.priority}
-                              </span>
-                              <span className="text-xs text-slate-400">in {t.podName}</span>
-                            </div>
-                            <h4 className="text-xs font-bold text-white">{t.title}</h4>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-xs font-black text-red-400">
+                              #{t.ticketNumber}
+                            </span>
+                            <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
+                              {t.priority}
+                            </span>
+                            <span className="text-xs text-slate-400">in {t.podName}</span>
                           </div>
-                          <Link
-                            href="/dashboard"
-                            className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all"
-                          >
-                            Open Ticket
-                          </Link>
+                          <h4 className="text-xs font-bold text-white">{t.title}</h4>
                         </div>
                       ))}
                     </div>
@@ -1958,26 +1967,18 @@ export default function SuperAdminCockpitPage() {
                       {slaBreachedTickets.map((t: any) => (
                         <div
                           key={t.id}
-                          className="p-4 rounded-xl bg-amber-950/25 border border-amber-800/70 flex items-center justify-between"
+                          className="p-4 rounded-xl bg-amber-950/25 border border-amber-800/70"
                         >
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono text-xs font-black text-amber-400">
-                                #{t.ticketNumber}
-                              </span>
-                              <span className="text-[10px] font-bold bg-amber-900/60 text-amber-200 px-2 py-0.5 rounded">
-                                Delayed {t.elapsedMinutes} Min
-                              </span>
-                              <span className="text-xs text-slate-400">in {t.podName}</span>
-                            </div>
-                            <h4 className="text-xs font-bold text-white">{t.title}</h4>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-xs font-black text-amber-400">
+                              #{t.ticketNumber}
+                            </span>
+                            <span className="text-[10px] font-bold bg-amber-900/60 text-amber-200 px-2 py-0.5 rounded">
+                              Delayed {t.elapsedMinutes} Min
+                            </span>
+                            <span className="text-xs text-slate-400">in {t.podName}</span>
                           </div>
-                          <Link
-                            href="/dashboard"
-                            className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all"
-                          >
-                            Open Ticket
-                          </Link>
+                          <h4 className="text-xs font-bold text-white">{t.title}</h4>
                         </div>
                       ))}
                     </div>
