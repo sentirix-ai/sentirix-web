@@ -30,6 +30,11 @@ import {
 } from '../../lib/api';
 import { setSession } from '../../lib/auth';
 
+const cleanPodName = (name?: string) => {
+  if (!name) return '';
+  return name.replace(/\s+Pod$/i, '').trim();
+};
+
 function JoinWorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -60,7 +65,7 @@ function JoinWorkspaceContent() {
   useEffect(() => {
     if (!token) {
       setIsLoading(false);
-      setErrorMessage('Token undangan tidak ditemukan pada URL ini.');
+      setErrorMessage('Invitation token not found in URL.');
       return;
     }
 
@@ -72,7 +77,7 @@ function JoinWorkspaceContent() {
         setTokenType('LEADER');
         const res = await fetchLeaderTokenStatus(token);
         if (!res.valid) {
-          setErrorMessage(res.error || 'Token Leader tidak valid atau sudah kadaluwarsa.');
+          setErrorMessage(res.error || 'Leader token is invalid or has expired.');
         } else {
           setTokenData(res);
           if (res.isExistingLeader && res.existingLeaderName) {
@@ -93,7 +98,7 @@ function JoinWorkspaceContent() {
         setTokenType('AGENT');
         const res = await fetchAgentTokenStatus(token);
         if (!res.valid) {
-          setErrorMessage(res.error || 'Token Agen tidak valid atau sudah digunakan.');
+          setErrorMessage(res.error || 'Agent token is invalid or has already been used.');
         } else {
           setTokenData(res);
           if (res.assignedMemberName) {
@@ -106,12 +111,12 @@ function JoinWorkspaceContent() {
         try {
           const res = await validateWorkspaceInvite(token);
           if (!res.valid) {
-            setErrorMessage(res.error || 'Link undangan tidak valid.');
+            setErrorMessage(res.error || 'Invitation link is invalid.');
           } else {
             setTokenData(res);
           }
         } catch {
-          setErrorMessage('Gagal menghubungi server untuk memvalidasi token.');
+          setErrorMessage('Failed to connect to server to validate token.');
         }
       }
     };
@@ -119,11 +124,11 @@ function JoinWorkspaceContent() {
     inspectToken();
   }, [token]);
 
-  // Handle Leader Quota Locking (Click [✓ Kunci Kuota Pod])
+  // Handle Leader Quota Locking (Click [✓ Lock Pod Quota])
   const handleLockLeaderQuota = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setFormError('Mohon isi nama lengkap Anda (minimal 2 karakter).');
+      setFormError('Please enter your full name (at least 2 characters).');
       return;
     }
 
@@ -142,7 +147,7 @@ function JoinWorkspaceContent() {
       });
 
       if (!res.success) {
-        setFormError(res.error || 'Gagal mengunci kuota pod.');
+        setFormError(res.error || 'Failed to lock pod quota.');
         return;
       }
 
@@ -172,7 +177,7 @@ function JoinWorkspaceContent() {
         agentTokens: res.agentTokens || [],
       });
     } catch {
-      setErrorMessage('Terjadi kesalahan jaringan.');
+      setErrorMessage('A network error occurred.');
     } finally {
       setIsSubmitting(false);
     }
@@ -182,7 +187,7 @@ function JoinWorkspaceContent() {
   const handleJoinAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setErrorMessage('Mohon isi nama lengkap Anda (minimal 2 karakter).');
+      setErrorMessage('Please enter your full name (at least 2 characters).');
       return;
     }
 
@@ -197,7 +202,7 @@ function JoinWorkspaceContent() {
       });
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Gagal mengklaim token agen.');
+        setErrorMessage(res.error || 'Failed to claim agent token.');
         return;
       }
 
@@ -218,7 +223,7 @@ function JoinWorkspaceContent() {
 
       window.location.href = '/dashboard';
     } catch {
-      setErrorMessage('Terjadi kendala jaringan saat bergabung.');
+      setErrorMessage('A network error occurred while joining.');
     } finally {
       setIsSubmitting(false);
     }
@@ -228,7 +233,7 @@ function JoinWorkspaceContent() {
   const handleJoinLegacy = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setErrorMessage('Mohon isi nama lengkap Anda.');
+      setErrorMessage('Please enter your full name.');
       return;
     }
 
@@ -239,10 +244,10 @@ function JoinWorkspaceContent() {
         setSession(res.user);
         window.location.href = '/dashboard';
       } else {
-        setErrorMessage(res.error || 'Gagal bergabung.');
+        setErrorMessage(res.error || 'Failed to join workspace.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan koneksi.');
+      setErrorMessage('Connection error occurred.');
     } finally {
       setIsSubmitting(false);
     }
@@ -271,10 +276,10 @@ function JoinWorkspaceContent() {
           };
         });
       } else {
-        setErrorMessage(res.error || 'Gagal meregenerate token bawahan.');
+        setErrorMessage(res.error || 'Failed to regenerate subordinate token.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan koneksi.');
+      setErrorMessage('Connection error occurred.');
     } finally {
       setRegeneratingToken(null);
     }
@@ -315,14 +320,14 @@ function JoinWorkspaceContent() {
         {isLoading ? (
           <div className="p-8 text-center bg-[#111827] border border-slate-800 rounded-2xl">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <span className="text-xs text-slate-400">Memvalidasi token aktivasi...</span>
+            <span className="text-xs text-slate-400">Validating activation token...</span>
           </div>
         ) : errorMessage ? (
           <div className="p-8 bg-[#111827] border border-red-800/80 rounded-2xl text-center space-y-4 shadow-xl">
             <div className="w-12 h-12 rounded-xl bg-red-950 text-red-400 flex items-center justify-center mx-auto border border-red-800">
               <AlertCircle className="w-6 h-6" />
             </div>
-            <h2 className="text-base font-bold text-white">Akses Token Ditolak</h2>
+            <h2 className="text-base font-bold text-white">Token Access Denied</h2>
             <p className="text-xs text-red-300 leading-relaxed max-w-md mx-auto">{errorMessage}</p>
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               <button
@@ -334,13 +339,13 @@ function JoinWorkspaceContent() {
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Kembali ke Halaman Pemilihan Token &amp; Kuota</span>
+                <span>Back to Token &amp; Quota Selection</span>
               </button>
               <a
                 href="/"
                 className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 transition-all font-semibold"
               >
-                <span>Kembali ke Beranda</span>
+                <span>Back to Home</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -353,15 +358,15 @@ function JoinWorkspaceContent() {
                 <Check className="w-7 h-7 stroke-[3]" />
               </div>
               <span className="text-[10px] font-extrabold uppercase tracking-wider bg-emerald-950 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/30">
-                ● STATUS: KUOTA TERKUNCI PERMANEN
+                ● STATUS: PERMANENT QUOTA LOCKED
               </span>
               <h1 className="text-xl font-black text-white">
-                Pod &amp; Kuota Berhasil Diaktifkan!
+                Pod &amp; Quota Successfully Activated!
               </h1>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Anda resmi memimpin <strong>{leaderLockedResult.workspaceName}</strong> dengan total kapasitas{' '}
-                <strong>{leaderLockedResult.assignedQuota} personel</strong> (1 Anda sebagai Leader +{' '}
-                {leaderLockedResult.agentTokens.length} Agen).
+                You officially lead <strong>{cleanPodName(leaderLockedResult.workspaceName)}</strong> with a total team capacity of{' '}
+                <strong>{leaderLockedResult.assignedQuota} personnel</strong> (1 Leader +{' '}
+                {leaderLockedResult.agentTokens.length} Agents).
               </p>
             </div>
 
@@ -369,14 +374,14 @@ function JoinWorkspaceContent() {
             <div className="space-y-3 pt-2 border-t border-slate-800">
               <h3 className="text-xs font-bold text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-blue-400" />
-                <span>Bagikan {leaderLockedResult.agentTokens.length} Token Single-Use ke Bawahan Anda:</span>
+                <span>Share {leaderLockedResult.agentTokens.length} Single-Use Tokens with Your Subordinates:</span>
               </h3>
 
               <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {leaderLockedResult.agentTokens.map((agt, idx) => {
                   const isCopied = copiedToken === agt.token;
                   const waText = encodeURIComponent(
-                    `Halo, silakan bergabung ke tim saya di ${leaderLockedResult.workspaceName} Sentirix melalui tautan resmi ini: ${agt.joinUrl}`,
+                    `Hello, please join my team at ${cleanPodName(leaderLockedResult.workspaceName)} on Sentirix via this official invitation: ${agt.joinUrl}`,
                   );
                   return (
                     <div
@@ -399,7 +404,7 @@ function JoinWorkspaceContent() {
                               : 'bg-[#111827] border-slate-700 text-slate-300 hover:text-white'
                           }`}
                         >
-                          {isCopied ? 'Tersalin' : 'Salin'}
+                          {isCopied ? 'Copied' : 'Copy'}
                         </button>
                         <a
                           href={`https://wa.me/?text=${waText}`}
@@ -414,14 +419,14 @@ function JoinWorkspaceContent() {
                           disabled={regeneratingToken === agt.token}
                           onClick={() => handleRegenerateAgentToken(agt.token)}
                           className="px-2.5 py-1 rounded text-[11px] font-bold bg-[#111827] border border-blue-500/40 text-blue-300 hover:border-blue-400 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                          title="Buat ulang token untuk slot bawahan ini jika link hilang"
+                          title="Regenerate token for this subordinate slot if link is lost"
                         >
                           <RefreshCw
                             className={`w-3 h-3 ${
                               regeneratingToken === agt.token ? 'animate-spin text-blue-400' : ''
                             }`}
                           />
-                          <span>{regeneratingToken === agt.token ? 'Proses...' : 'Regenerate'}</span>
+                          <span>{regeneratingToken === agt.token ? 'Processing...' : 'Regenerate'}</span>
                         </button>
                       </div>
                     </div>
@@ -435,7 +440,7 @@ function JoinWorkspaceContent() {
               onClick={() => (window.location.href = '/dashboard')}
               className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
             >
-              <span>Masuk ke Workspace Tiket Pod Anda</span>
+              <span>Enter Pod Ticket Workspace</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -444,22 +449,37 @@ function JoinWorkspaceContent() {
             /* LEADER RE-LOGIN VIEW (Meta, Tita entering with regenerated token) */
             <div className="p-6 sm:p-8 bg-[#111827] border border-blue-500/40 rounded-2xl shadow-2xl space-y-6">
               <div className="text-center space-y-2">
-                <div className="w-14 h-14 rounded-2xl bg-amber-950/80 border border-amber-500/50 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-950/40">
-                  <Crown className="w-7 h-7" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Pod Leader</span>
                 </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
-                  <span>Sesi Kepemimpinan Pod Aktif</span>
-                </div>
-                <h1 className="text-xl font-black text-white">
-                  Selamat Datang Kembali, {tokenData?.existingLeaderName || fullName || 'Leader'}!
+
+                {tokenData?.organization?.name && (
+                  <div className="text-xs font-bold text-slate-400 tracking-wide">
+                    {tokenData.organization.name}
+                  </div>
+                )}
+
+                <h1 className="text-xl font-black text-white pt-1">
+                  Welcome back, {tokenData?.existingLeaderName || fullName || 'Leader'}!
                 </h1>
-                <p className="text-xs text-slate-400">
-                  Pod: <strong className="text-white">{tokenData?.workspace?.name}</strong> &bull; Organisasi:{' '}
-                  <strong className="text-white">{tokenData?.organization?.name}</strong>
-                </p>
-                <div className="p-3 rounded-xl bg-[#0B0F19] border border-slate-800 text-xs text-slate-300 flex items-center justify-between max-w-sm mx-auto mt-2">
-                  <span>Kapasitas Pod Terkunci:</span>
-                  <strong className="text-emerald-400">{tokenData?.workspace?.assignedQuota} Personel</strong>
+              </div>
+
+              {/* Specialization Unit Card */}
+              <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">
+                    Specialized Operational Pod
+                  </span>
+                  <h2 className="text-sm font-bold text-white leading-snug">
+                    {cleanPodName(tokenData?.workspace?.name)}
+                  </h2>
+                </div>
+                <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Locked Team Capacity:</span>
+                  <strong className="text-emerald-400 font-bold">
+                    {tokenData?.workspace?.assignedQuota} Personnel
+                  </strong>
                 </div>
               </div>
 
@@ -471,45 +491,19 @@ function JoinWorkspaceContent() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Nama Lengkap Leader
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-hidden focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Password Akun (Opsional)
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
-                  />
-                </div>
-
                 <button
                   type="submit"
-                  disabled={isSubmitting || !fullName.trim()}
+                  disabled={isSubmitting}
                   className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Memverifikasi &amp; Masuk...</span>
+                      <span>Verifying &amp; Entering...</span>
                     </div>
                   ) : (
                     <>
-                      <span>Masuk ke Dashboard Leader Pod</span>
+                      <span>Enter Leader Pod Dashboard</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -519,16 +513,19 @@ function JoinWorkspaceContent() {
           ) : (
           /* LEADER ACTIVATION & CAPACITY SELECTION FORM */
           <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-3 mx-auto">
-                <span>Undangan Kepemimpinan Pod (Single-Use Token)</span>
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mx-auto">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                <span>Pod Leader</span>
               </div>
-              <h1 className="text-xl font-black text-white">
-                Aktivasi Leader: {tokenData?.workspace?.name}
+              {tokenData?.organization?.name && (
+                <div className="text-xs font-bold text-slate-400 tracking-wide">
+                  {tokenData.organization.name}
+                </div>
+              )}
+              <h1 className="text-xl font-black text-white pt-1">
+                Leader Activation: {cleanPodName(tokenData?.workspace?.name)}
               </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Organisasi: <strong className="text-white">{tokenData?.organization?.name}</strong>
-              </p>
             </div>
 
             <form onSubmit={handleLockLeaderQuota} className="space-y-5">
@@ -543,18 +540,18 @@ function JoinWorkspaceContent() {
               {/* Leader Profile Details */}
               <div className="space-y-4 p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Langkah 1: Lengkapi Akun Leader Anda
+                  Step 1: Complete Your Leader Profile
                 </span>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Nama Lengkap Anda <span className="text-red-400">*</span>
+                    Your Full Name <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Contoh: Ahmad Dahlan"
+                    placeholder="e.g. Marcus Vance"
                     className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
                   />
                 </div>
@@ -565,24 +562,24 @@ function JoinWorkspaceContent() {
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    Langkah 2: Tentukan Kuota Bawahan Pod Anda
+                    Step 2: Allocate Your Pod Subordinate Quota
                   </span>
                 </div>
 
                 {/* Quota Stats Overview */}
                 <div className="p-3 rounded-lg bg-[#111827] border border-slate-800 text-[11px] space-y-1.5 text-slate-300">
                   <div className="flex justify-between">
-                    <span>Total Kuota Organisasi:</span>
-                    <strong className="text-white">{tokenData?.quotaStats?.totalSeats} Orang</strong>
+                    <span>Total Organization Quota:</span>
+                    <strong className="text-white">{tokenData?.quotaStats?.totalSeats} Seats</strong>
                   </div>
                   <div className="flex justify-between">
-                    <span>Telah Dikunci Pod Lain:</span>
-                    <strong className="text-amber-400">{tokenData?.quotaStats?.lockedSeats} Orang</strong>
+                    <span>Locked by Other Pods:</span>
+                    <strong className="text-amber-400">{tokenData?.quotaStats?.lockedSeats} Seats</strong>
                   </div>
                   <div className="flex justify-between pt-1 border-t border-slate-800 font-semibold text-blue-300">
-                    <span>Maksimal Tersedia untuk Pod Anda:</span>
+                    <span>Max Available for Your Pod:</span>
                     <strong className="text-emerald-400">
-                      {tokenData?.quotaStats?.maxSubordinatesAllowed} Bawahan (+ 1 Leader)
+                      {tokenData?.quotaStats?.maxSubordinatesAllowed} Subordinates (+ 1 Leader)
                     </strong>
                   </div>
                 </div>
@@ -591,24 +588,24 @@ function JoinWorkspaceContent() {
                 <div className="p-3 rounded-xl bg-blue-950/80 border border-cyan-500/50 text-cyan-200 text-xs flex items-center justify-between shadow-inner">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-                    <span className="font-semibold text-slate-300">Batas Maksimal Kuota Pod:</span>
+                    <span className="font-semibold text-slate-300">Pod Quota Capacity Limit:</span>
                   </div>
                   <span className="font-mono font-black text-cyan-300 bg-blue-900/90 px-2.5 py-1 rounded-lg border border-cyan-400/40 text-xs">
-                    Maksimal {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} Bawahan (+ 1 Leader)
+                    Max {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} Subordinates (+ 1 Leader)
                   </span>
                 </div>
 
                 {/* Dropdown Selection & Checkmark Locking Button */}
                 <div className="pt-2">
                   <label className="block text-xs font-bold text-white mb-1.5 flex items-center justify-between">
-                    <span>Pilih Jumlah Anggota Bawahan:</span>
+                    <span>Select Subordinate Seats:</span>
                     {tokenData?.quotaStats?.isLastPod ? (
                       <span className="text-[11px] text-amber-400 font-bold">
-                        (Pod Terakhir: Hanya 1 Pilihan Kuota Maksimal Tersedia)
+                        (Final Pod: Only 1 Max Allocation Available)
                       </span>
                     ) : (
                       <span className="text-[11px] text-cyan-400 font-medium">
-                        (Tersedia: 1 s.d. {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} orang)
+                        (Available: 1 to {tokenData?.quotaStats?.maxSubordinatesAllowed || 1} seats)
                       </span>
                     )}
                   </label>
@@ -621,7 +618,7 @@ function JoinWorkspaceContent() {
                           const val = Number(e.target.value);
                           const max = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
                           if (val > max) {
-                            setFormError(`Jumlah kuota terlalu banyak. Maksimal yang bisa dipilih adalah ${max} orang.`);
+                            setFormError(`Subordinate quota exceeds maximum allowed (${max} seats).`);
                           } else {
                             if (formError) setFormError(null);
                             setSelectedSubordinates(val);
@@ -635,7 +632,7 @@ function JoinWorkspaceContent() {
                       >
                         {tokenData?.quotaStats?.allowedOptions?.map((num: number) => (
                           <option key={num} value={num} className="bg-[#111827] text-white">
-                            {num} Orang Bawahan (+ 1 Anda sebagai Leader = {num + 1} Orang)
+                            {num} Subordinates (+ 1 Leader = {num + 1} Total Seats)
                           </option>
                         ))}
                       </select>
@@ -646,7 +643,7 @@ function JoinWorkspaceContent() {
                       onClick={() => {
                         const max = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
                         if (selectedSubordinates > max) {
-                          setFormError(`Jumlah kuota terlalu banyak. Maksimal yang bisa dipilih adalah ${max} orang.`);
+                          setFormError(`Subordinate quota exceeds maximum allowed (${max} seats).`);
                           return;
                         }
                         setFormError(null);
@@ -659,16 +656,16 @@ function JoinWorkspaceContent() {
                       }`}
                     >
                       <Check className="w-4 h-4 stroke-[3]" />
-                      <span>{isQuotaLocked ? 'Kuota Terkunci' : 'Kunci Kuota'}</span>
+                      <span>{isQuotaLocked ? 'Quota Locked' : 'Lock Quota'}</span>
                     </button>
                   </div>
                   {tokenData?.quotaStats?.isLastPod ? (
                     <p className="text-[10px] text-amber-300 mt-2 font-medium bg-amber-950/40 border border-amber-500/30 rounded-lg p-2 leading-relaxed">
-                      *Karena pod lain telah mengunci kuota, maka pod terakhir ini otomatis hanya menyisakan tepat 1 pilihan kuota maksimal ({tokenData?.quotaStats?.maxSubordinatesAllowed} bawahan + 1 leader = {tokenData?.quotaStats?.maxSubordinatesAllowed + 1} orang) agar seluruh kapasitas organisasi terisi pas 100%.
+                      *Because other pods have locked their quotas, this final pod automatically receives exactly {tokenData?.quotaStats?.maxSubordinatesAllowed} subordinates (+ 1 leader = {tokenData?.quotaStats?.maxSubordinatesAllowed + 1} people) to ensure 100% full organizational capacity allocation.
                     </p>
                   ) : (
                     <p className="text-[10px] text-slate-400 mt-2">
-                      *Pilihan dropdown dibatasi maksimal {tokenData?.quotaStats?.maxSubordinatesAllowed} orang agar alokasi kuota antar-pod pas 100%. Setelah kuota dikunci dan data lengkap, klik tombol aktivasi di bawah untuk melanjutkan.
+                      *Dropdown options are capped at {tokenData?.quotaStats?.maxSubordinatesAllowed} people to ensure balanced inter-pod allocation. Once locked and confirmed, click the activation button below.
                     </p>
                   )}
                 </div>
@@ -683,11 +680,11 @@ function JoinWorkspaceContent() {
                 {isSubmitting ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Mengaktivasi Akun & Menyiapkan Token...</span>
+                    <span>Activating Account &amp; Generating Tokens...</span>
                   </div>
                 ) : (
                   <>
-                    <span>Aktivasi Link dan Lanjutkan Langkah Berikutnya</span>
+                    <span>Activate Pod &amp; Continue to Next Step</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -696,79 +693,159 @@ function JoinWorkspaceContent() {
           </div>
           )
         ) : tokenType === 'AGENT' ? (
-          /* AGENT ACTIVATION FORM */
-          <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-3">
-                <Users className="w-3.5 h-3.5" />
-                <span>Undangan Anggota Pod Frontline (Single-Use Token)</span>
-              </div>
-              <h1 className="text-xl font-black text-white">
-                {tokenData?.assignedMemberName ? `Selamat Datang Kembali, ${tokenData.assignedMemberName}!` : `Bergabung ke ${tokenData?.workspace?.name}`}
-              </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Pod: <strong className="text-white">{tokenData?.workspace?.name}</strong> &bull; Organisasi:{' '}
-                <strong className="text-white">{tokenData?.organization?.name}</strong> &bull; Leader:{' '}
-                <strong className="text-white">{tokenData?.leaderName}</strong>
-              </p>
-            </div>
+          tokenData?.assignedMemberName ? (
+            /* AGENT RETURNING VIEW (e.g. moko returning) */
+            <div className="p-6 sm:p-8 bg-[#111827] border border-blue-500/40 rounded-2xl shadow-2xl space-y-6">
+              <div className="text-center space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold">
+                  <Users className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Frontline Agent</span>
+                </div>
 
-            <form onSubmit={handleJoinAgent} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Nama Lengkap Anda <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Contoh: Budi Santoso"
-                  className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Password Akun (Opsional)
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
-              >
-                {isSubmitting ? (
-                  <span>Mengaktifkan Akun Agen...</span>
-                ) : (
-                  <>
-                    <span>Gabung &amp; Buka Workspace Tiket Pod</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+                {tokenData?.organization?.name && (
+                  <div className="text-xs font-bold text-slate-400 tracking-wide">
+                    {tokenData.organization.name}
+                  </div>
                 )}
-              </button>
-            </form>
-          </div>
+
+                <h1 className="text-xl font-black text-white pt-1">
+                  Welcome back, {tokenData.assignedMemberName}!
+                </h1>
+              </div>
+
+              {/* Specialization Unit Card */}
+              <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">
+                    Specialized Operational Pod
+                  </span>
+                  <h2 className="text-sm font-bold text-white leading-snug">
+                    {cleanPodName(tokenData?.workspace?.name)}
+                  </h2>
+                </div>
+                {tokenData?.leaderName && (
+                  <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Team Lead:</span>
+                    <strong className="text-white font-bold">{tokenData.leaderName}</strong>
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleJoinAgent} className="space-y-4 max-w-md mx-auto">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Launching Workspace...</span>
+                    </div>
+                  ) : (
+                    <>
+                      <span>Launch Pod Ticket Workspace</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* AGENT FIRST-TIME CLAIM FORM */
+            <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
+              <div className="text-center space-y-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold">
+                  <Users className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Frontline Agent</span>
+                </div>
+
+                {tokenData?.organization?.name && (
+                  <div className="text-xs font-bold text-slate-400 tracking-wide">
+                    {tokenData.organization.name}
+                  </div>
+                )}
+
+                <h1 className="text-xl font-black text-white pt-1">
+                  Join {cleanPodName(tokenData?.workspace?.name)}
+                </h1>
+              </div>
+
+              {/* Specialization Unit Card */}
+              <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-1">
+                    Specialized Operational Pod
+                  </span>
+                  <h2 className="text-sm font-bold text-white leading-snug">
+                    {cleanPodName(tokenData?.workspace?.name)}
+                  </h2>
+                </div>
+                {tokenData?.leaderName && (
+                  <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Team Lead:</span>
+                    <strong className="text-white font-bold">{tokenData.leaderName}</strong>
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleJoinAgent} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Your Full Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g. Alex Morgan"
+                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Account Password (Optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full bg-[#0B0F19] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !fullName.trim()}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <span>Activating Agent Account...</span>
+                  ) : (
+                    <>
+                      <span>Join &amp; Launch Ticket Workspace</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+          )
         ) : (
           /* LEGACY JOIN FORM */
           <div className="p-6 sm:p-8 bg-[#111827] border border-slate-800 rounded-2xl shadow-2xl space-y-6">
             <div>
-              <h1 className="text-xl font-bold text-white">Gabung ke Tim</h1>
+              <h1 className="text-xl font-bold text-white">Join Team</h1>
               <p className="text-xs text-slate-400 mt-1">
                 Workspace: <strong className="text-white">{tokenData?.workspaceName}</strong>
               </p>
             </div>
             <form onSubmit={handleJoinLegacy} className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-300 mb-1">Nama Lengkap</label>
+                <label className="block text-xs text-slate-300 mb-1">Full Name</label>
                 <input
                   type="text"
                   required
@@ -782,7 +859,7 @@ function JoinWorkspaceContent() {
                 disabled={isSubmitting}
                 className="w-full py-3 rounded-xl bg-blue-600 text-white text-xs font-bold cursor-pointer"
               >
-                Gabung
+                Join Workspace
               </button>
             </form>
           </div>

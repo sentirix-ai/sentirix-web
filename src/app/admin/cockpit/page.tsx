@@ -30,9 +30,25 @@ import {
   Mail,
   Code2,
   Trash2,
+  Pencil,
+  Search,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
-import { fetchSuperAdminCockpit, regenerateToken, cleanupDemoTickets } from '../../../lib/api';
+import {
+  fetchSuperAdminCockpit,
+  regenerateToken,
+  cleanupDemoTickets,
+  renamePersonnel,
+  transferPersonnel,
+  promoteLeader,
+  swapPersonnel,
+} from '../../../lib/api';
+
+const cleanPodName = (name?: string) => {
+  if (!name) return '';
+  return name.replace(/\s+Pod$/i, '').trim();
+};
 
 const INDUSTRY_DISPLAY_NAMES: Record<string, string> = {
   PROFESSIONAL_SERVICES: 'Legal & CPA Tax Services',
@@ -66,9 +82,251 @@ export default function SuperAdminCockpitPage() {
   const [isCleaningDemo, setIsCleaningDemo] = useState(false);
   const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'PRESENCE' | 'TOKENS' | 'CRISIS' | 'CHANNELS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<
+    'OVERVIEW' | 'PRESENCE' | 'PERSONNEL' | 'TOKENS' | 'CRISIS' | 'CHANNELS'
+  >('OVERVIEW');
   const [selectedUserHistory, setSelectedUserHistory] = useState<any | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
+
+  // Personnel & Identity Governance State (Approach A)
+  const [editingUser, setEditingUser] = useState<{
+    id: string;
+    fullName: string;
+    role: string;
+    podName?: string;
+  } | null>(null);
+  const [editNameInput, setEditNameInput] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [editNameError, setEditNameError] = useState<string | null>(null);
+  const [personnelSearchQuery, setPersonnelSearchQuery] = useState('');
+
+  // Personnel Transfer (Job Mutation) State
+  const [transferringUser, setTransferringUser] = useState<{
+    id: string;
+    fullName: string;
+    role: string;
+    currentWorkspaceId: string;
+    currentPodName: string;
+  } | null>(null);
+  const [transferTargetPodId, setTransferTargetPodId] = useState<string>('');
+  const [transferTargetRole, setTransferTargetRole] = useState<'AGENT' | 'LEADER'>('AGENT');
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+
+  const handleOpenEditUser = (user: any, podName?: string) => {
+    setEditingUser({
+      id: user.userId || user.id,
+      fullName: user.fullName || user.username,
+      role: user.role,
+      podName: podName || user.podName,
+    });
+    setEditNameInput(user.fullName || user.username);
+    setEditNameError(null);
+  };
+
+  const handleOpenTransferUser = (user: any, podId: string, podName: string) => {
+    const currentWsId = podId || user.workspaceId;
+    setTransferringUser({
+      id: user.userId || user.id,
+      fullName: user.fullName || user.username,
+      role: user.role,
+      currentWorkspaceId: currentWsId,
+      currentPodName: podName || user.podName,
+    });
+
+    const eligiblePods = (cockpitData?.workspaces || []).filter(
+      (w: any) => w.id !== currentWsId,
+    );
+    setTransferTargetPodId(eligiblePods[0]?.id || '');
+    setTransferTargetRole(user.role === 'LEADER' ? 'LEADER' : 'AGENT');
+    setTransferError(null);
+  };
+
+  const handleSavePersonnelName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser || !editNameInput.trim()) return;
+    if (editNameInput.trim().length < 2) {
+      setEditNameError('Please enter a valid full name (at least 2 characters).');
+      return;
+    }
+
+    try {
+      setIsSavingName(true);
+      setEditNameError(null);
+      const res = await renamePersonnel(editingUser.id, editNameInput.trim());
+      if (!res.success) {
+        setEditNameError(res.error || 'Failed to update personnel name.');
+        return;
+      }
+
+      // Update local presenceMonitoring list
+      setCockpitData((prev: any) => {
+        if (!prev) return prev;
+        const updatedPresence = (prev.presenceMonitoring || []).map((u: any) => {
+          if (u.userId === editingUser.id || u.id === editingUser.id) {
+            return { ...u, fullName: editNameInput.trim() };
+          }
+          return u;
+        });
+
+        const updatedWorkspaces = (prev.workspaces || []).map((w: any) => {
+          if (w.leaderName === editingUser.fullName) {
+            return { ...w, leaderName: editNameInput.trim() };
+          }
+          return w;
+        });
+
+        return {
+          ...prev,
+          presenceMonitoring: updatedPresence,
+          workspaces: updatedWorkspaces,
+        };
+      });
+
+      setEditingUser(null);
+    } catch {
+      setEditNameError('Network error while saving name.');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferringUser || !transferTargetPodId) return;
+
+    try {
+      setIsTransferring(true);
+      setTransferError(null);
+      const res = await transferPersonnel(
+        transferringUser.id,
+        transferTargetPodId,
+        transferTargetRole,
+      );
+
+      if (!res.success) {
+        setTransferError(res.error || 'Failed to transfer personnel to target pod.');
+        return;
+      }
+
+      if (session) {
+        await loadData(session, false);
+      }
+
+      setTransferringUser(null);
+    } catch {
+      setTransferError('Network error while processing personnel transfer.');
+    } finally {
+      setIsTransferring(false);
+    }
+  };
+
+  // Promote to Leader State (Intra-pod Role Switch, Capacity Fixed)
+  const [promotingUser, setPromotingUser] = useState<{
+    id: string;
+    fullName: string;
+    podId: string;
+    podName: string;
+    currentLeaderName?: string;
+    quota: number;
+  } | null>(null);
+  const [isPromoting, setIsPromoting] = useState(false);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
+
+  // Swap Personnel Across Pods State (1-to-1 Exchange, Capacities Fixed)
+  const [swappingUserA, setSwappingUserA] = useState<{
+    id: string;
+    fullName: string;
+    role: string;
+    podId: string;
+    podName: string;
+  } | null>(null);
+  const [swapTargetPodId, setSwapTargetPodId] = useState<string>('');
+  const [swapTargetUserBId, setSwapTargetUserBId] = useState<string>('');
+  const [isSwapping, setIsSwapping] = useState(false);
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  const handleOpenPromoteUser = (user: any, pod: any) => {
+    setPromotingUser({
+      id: user.userId || user.id,
+      fullName: user.fullName || user.username,
+      podId: pod.id,
+      podName: cleanPodName(pod.name),
+      currentLeaderName: pod.leaderName || 'Current Leader',
+      quota: pod.assignedQuota || 4,
+    });
+    setPromoteError(null);
+  };
+
+  const handleExecutePromote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promotingUser) return;
+    try {
+      setIsPromoting(true);
+      setPromoteError(null);
+      const res = await promoteLeader(promotingUser.id, promotingUser.podId);
+      if (!res.success) {
+        setPromoteError(res.error || 'Failed to promote personnel to leader.');
+        return;
+      }
+      if (session) {
+        await loadData(session, false);
+      }
+      setPromotingUser(null);
+    } catch {
+      setPromoteError('Network error while processing promotion.');
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
+  const handleOpenSwapUser = (user: any, pod: any) => {
+    const currentWsId = pod.id;
+    setSwappingUserA({
+      id: user.userId || user.id,
+      fullName: user.fullName || user.username,
+      role: user.role,
+      podId: currentWsId,
+      podName: cleanPodName(pod.name),
+    });
+
+    const otherPods = (cockpitData?.workspaces || []).filter((w: any) => w.id !== currentWsId);
+    const firstTargetPod = otherPods[0];
+    const firstTargetPodId = firstTargetPod?.id || '';
+    setSwapTargetPodId(firstTargetPodId);
+
+    if (firstTargetPod) {
+      const targetPodUsers = (cockpitData?.presenceMonitoring || []).filter(
+        (u: any) => u.workspaceId === firstTargetPodId || u.podName === firstTargetPod.name,
+      );
+      setSwapTargetUserBId(targetPodUsers[0]?.userId || targetPodUsers[0]?.id || '');
+    } else {
+      setSwapTargetUserBId('');
+    }
+    setSwapError(null);
+  };
+
+  const handleExecuteSwap = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!swappingUserA || !swapTargetUserBId) return;
+    try {
+      setIsSwapping(true);
+      setSwapError(null);
+      const res = await swapPersonnel(swappingUserA.id, swapTargetUserBId);
+      if (!res.success) {
+        setSwapError(res.error || 'Failed to swap personnel across pods.');
+        return;
+      }
+      if (session) {
+        await loadData(session, false);
+      }
+      setSwappingUserA(null);
+    } catch {
+      setSwapError('Network error while executing personnel swap.');
+    } finally {
+      setIsSwapping(false);
+    }
+  };
 
   useEffect(() => {
     setCurrentTime(Date.now());
@@ -77,14 +335,14 @@ export default function SuperAdminCockpitPage() {
   }, []);
 
   const formatDuration = (seconds: number) => {
-    if (seconds <= 0) return '0 dtk';
-    if (seconds < 60) return `${seconds} dtk`;
+    if (seconds <= 0) return '0s';
+    if (seconds < 60) return `${seconds}s`;
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    if (mins < 60) return `${mins} mnt ${secs} dtk`;
+    if (mins < 60) return `${mins}m ${secs}s`;
     const hours = Math.floor(mins / 60);
     const remMins = mins % 60;
-    return `${hours} jam ${remMins} mnt`;
+    return `${hours}h ${remMins}m`;
   };
 
   const loadData = async (activeUser: UserSession, showSpinner: boolean = true) => {
@@ -94,14 +352,14 @@ export default function SuperAdminCockpitPage() {
       const data = await fetchSuperAdminCockpit(activeUser.username);
       if (!data) {
         if (showSpinner) {
-          setErrorMessage('Gagal memuat data cockpit organisasi. Pastikan Anda telah menyelesaikan setup organisasi.');
+          setErrorMessage('Failed to load organization cockpit data. Please ensure setup is completed.');
         }
       } else {
         setCockpitData(data);
       }
     } catch {
       if (showSpinner) {
-        setErrorMessage('Terjadi kesalahan saat memuat data dari server.');
+        setErrorMessage('An error occurred while loading data from the server.');
       }
     } finally {
       if (showSpinner) setIsLoading(false);
@@ -117,7 +375,6 @@ export default function SuperAdminCockpitPage() {
     setLocalSession(active);
     loadData(active, true);
 
-    // Auto-polling silent refresh setiap 3 detik untuk notifikasi dan sinkronisasi status real-time
     const interval = setInterval(() => {
       loadData(active, false);
     }, 3000);
@@ -142,13 +399,13 @@ export default function SuperAdminCockpitPage() {
     try {
       setIsCleaningDemo(true);
       const res = await cleanupDemoTickets();
-      setDemoNotice(`Berhasil membersihkan ${res.count} tiket demo dari database & antrean.`);
+      setDemoNotice(`Successfully cleaned up ${res.count} demo tickets from database & queues.`);
       if (session) {
         await loadData(session, false);
       }
       setTimeout(() => setDemoNotice(null), 4000);
     } catch {
-      setDemoNotice('Gagal membersihkan tiket demo.');
+      setDemoNotice('Failed to cleanup demo tickets.');
       setTimeout(() => setDemoNotice(null), 3000);
     } finally {
       setIsCleaningDemo(false);
@@ -162,10 +419,10 @@ export default function SuperAdminCockpitPage() {
       if (res.success && session) {
         await loadData(session);
       } else {
-        setErrorMessage(res.error || 'Gagal meregenerate token.');
+        setErrorMessage(res.error || 'Failed to regenerate token.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan koneksi.');
+      setErrorMessage('Network connection error.');
     } finally {
       setRegeneratingToken(null);
     }
@@ -184,7 +441,7 @@ export default function SuperAdminCockpitPage() {
       <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-xs text-slate-400">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span>Memuat Executive Cockpit Sentirix...</span>
+          <span>Loading Sentirix Executive Cockpit...</span>
         </div>
       </div>
     );
@@ -206,13 +463,10 @@ export default function SuperAdminCockpitPage() {
 
     return (
       <tr key={user.userId} className="hover:bg-[#1E293B]/40 transition-colors">
-        {/* Personel Name & Role */}
+        {/* Personnel Name & Role */}
         <td className="py-3.5 px-4">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             {badgePrefix}
-            <div className="w-8 h-8 rounded-lg bg-blue-950 border border-blue-700/50 text-blue-300 font-bold text-xs flex items-center justify-center shrink-0">
-              {user.fullName ? user.fullName.slice(0, 2).toUpperCase() : 'US'}
-            </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-white">{user.fullName}</span>
@@ -229,7 +483,7 @@ export default function SuperAdminCockpitPage() {
                     ? 'SUPER ADMIN'
                     : user.role === 'LEADER'
                       ? 'LEADER'
-                      : 'MEMBER'}
+                      : 'AGENT'}
                 </span>
               </div>
               <span className="text-[11px] text-slate-500 font-mono">@{user.username}</span>
@@ -237,47 +491,47 @@ export default function SuperAdminCockpitPage() {
           </div>
         </td>
 
-        {/* Kesiapan & Beban Kerja (Opsi 1) */}
+        {/* Readiness & Workload */}
         <td className="py-3.5 px-4">
           <div className="space-y-1">
             {user.role === 'SUPER_ADMIN' ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-500/50 text-purple-300 text-[11px] font-bold">
                 <Crown className="w-3 h-3 text-purple-400" />
-                <span>Pengawasan Eksekutif</span>
+                <span>Executive Supervision</span>
               </span>
             ) : user.operationalState === 'SERVING' || (isOnline && (user.activeTicketsCount || 0) > 0) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 text-[11px] font-bold">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span>Melayani Pelanggan</span>
+                <span>Serving Customers</span>
               </span>
             ) : isOnline ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[11px] font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Siaga (Standby)</span>
+                <span>Standby (Ready)</span>
               </span>
             ) : user.operationalState === 'ABRUPT_DISCONNECT' || user.status === 'TERPUTUS' || user.status === 'LOGOUT_CLOSE_BROWSER' ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/50 text-amber-300 text-[11px] font-bold">
                 <AlertTriangle className="w-3 h-3 text-amber-400" />
-                <span>Terputus (Close Browser)</span>
+                <span>Disconnected (Browser Closed)</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-700 text-slate-400 text-[11px] font-bold">
                 <span className="w-2 h-2 rounded-full bg-slate-500" />
-                <span>Off-Duty (Selesai Shift)</span>
+                <span>Off-Duty (Shift Ended)</span>
               </span>
             )}
             <span className="text-[10px] text-slate-400 block font-medium">
               {user.workloadDescription ||
                 (isOnline
                   ? (user.activeTicketsCount || 0) > 0
-                    ? `${user.activeTicketsCount} Tiket Aktif Ditangani`
-                    : 'Siap Menerima Tiket'
-                  : 'Meja Kerja Bebas')}
+                    ? `${user.activeTicketsCount} Active Tickets Handled`
+                    : 'Ready to Receive Tickets'
+                  : 'Queue Idle')}
             </span>
           </div>
         </td>
 
-        {/* Lamanya Waktu Online */}
+        {/* Online Duration */}
         <td className="py-3.5 px-4">
           {isOnline ? (
             <div className="space-y-0.5">
@@ -286,12 +540,12 @@ export default function SuperAdminCockpitPage() {
                 <span>{formatDuration(liveOnlineSeconds)}</span>
               </div>
               <span className="text-[10px] text-slate-500 block">
-                Sejak: {new Date(user.latestLoginAt).toLocaleTimeString()}
+                Since: {new Date(user.latestLoginAt).toLocaleTimeString()}
               </span>
             </div>
           ) : (
             <div className="text-slate-400 text-xs">
-              <span className="text-slate-500 text-[11px] block">Sesi Terakhir:</span>
+              <span className="text-slate-500 text-[11px] block">Last Session:</span>
               <span className="font-mono">
                 {formatDuration(user.sessionHistory?.[0]?.durationSeconds || 0)}
               </span>
@@ -299,12 +553,12 @@ export default function SuperAdminCockpitPage() {
           )}
         </td>
 
-        {/* Catatan Disconnect & Re-Login */}
+        {/* Disconnect & Reconnect Logs */}
         <td className="py-3.5 px-4">
           {user.hadUnexpectedDisconnect ? (
             <div className="space-y-0.5 text-[11px]">
               <div className="text-amber-400 flex items-center gap-1">
-                <span>Terputus:</span>
+                <span>Disconnected:</span>
                 <strong className="font-mono">
                   {user.unexpectedDisconnectTime
                     ? new Date(user.unexpectedDisconnectTime).toLocaleTimeString()
@@ -313,23 +567,23 @@ export default function SuperAdminCockpitPage() {
               </div>
               {user.reconnectedTime ? (
                 <div className="text-emerald-400 flex items-center gap-1">
-                  <span>Login Kembali:</span>
+                  <span>Reconnected:</span>
                   <strong className="font-mono">
                     {new Date(user.reconnectedTime).toLocaleTimeString()}
                   </strong>
                   <span className="text-slate-500 font-mono">
-                    (Jeda: {formatDuration(user.disconnectDowntimeSeconds)})
+                    (Downtime: {formatDuration(user.disconnectDowntimeSeconds)})
                   </span>
                 </div>
               ) : (
                 <span className="text-slate-500 italic text-[10px]">
-                  Belum login kembali
+                  Not reconnected yet
                 </span>
               )}
             </div>
           ) : (
             <span className="text-slate-500 text-[11px] italic">
-              Normal (Tidak Ada Disconnect)
+              Normal (No Disconnects)
             </span>
           )}
         </td>
@@ -342,7 +596,7 @@ export default function SuperAdminCockpitPage() {
             className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
           >
             <Clock className="w-3.5 h-3.5 text-blue-400" />
-            <span>Detail History</span>
+            <span>View History</span>
           </button>
         </td>
       </tr>
@@ -366,21 +620,17 @@ export default function SuperAdminCockpitPage() {
                 </span>
               </div>
               <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">
-                AUTONOMOUS SUPPORT INTELLIGENCE • {org.name || 'Enterprise Organization'}
+                AUTONOMOUS SUPPORT INTELLIGENCE &bull; {org.name || 'Enterprise Organization'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => session && loadData(session)}
-              className="p-2 rounded-lg bg-[#0B0F19] border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white text-xs flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Refresh Data"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Refresh Data</span>
-            </button>
+            {/* Live Sync Status Indicator */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#0B0F19] border border-slate-800 text-[11px] font-mono text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Live (Auto 3s)</span>
+            </div>
 
             <button
               type="button"
@@ -407,14 +657,13 @@ export default function SuperAdminCockpitPage() {
           {/* Card 1: Total Seats */}
           <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 space-y-2 relative overflow-hidden">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-              <span>Total Alokasi Kursi</span>
+              <span>Total Seat Allocation</span>
               <Users className="w-4 h-4 text-blue-400" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-white">{stats.claimedSeats || 0}</span>
-              <span className="text-xs text-slate-400">/ {stats.totalSeats || 9} Kursi Terpakai</span>
+              <span className="text-xs text-slate-400">/ {stats.totalSeats || 9} Seats Claimed</span>
             </div>
-            {/* Progress bar */}
             <div className="w-full h-1.5 bg-[#0B0F19] rounded-full overflow-hidden">
               <div
                 className="h-full bg-blue-500 rounded-full transition-all"
@@ -422,22 +671,22 @@ export default function SuperAdminCockpitPage() {
               />
             </div>
             <span className="text-[10px] text-slate-500 block">
-              Utilisasi Lisensi: {stats.seatUtilizationPercentage || 0}%
+              License Utilization: {stats.seatUtilizationPercentage || 0}%
             </span>
           </div>
 
           {/* Card 2: Active Pods */}
           <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 space-y-2">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-              <span>Pod Terkunci (Locked)</span>
+              <span>Locked Pods</span>
               <Layers className="w-4 h-4 text-emerald-400" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-emerald-400">{stats.lockedPods || 0}</span>
-              <span className="text-xs text-slate-400">/ {stats.totalPods || 0} Pod Aktif</span>
+              <span className="text-xs text-slate-400">/ {stats.totalPods || 0} Active Pods</span>
             </div>
             <span className="text-[10px] text-slate-500 block">
-              Kaidah Amazon Two-Pizza ($\le$ 8 Orang/Pod)
+              Amazon Two-Pizza Rule (&le; 8 Staff/Pod)
             </span>
           </div>
 
@@ -466,44 +715,50 @@ export default function SuperAdminCockpitPage() {
               </span>
             </div>
             <span className="text-[10px] text-slate-500 block">
-              Batas Waktu Respons: &lt; 15 Menit
+              Response Threshold: &lt; 15 Min
               {stats.totalEvaluatedTickets > 0
-                ? ` • ${stats.slaMetCount}/${stats.totalEvaluatedTickets} Tiket Terpenuhi`
-                : ' • Belum Ada Tiket Masuk'}
+                ? ` &bull; ${stats.slaMetCount}/${stats.totalEvaluatedTickets} Tickets Met`
+                : ' &bull; No Tickets Evaluated Yet'}
             </span>
           </div>
 
           {/* Card 4: Crisis Radar */}
           <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 space-y-2">
             <div className="flex items-center justify-between text-slate-400 text-xs font-semibold">
-              <span>Radar Eskalasi Kritis</span>
+              <span>Critical Escalation Radar</span>
               <AlertTriangle className="w-4 h-4 text-amber-400" />
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-white">{stats.crisisCount || 0}</span>
-              <span className="text-xs text-slate-400">Tiket Butuh Perhatian Direktur</span>
+              <span className="text-xs text-slate-400">Tickets Requiring Attention</span>
             </div>
             <span className="text-[10px] text-slate-500 block">
-              Deteksi Otomatis Gemini AI Triage
+              Automated Gemini AI Triage Detection
             </span>
           </div>
         </section>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
           {[
-            { id: 'OVERVIEW', label: 'Topologi Pod & Beban Kerja', icon: Layers },
-            { id: 'PRESENCE', label: 'Monitor Presensi & Waktu Online', icon: Clock, count: stats.onlineCount || 0 },
-            { id: 'TOKENS', label: 'Audit Token Sekali Pakai', icon: ShieldCheck, count: tokenAudit.length },
+            { id: 'OVERVIEW', label: 'Pod Topology & Workload', icon: Layers },
+            { id: 'PRESENCE', label: 'Staff Presence & SLA Monitoring', icon: Clock, count: stats.onlineCount || 0 },
+            {
+              id: 'PERSONNEL',
+              label: 'Personnel Directory & Identity',
+              icon: Users,
+              count: (cockpitData?.presenceMonitoring || []).filter((u: any) => u.role !== 'SUPER_ADMIN').length,
+            },
+            { id: 'TOKENS', label: 'Single-Use Token Audit Hub', icon: ShieldCheck, count: tokenAudit.length },
             {
               id: 'CRISIS',
-              label: 'Radar Krisis & SLA',
+              label: 'Crisis Radar & SLA Compliance',
               icon: AlertTriangle,
               count: (stats.crisisCount || 0) + (stats.slaBreachedCount || 0),
             },
             {
               id: 'CHANNELS',
-              label: 'Kanal Masuk & Integrasi Portal',
+              label: 'Omnichannel Ingestion & Webhook',
               icon: Globe,
             },
           ].map((tab) => {
@@ -541,9 +796,9 @@ export default function SuperAdminCockpitPage() {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-white">Topologi Pod Spesialisasi</h2>
+                <h2 className="text-base font-bold text-white">Specialized Pod Topology</h2>
                 <p className="text-xs text-slate-400">
-                  Status kuota yang dikunci oleh masing-masing Leader dan beban tiket aktif secara real-time.
+                  Real-time quota lock status per Pod Leader and active ticket load.
                 </p>
               </div>
             </div>
@@ -568,7 +823,7 @@ export default function SuperAdminCockpitPage() {
                         }`}
                       >
                         {isLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
-                        <span>{isLocked ? 'KUOTA TERKUNCI' : 'MENUNGGU LEADER'}</span>
+                        <span>{isLocked ? 'QUOTA LOCKED' : 'PENDING LEADER'}</span>
                       </span>
                     </div>
 
@@ -583,12 +838,12 @@ export default function SuperAdminCockpitPage() {
                             <span className="text-xs font-bold text-white">{ws.leaderName}</span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
                               <CheckCircle2 className="w-2.5 h-2.5" />
-                              <span>Teraktivasi</span>
+                              <span>Activated</span>
                             </span>
                           </div>
                         ) : (
                           <span className="text-xs text-amber-400/90 italic font-medium">
-                            Menunggu Aktivasi
+                            Pending Activation
                           </span>
                         )}
                       </div>
@@ -597,7 +852,7 @@ export default function SuperAdminCockpitPage() {
                     {/* Services Tags with numbering */}
                     <div>
                       <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-1.5">
-                        Layanan yang Ditangani:
+                        Assigned Domain Services:
                       </span>
                       <div className="flex flex-col gap-1.5">
                         {ws.services?.map((svc: string, sIdx: number) => (
@@ -615,14 +870,14 @@ export default function SuperAdminCockpitPage() {
                     {/* Stats footer */}
                     <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-300">
                       <div>
-                        <span className="text-slate-500 block text-[10px]">Kapasitas Pod:</span>
+                        <span className="text-slate-500 block text-[10px]">Pod Capacity:</span>
                         <span className="font-bold">
-                          {ws.membersCount} / {ws.assignedQuota} Personel
+                          {ws.membersCount} / {ws.assignedQuota} Staff
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="text-slate-500 block text-[10px]">Antrean Tiket:</span>
-                        <span className="font-bold text-blue-400">{ws.openTicketsCount} Terbuka</span>
+                        <span className="text-slate-500 block text-[10px]">Ticket Queue:</span>
+                        <span className="font-bold text-blue-400">{ws.openTicketsCount} Open</span>
                       </div>
                     </div>
                   </div>
@@ -638,21 +893,21 @@ export default function SuperAdminCockpitPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-base font-bold text-white">
-                  Monitor Presensi &amp; Waktu Online (Leader &amp; Member)
+                  Staff Presence &amp; Online Duration (Leaders &amp; Agents)
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Pemantauan durasi online real-time, histori waktu login/logout, serta pencatatan otomatis saat browser ditutup atau terputus.
+                  Real-time online duration tracking, login/logout session audit, and automated disconnection logging when browsers close.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-400 font-medium">Update real-time:</span>
+                <span className="text-[11px] text-slate-400 font-medium">Real-time sync:</span>
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping inline-block" />
                 <span className="text-xs font-mono text-emerald-400 font-bold">LIVE</span>
               </div>
             </div>
 
-            {/* Presensi Barometer Cards */}
+            {/* Presence Barometer Cards */}
             {(() => {
               const staffUsers = (cockpitData?.presenceMonitoring || []).filter(
                 (u: any) => u.role !== 'SUPER_ADMIN',
@@ -667,40 +922,37 @@ export default function SuperAdminCockpitPage() {
 
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Kotak 1: Personel Sedang Online */}
                   <div className="p-4 rounded-xl bg-[#111827] border border-emerald-500/30 flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-slate-400 block font-medium">Personel Sedang Online</span>
+                      <span className="text-xs text-slate-400 block font-medium">Online Personnel</span>
                       <div className="flex items-baseline gap-2 mt-1">
                         <span className="text-2xl font-black text-emerald-400">{onlineStaffCount}</span>
-                        <span className="text-xs text-slate-500">Personel Aktif</span>
+                        <span className="text-xs text-slate-500">Active Personnel</span>
                       </div>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">Sedang Aktif Bertugas</span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Currently on Active Duty</span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
                       <Radio className="w-5 h-5 animate-pulse" />
                     </div>
                   </div>
 
-                  {/* Kotak 2: Personel Sedang Offline */}
                   <div className="p-4 rounded-xl bg-[#111827] border border-slate-800 flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-slate-400 block font-medium">Personel Sedang Offline</span>
+                      <span className="text-xs text-slate-400 block font-medium">Offline Personnel</span>
                       <div className="flex items-baseline gap-2 mt-1">
                         <span className="text-2xl font-black text-slate-300">{offlineStaffCount}</span>
-                        <span className="text-xs text-slate-500">Personel</span>
+                        <span className="text-xs text-slate-500">Staff</span>
                       </div>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">Tidak Aktif / Sedang Istirahat</span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Inactive / Off-Duty</span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 flex items-center justify-center">
                       <Users className="w-5 h-5" />
                     </div>
                   </div>
 
-                  {/* Kotak 3: Tingkat Kehadiran Tim (Opsi 3) */}
                   <div className="p-4 rounded-xl bg-[#111827] border border-blue-500/30 flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-slate-400 block font-medium">Tingkat Kehadiran Tim</span>
+                      <span className="text-xs text-slate-400 block font-medium">Team Attendance Rate</span>
                       <div className="flex items-baseline gap-2 mt-1">
                         <span className="text-2xl font-black text-blue-400">{attendanceRate}%</span>
                         <span
@@ -712,11 +964,11 @@ export default function SuperAdminCockpitPage() {
                               : 'text-amber-400'
                           }`}
                         >
-                          {attendanceRate >= 80 ? 'Optimal' : attendanceRate >= 50 ? 'Sedang' : 'Rendah'}
+                          {attendanceRate >= 80 ? 'Optimal' : attendanceRate >= 50 ? 'Moderate' : 'Low'}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 block mt-0.5">
-                        {onlineStaffCount} dari {totalStaffCount} Personel Hadir
+                        {onlineStaffCount} of {totalStaffCount} Staff Present
                       </span>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-500/40 text-blue-400 flex items-center justify-center">
@@ -727,7 +979,7 @@ export default function SuperAdminCockpitPage() {
               );
             })()}
 
-            {/* KOTAK-KOTAK PRESENSI ANGGOTA PER POD (LEADER DI ATAS, MEMBER PERTAMA AKTIVASI BERIKUTNYA) */}
+            {/* Pod Presence Roster */}
             <div className="space-y-6">
               {workspaces.map((ws: any, wsIdx: number) => {
                 const podUsers = (cockpitData?.presenceMonitoring || []).filter(
@@ -752,7 +1004,7 @@ export default function SuperAdminCockpitPage() {
                     key={ws.id || wsIdx}
                     className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
                   >
-                    {/* Header Kotak Pod Presensi */}
+                    {/* Header Pod Presence Box */}
                     <div className="bg-[#0F172A] border-b border-slate-800 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400 font-black text-xs shadow-md">
@@ -763,48 +1015,48 @@ export default function SuperAdminCockpitPage() {
                             {ws.isQuotaLocked ? (
                               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
                                 <Lock className="w-2.5 h-2.5" />
-                                <span>Kuota Terkunci ({ws.assignedQuota} Personel)</span>
+                                <span>Quota Locked ({ws.assignedQuota} Staff)</span>
                               </span>
                             ) : (
                               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1">
                                 <Unlock className="w-2.5 h-2.5" />
-                                <span>Menunggu Aktivasi Leader</span>
+                                <span>Pending Leader Setup</span>
                               </span>
                             )}
                           </div>
                           <p className="text-[11px] text-slate-400 mt-0.5">
-                            Leader Terdaftar: <strong className="text-white">{ws.leaderName || 'Belum Terklaim'}</strong> • Total Anggota Aktif: <strong className="text-white">{orderedUsers.length}</strong>
+                            Registered Leader: <strong className="text-white">{ws.leaderName || 'Unclaimed'}</strong> &bull; Active Personnel: <strong className="text-white">{orderedUsers.length}</strong>
                           </p>
                         </div>
                       </div>
 
                       <div className="text-right sm:block hidden">
                         <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
-                          Struktur Tim Pod
+                          Pod Team Structure
                         </span>
                         <span className="text-xs font-mono font-bold text-slate-300">
-                          1 Leader + {Math.max(0, (ws.assignedQuota || orderedUsers.length) - 1)} Member
+                          1 Leader + {Math.max(0, (ws.assignedQuota || orderedUsers.length) - 1)} Members
                         </span>
                       </div>
                     </div>
 
-                    {/* Tabel Presensi Pod */}
+                    {/* Table Presence */}
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                           <tr>
-                            <th className="py-3 px-4">Personel &amp; Peran</th>
-                            <th className="py-3 px-4">Kesiapan &amp; Beban Kerja</th>
-                            <th className="py-3 px-4">Lamanya Waktu Online</th>
-                            <th className="py-3 px-4">Catatan Disconnect &amp; Re-Login</th>
-                            <th className="py-3 px-4 text-right">Riwayat Sesi</th>
+                            <th className="py-3 px-4">Personnel &amp; Role</th>
+                            <th className="py-3 px-4">Readiness &amp; Workload</th>
+                            <th className="py-3 px-4">Online Duration</th>
+                            <th className="py-3 px-4">Disconnect &amp; Reconnect Logs</th>
+                            <th className="py-3 px-4 text-right">Session History</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60 font-medium">
                           {orderedUsers.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="py-8 text-center text-slate-500 italic">
-                                Belum ada personel yang teraktivasi di pod ini.
+                                No personnel activated in this pod yet.
                               </td>
                             </tr>
                           ) : (
@@ -832,7 +1084,7 @@ export default function SuperAdminCockpitPage() {
               })}
             </div>
 
-            {/* Modal Detail Riwayat Sesi */}
+            {/* Modal Detail Session History */}
             {selectedUserHistory && (
               <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                 <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
@@ -840,7 +1092,7 @@ export default function SuperAdminCockpitPage() {
                     <div>
                       <h3 className="text-sm font-bold text-white flex items-center gap-2">
                         <Clock className="w-4 h-4 text-blue-400" />
-                        Riwayat Login &amp; Logout: {selectedUserHistory.fullName}
+                        Login &amp; Logout History: {selectedUserHistory.fullName}
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
                         Role: <strong className="text-white">{selectedUserHistory.role}</strong> &bull; Pod:{' '}
@@ -852,23 +1104,23 @@ export default function SuperAdminCockpitPage() {
                       onClick={() => setSelectedUserHistory(null)}
                       className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold"
                     >
-                      ✕ Tutup
+                      ✕ Close
                     </button>
                   </div>
 
                   <div className="p-5 overflow-y-auto space-y-4 flex-1">
                     {selectedUserHistory.sessionHistory?.length === 0 ? (
                       <p className="text-slate-500 text-xs text-center py-6">
-                        Belum ada riwayat sesi tercatat untuk pengguna ini.
+                        No session history recorded for this user yet.
                       </p>
                     ) : (
                       <table className="w-full text-left text-xs">
                         <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 text-[10px] uppercase font-bold">
                           <tr>
-                            <th className="py-2.5 px-3">Waktu Login</th>
-                            <th className="py-2.5 px-3">Waktu Logout</th>
-                            <th className="py-2.5 px-3">Durasi</th>
-                            <th className="py-2.5 px-3">Keterangan / Alasan</th>
+                            <th className="py-2.5 px-3">Login Timestamp</th>
+                            <th className="py-2.5 px-3">Logout Timestamp</th>
+                            <th className="py-2.5 px-3">Duration</th>
+                            <th className="py-2.5 px-3">Status / Termination Reason</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800 text-slate-300">
@@ -878,8 +1130,10 @@ export default function SuperAdminCockpitPage() {
                                 {new Date(s.loginAt).toLocaleString()}
                               </td>
                               <td className="py-2.5 px-3 font-mono text-[11px]">
-                                {s.logoutAt ? new Date(s.logoutAt).toLocaleString() : (
-                                  <span className="text-emerald-400 font-bold">Sedang Berlangsung</span>
+                                {s.logoutAt ? (
+                                  new Date(s.logoutAt).toLocaleString()
+                                ) : (
+                                  <span className="text-emerald-400 font-bold">Active Now</span>
                                 )}
                               </td>
                               <td className="py-2.5 px-3 font-mono font-bold text-blue-300">
@@ -888,19 +1142,19 @@ export default function SuperAdminCockpitPage() {
                               <td className="py-2.5 px-3">
                                 {s.logoutReason === 'BROWSER_CLOSED' ? (
                                   <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-bold">
-                                    Tutup Browser (Auto-Logout)
+                                    Browser Closed (Auto-Logout)
                                   </span>
                                 ) : s.logoutReason === 'UNEXPECTED_DISCONNECT' ? (
                                   <span className="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 text-[10px] font-bold">
-                                    Terputus Tanpa Sengaja
+                                    Unexpected Disconnect
                                   </span>
                                 ) : s.logoutReason === 'MANUAL_LOGOUT' ? (
                                   <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px] font-bold">
-                                    Logout Manual
+                                    Manual Logout
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
-                                    Sesi Aktif
+                                    Active Session
                                   </span>
                                 )}
                               </td>
@@ -917,10 +1171,329 @@ export default function SuperAdminCockpitPage() {
                       onClick={() => setSelectedUserHistory(null)}
                       className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold"
                     >
-                      Selesai
+                      Done
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB: PERSONNEL DIRECTORY & IDENTITY GOVERNANCE (APPROACH A) */}
+        {activeTab === 'PERSONNEL' && (
+          <section className="space-y-6">
+            {/* Header & Search */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-400" />
+                  <span>Personnel Directory &amp; Identity Governance</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Audit, filter, and manage staff identities across all operational pods. Super Admins have sovereign override authority to rename leaders and frontline members, and reassign workforce across pods.
+                </p>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={personnelSearchQuery}
+                  onChange={(e) => setPersonnelSearchQuery(e.target.value)}
+                  placeholder="Search personnel by name..."
+                  className="w-full bg-[#111827] border border-slate-800 focus:border-blue-500 rounded-xl pl-10 pr-9 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all shadow-inner"
+                />
+                {personnelSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonnelSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs font-bold"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Stats Overview */}
+            {(() => {
+              const allStaff = (cockpitData?.presenceMonitoring || []).filter(
+                (u: any) => u.role !== 'SUPER_ADMIN',
+              );
+              const totalLeaders = allStaff.filter((u: any) => u.role === 'LEADER').length;
+              const totalMembers = allStaff.filter((u: any) => u.role !== 'LEADER').length;
+              const onlineCount = allStaff.filter((u: any) => u.isOnline).length;
+
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-[#111827] border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-md">
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                        Total Registered Personnel
+                      </span>
+                      <span className="text-xl font-black text-white font-mono mt-0.5 block">
+                        {allStaff.length} Staff
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        {onlineCount} currently online
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-blue-950/80 border border-blue-500/30 text-blue-400 flex items-center justify-center">
+                      <Users className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-[#111827] border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-md">
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                        Pod Leaders (Commanders)
+                      </span>
+                      <span className="text-xl font-black text-amber-400 font-mono mt-0.5 block">
+                        {totalLeaders} Assigned
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        {workspaces.length} active operational pods
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-amber-950/80 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                      <Crown className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  <div className="bg-[#111827] border border-slate-800/80 rounded-2xl p-4 flex items-center justify-between shadow-md">
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                        Frontline Pod Agents
+                      </span>
+                      <span className="text-xl font-black text-emerald-400 font-mono mt-0.5 block">
+                        {totalMembers} Active
+                      </span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        Distributed across operational units
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Pod-Grouped Personnel Cards */}
+            {workspaces.length === 0 ? (
+              <div className="bg-[#111827] border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
+                No active operational pods found for this organization.
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {workspaces.map((ws: any, wsIdx: number) => {
+                  const cleanedPod = cleanPodName(ws.name);
+                  const podUsers = (cockpitData?.presenceMonitoring || []).filter(
+                    (u: any) =>
+                      u.role !== 'SUPER_ADMIN' &&
+                      (u.workspaceId === ws.id || u.podName === ws.name),
+                  );
+
+                  const leaderUser = podUsers.find((u: any) => u.role === 'LEADER');
+                  const memberUsers = podUsers
+                    .filter((u: any) => u.role !== 'LEADER')
+                    .sort((a: any, b: any) => {
+                      const timeA = a.joinedAt ? new Date(a.joinedAt).getTime() : 0;
+                      const timeB = b.joinedAt ? new Date(b.joinedAt).getTime() : 0;
+                      return timeA - timeB;
+                    });
+
+                  const orderedUsers = leaderUser ? [leaderUser, ...memberUsers] : memberUsers;
+
+                  // Filter by search query
+                  const filteredUsers = orderedUsers.filter((u: any) => {
+                    if (!personnelSearchQuery.trim()) return true;
+                    const q = personnelSearchQuery.toLowerCase();
+                    return (
+                      (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+                      (u.username && u.username.toLowerCase().includes(q)) ||
+                      (u.role && u.role.toLowerCase().includes(q))
+                    );
+                  });
+
+                  return (
+                    <div
+                      key={ws.id || wsIdx}
+                      className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
+                    >
+                      {/* Pod Card Header */}
+                      <div className="bg-[#0F172A] border-b border-slate-800 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400 font-black text-xs shadow-md shrink-0 mt-0.5">
+                            {wsIdx + 1}
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              {ws.isQuotaLocked ? (
+                                <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 shadow-xs">
+                                  <Lock className="w-3 h-3" />
+                                  <span>Quota Locked ({ws.assignedQuota} Staff)</span>
+                                </span>
+                              ) : (
+                                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1.5 shadow-xs">
+                                  <Unlock className="w-3 h-3" />
+                                  <span>Pending Leader Setup</span>
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Domain Services List directly below Quota Locked */}
+                            {ws.services && ws.services.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                  Domain Services:
+                                </span>
+                                {ws.services.map((svc: string, sIdx: number) => (
+                                  <span
+                                    key={svc}
+                                    className="text-[11px] font-medium bg-[#0B0F19] text-blue-300 px-2.5 py-0.5 rounded-md border border-slate-800 flex items-center gap-1"
+                                  >
+                                    <span className="text-blue-400 font-bold">({sIdx + 1})</span>
+                                    <span>{svc}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            <p className="text-[11px] text-slate-400">
+                              Assigned Leader: <strong className="text-white">{ws.leaderName || 'Unclaimed'}</strong> &bull; Active Personnel: <strong className="text-white">{orderedUsers.length}</strong>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right sm:block hidden shrink-0">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
+                            Pod Structure
+                          </span>
+                          <span className="text-xs font-mono font-bold text-slate-300">
+                            1 Leader + {Math.max(0, (ws.assignedQuota || orderedUsers.length) - 1)} Members
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Personnel Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
+                            <tr>
+                              <th className="py-3 px-4">Personnel &amp; Role</th>
+                              <th className="py-3 px-4">Account Identifier</th>
+                              <th className="py-3 px-4">Operational Status</th>
+                              <th className="py-3 px-4 text-right">Super Admin Authority</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60 font-medium">
+                            {filteredUsers.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="py-8 text-center text-slate-500 italic">
+                                  {personnelSearchQuery.trim()
+                                    ? `No personnel found matching "${personnelSearchQuery}" in this pod.`
+                                    : 'No personnel activated in this pod yet.'}
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredUsers.map((user: any) => {
+                                const isLeader = user.role === 'LEADER';
+                                return (
+                                  <tr
+                                    key={user.userId || user.id}
+                                    className="hover:bg-slate-800/30 transition-colors"
+                                  >
+                                    {/* Personnel & Role */}
+                                    <td className="py-3.5 px-4">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="font-bold text-white text-xs">
+                                          {user.fullName || user.username}
+                                        </span>
+                                        {isLeader ? (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                            <Crown className="w-2.5 h-2.5" />
+                                            <span>Pod Leader</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-300 border border-blue-500/40">
+                                            Frontline Agent
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Account Identifier */}
+                                    <td className="py-3.5 px-4">
+                                      <span className="font-mono text-[11px] text-slate-400 bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                                        {user.userId || user.id}
+                                      </span>
+                                    </td>
+
+                                    {/* Operational Status */}
+                                    <td className="py-3.5 px-4">
+                                      <div className="flex items-center gap-2">
+                                        <span
+                                          className={`w-2 h-2 rounded-full ${
+                                            user.isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'
+                                          }`}
+                                        />
+                                        <span
+                                          className={`text-xs font-semibold ${
+                                            user.isOnline ? 'text-emerald-400' : 'text-slate-500'
+                                          }`}
+                                        >
+                                          {user.isOnline ? 'Active Online' : 'Offline'}
+                                        </span>
+                                      </div>
+                                    </td>
+
+                                    {/* Super Admin Authority (Action) */}
+                                    <td className="py-3.5 px-4 text-right">
+                                      <div className="flex items-center justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditUser(user, cleanedPod)}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-950/80 hover:bg-blue-900 border border-blue-500/40 text-blue-300 hover:text-white text-xs font-bold transition-all shadow-sm hover:shadow-blue-500/20 cursor-pointer"
+                                        >
+                                          <Pencil className="w-3.5 h-3.5" />
+                                          <span>Edit Name</span>
+                                        </button>
+                                        {!isLeader && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenPromoteUser(user, ws)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-500/40 text-amber-300 hover:text-white text-xs font-bold transition-all shadow-sm hover:shadow-amber-500/20 cursor-pointer"
+                                            title="Promote to Pod Leader (Intra-pod role switch, capacity stays fixed)"
+                                          >
+                                            <Crown className="w-3.5 h-3.5 text-amber-400" />
+                                            <span>Make Leader</span>
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenSwapUser(user, ws)}
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 text-purple-300 hover:text-white text-xs font-bold transition-all shadow-sm hover:shadow-purple-500/20 cursor-pointer"
+                                          title="1-to-1 Cross-Pod Swap (Both pod capacities remain strictly fixed)"
+                                        >
+                                          <ArrowRightLeft className="w-3.5 h-3.5 text-purple-400" />
+                                          <span>Swap Pod</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -930,15 +1503,15 @@ export default function SuperAdminCockpitPage() {
         {activeTab === 'TOKENS' && (
           <section className="space-y-6">
             <div>
-              <h2 className="text-base font-bold text-white">Audit Token Sekali Pakai (Single-Use)</h2>
+              <h2 className="text-base font-bold text-white">Single-Use Token Audit Hub</h2>
               <p className="text-xs text-slate-400">
-                Token dikelompokkan per Pod. Posisi paling atas adalah Leader Pod, diikuti oleh daftar token Member di bawahnya.
+                Tokens grouped per Pod. Top position is reserved for the Pod Leader, followed by authorized agent tokens below.
               </p>
             </div>
 
             {workspaces.length === 0 && tokenAudit.length === 0 ? (
               <div className="bg-[#111827] border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
-                Belum ada pod atau token yang tercatat di organisasi ini.
+                No operational pods or token records found for this organization.
               </div>
             ) : (
               <div className="space-y-6">
@@ -946,24 +1519,19 @@ export default function SuperAdminCockpitPage() {
                   const podTokens = tokenAudit.filter(
                     (tok: any) => tok.workspaceId === ws.id || tok.podName === ws.name,
                   );
-                  // Strict separation: 1 Leader on Top, Members below
                   const leaderTokens = podTokens.filter((t: any) => t.role === 'LEADER');
                   const rawMemberTokens = podTokens.filter((t: any) => t.role !== 'LEADER');
 
-                  // Urutkan Member: Member yang pertama login/aktivasi diletakkan paling atas setelah Leader, diikuti berurutan
                   const memberTokens = [...rawMemberTokens].sort((a: any, b: any) => {
-                    // 1. Member yang sudah login/aktivasi (isUsed) berada di atas
                     if (a.isUsed && !b.isUsed) return -1;
                     if (!a.isUsed && b.isUsed) return 1;
 
-                    // 2. Urutan kronologis waktu aktivasi (usedAt paling awal di atas)
                     if (a.isUsed && b.isUsed) {
                       const timeA = a.usedAt ? new Date(a.usedAt).getTime() : 0;
                       const timeB = b.usedAt ? new Date(b.usedAt).getTime() : 0;
                       return timeA - timeB;
                     }
 
-                    // 3. Token yang belum teraktivasi di paling bawah berurutan
                     const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                     const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
                     return createdA - createdB;
@@ -974,7 +1542,7 @@ export default function SuperAdminCockpitPage() {
                       key={ws.id || wsIdx}
                       className="bg-[#111827] border border-slate-800 rounded-2xl overflow-hidden shadow-xl"
                     >
-                      {/* Header Kotak Pod */}
+                      {/* Pod Card Header */}
                       <div className="bg-[#0F172A] border-b border-slate-800 px-5 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400 font-black text-xs shadow-md">
@@ -985,49 +1553,49 @@ export default function SuperAdminCockpitPage() {
                               {ws.isQuotaLocked ? (
                                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
                                   <Lock className="w-2.5 h-2.5" />
-                                  <span>Kuota Terkunci ({ws.assignedQuota} Personel)</span>
+                                  <span>Quota Locked ({ws.assignedQuota} Staff)</span>
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-500/40 flex items-center gap-1">
                                   <Unlock className="w-2.5 h-2.5" />
-                                  <span>Menunggu Aktivasi Leader</span>
+                                  <span>Pending Leader Setup</span>
                                 </span>
                               )}
                             </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">
-                              Leader Terdaftar: <strong className="text-white">{ws.leaderName || 'Belum Terklaim'}</strong> • Total Token Diterbitkan: <strong className="text-white">{podTokens.length}</strong>
+                              Registered Leader: <strong className="text-white">{ws.leaderName || 'Unclaimed'}</strong> &bull; Total Issued Tokens: <strong className="text-white">{podTokens.length}</strong>
                             </p>
                           </div>
                         </div>
 
                         <div className="text-right sm:block hidden">
                           <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
-                            Struktur Tim Pod
+                            Pod Structure
                           </span>
                           <span className="text-xs font-mono font-bold text-slate-300">
-                            1 Leader + {Math.max(0, (ws.assignedQuota || podTokens.length) - 1)} Member
+                            1 Leader + {Math.max(0, (ws.assignedQuota || podTokens.length) - 1)} Members
                           </span>
                         </div>
                       </div>
 
-                      {/* Tabel Token Pod: 1 Leader Paling Atas, Member Di Bawahnya */}
+                      {/* Token Table */}
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
                           <thead className="bg-[#0B0F19] border-b border-slate-800 text-slate-400 uppercase text-[10px] font-bold">
                             <tr>
-                              <th className="py-2.5 px-4">Posisi &amp; Peran</th>
+                              <th className="py-2.5 px-4">Position &amp; Role</th>
                               <th className="py-2.5 px-4">Token String</th>
-                              <th className="py-2.5 px-4">Status Klaim</th>
-                              <th className="py-2.5 px-4">Dikelola</th>
-                              <th className="py-2.5 px-4 text-right">Aksi</th>
+                              <th className="py-2.5 px-4">Activation Status</th>
+                              <th className="py-2.5 px-4">Assigned To</th>
+                              <th className="py-2.5 px-4 text-right">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                            {/* 1. POSISI PALING ATAS: LEADER POD */}
+                            {/* 1. LEADER POSITION */}
                             {leaderTokens.length === 0 ? (
                               <tr className="bg-amber-950/10">
                                 <td colSpan={5} className="py-3 px-4 text-slate-500 italic text-center">
-                                  Token Leader belum diterbitkan untuk pod ini.
+                                  No leader token issued yet for this pod.
                                 </td>
                               </tr>
                             ) : (
@@ -1057,7 +1625,7 @@ export default function SuperAdminCockpitPage() {
                                         </span>
                                         <div>
                                           <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
-                                            LEADER (POSISI TERATAS)
+                                            LEADER (TOP TIER)
                                           </span>
                                         </div>
                                       </div>
@@ -1069,11 +1637,11 @@ export default function SuperAdminCockpitPage() {
                                       {tok.isUsed || ws.isQuotaLocked || ws.leaderName ? (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 flex items-center gap-1 w-fit">
                                           <CheckCircle2 className="w-2.5 h-2.5" />
-                                          <span>TERAKTIVASI</span>
+                                          <span>ACTIVATED</span>
                                         </span>
                                       ) : (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-500/40">
-                                          MENUNGGU AKTIVASI
+                                          PENDING ACTIVATION
                                         </span>
                                       )}
                                     </td>
@@ -1085,7 +1653,7 @@ export default function SuperAdminCockpitPage() {
                                             {tok.isUserOnline ? (
                                               <span
                                                 className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
-                                                title="Leader Sedang Online"
+                                                title="Leader Online"
                                               />
                                             ) : null}
                                           </div>
@@ -1094,24 +1662,24 @@ export default function SuperAdminCockpitPage() {
                                               {tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                                  <span className="font-semibold">• (Logout)</span>
+                                                  <span className="font-semibold">&bull; (Logged Out)</span>
                                                 </div>
                                               ) : tok.hadCloseBrowser ? (
                                                 <div className="flex items-center gap-1 text-amber-400 font-semibold">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                                  <span>• (Logout Close Browser)</span>
+                                                  <span>&bull; (Browser Closed)</span>
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-1 text-slate-500">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                                  <span>• (Offline)</span>
+                                                  <span>&bull; (Offline)</span>
                                                 </div>
                                               )}
                                             </div>
                                           )}
                                         </div>
                                       ) : (
-                                        <span className="text-slate-500 italic">Menunggu Aktivasi</span>
+                                        <span className="text-slate-500 italic">Pending Activation</span>
                                       )}
                                     </td>
                                     <td className="py-3 px-4 text-right">
@@ -1126,13 +1694,9 @@ export default function SuperAdminCockpitPage() {
                                                 ? 'bg-amber-600 border-amber-500 text-white hover:bg-amber-500 shadow-sm'
                                                 : 'bg-[#0B0F19] border-amber-500/50 text-amber-200 hover:text-white hover:border-amber-400'
                                           }`}
-                                          title={
-                                            isLeaderFreshTokenReady
-                                              ? 'Salin tautan aktivasi baru untuk dibagikan ke leader'
-                                              : 'Salin tautan aktivasi leader'
-                                          }
+                                          title="Copy Leader access link"
                                         >
-                                          {isCopied ? 'Tersalin' : isLeaderFreshTokenReady ? 'Salin Link Baru' : 'Salin Link'}
+                                          {isCopied ? 'Copied' : isLeaderFreshTokenReady ? 'Copy New Link' : 'Copy Link'}
                                         </button>
                                         <button
                                           type="button"
@@ -1145,13 +1709,7 @@ export default function SuperAdminCockpitPage() {
                                                 ? 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/70 text-emerald-300'
                                                 : 'bg-[#0B0F19] border-amber-500/50 text-amber-300 hover:border-amber-400'
                                           }`}
-                                          title={
-                                            leaderNeedsRegen
-                                              ? 'Leader sedang logout. Klik tombol merah ini terlebih dahulu untuk generate token baru agar leader bisa login kembali.'
-                                              : isLeaderFreshTokenReady
-                                                ? 'Token baru telah siap digunakan dan dapat dibagikan ke leader.'
-                                                : 'Buat ulang token baru jika leader logout dan butuh link masuk kembali'
-                                          }
+                                          title="Regenerate single-use token"
                                         >
                                           <RefreshCw
                                             className={`w-3 h-3 ${
@@ -1166,7 +1724,7 @@ export default function SuperAdminCockpitPage() {
                                           />
                                           <span>
                                             {regeneratingToken === tok.token
-                                              ? 'Proses...'
+                                              ? 'Processing...'
                                               : leaderNeedsRegen
                                                 ? 'Regenerate'
                                                 : isLeaderFreshTokenReady
@@ -1181,13 +1739,13 @@ export default function SuperAdminCockpitPage() {
                               })
                             )}
 
-                            {/* 2. DAFTAR MEMBER DI BAWAH LEADER */}
+                            {/* 2. MEMBER TOKENS BELOW LEADER */}
                             {memberTokens.length === 0 ? (
                               <tr>
                                 <td colSpan={5} className="py-4 text-center text-slate-500 italic">
                                   {ws.isQuotaLocked
-                                    ? 'Belum ada token bawahan yang diterbitkan.'
-                                    : 'Token bawahan akan otomatis terbit begitu Leader mengunci kuota dan mengaktivasi pod ini.'}
+                                    ? 'No agent tokens issued yet.'
+                                    : 'Agent tokens will be automatically issued once the Leader locks quota and activates this pod.'}
                                 </td>
                               </tr>
                             ) : (
@@ -1211,7 +1769,7 @@ export default function SuperAdminCockpitPage() {
                                       <div className="flex items-center gap-2 pl-3">
                                         <span className="text-[10px] text-slate-500 font-mono">#{mIdx + 1}</span>
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
-                                          MEMBER
+                                          AGENT
                                         </span>
                                       </div>
                                     </td>
@@ -1222,11 +1780,11 @@ export default function SuperAdminCockpitPage() {
                                       {tok.isUsed ? (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-500/40 flex items-center gap-1 w-fit">
                                           <CheckCircle2 className="w-2.5 h-2.5" />
-                                          <span>TERAKTIVASI</span>
+                                          <span>ACTIVATED</span>
                                         </span>
                                       ) : (
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-500/30">
-                                          BELUM TERAKTIVASI
+                                          PENDING ACTIVATION
                                         </span>
                                       )}
                                     </td>
@@ -1238,7 +1796,7 @@ export default function SuperAdminCockpitPage() {
                                             {tok.isUserOnline ? (
                                               <span
                                                 className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
-                                                title="Member Sedang Online"
+                                                title="Agent Online"
                                               />
                                             ) : null}
                                           </div>
@@ -1247,24 +1805,24 @@ export default function SuperAdminCockpitPage() {
                                               {tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                                  <span className="font-semibold">• (Logout)</span>
+                                                  <span className="font-semibold">&bull; (Logged Out)</span>
                                                 </div>
                                               ) : tok.hadCloseBrowser ? (
                                                 <div className="flex items-center gap-1 text-amber-400 font-semibold">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                                                  <span>• (Logout Close Browser)</span>
+                                                  <span>&bull; (Browser Closed)</span>
                                                 </div>
                                               ) : (
                                                 <div className="flex items-center gap-1 text-slate-500">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                                  <span>• (Offline)</span>
+                                                  <span>&bull; (Offline)</span>
                                                 </div>
                                               )}
                                             </div>
                                           )}
                                         </div>
                                       ) : (
-                                        <span className="text-slate-500 italic">Menunggu Aktivasi</span>
+                                        <span className="text-slate-500 italic">Pending Activation</span>
                                       )}
                                     </td>
                                     <td className="py-3 px-4 text-right">
@@ -1279,13 +1837,9 @@ export default function SuperAdminCockpitPage() {
                                                 ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-sm'
                                                 : 'bg-[#0B0F19] border-slate-700 text-slate-300 hover:text-white'
                                           }`}
-                                          title={
-                                            isMemberFreshTokenReady
-                                              ? 'Salin tautan aktivasi baru untuk dibagikan ke member'
-                                              : 'Salin tautan aktivasi member'
-                                          }
+                                          title="Copy Agent access link"
                                         >
-                                          {isCopied ? 'Tersalin' : isMemberFreshTokenReady ? 'Salin Link Baru' : 'Salin Link'}
+                                          {isCopied ? 'Copied' : isMemberFreshTokenReady ? 'Copy New Link' : 'Copy Link'}
                                         </button>
                                         <button
                                           type="button"
@@ -1298,13 +1852,7 @@ export default function SuperAdminCockpitPage() {
                                                 ? 'bg-emerald-950/80 hover:bg-emerald-900 border-emerald-500/70 text-emerald-300'
                                                 : 'bg-[#0B0F19] border-blue-500/40 text-blue-300 hover:border-blue-400'
                                           }`}
-                                          title={
-                                            memberNeedsRegen
-                                              ? 'Member sedang logout. Klik tombol merah ini terlebih dahulu untuk generate token baru agar member bisa login kembali.'
-                                              : isMemberFreshTokenReady
-                                                ? 'Token baru telah siap digunakan dan dapat dibagikan ke member.'
-                                                : 'Buat ulang token baru jika member logout dan butuh link masuk kembali'
-                                          }
+                                          title="Regenerate single-use token"
                                         >
                                           <RefreshCw
                                             className={`w-3 h-3 ${
@@ -1319,7 +1867,7 @@ export default function SuperAdminCockpitPage() {
                                           />
                                           <span>
                                             {regeneratingToken === tok.token
-                                              ? 'Proses...'
+                                              ? 'Processing...'
                                               : memberNeedsRegen
                                                 ? 'Regenerate'
                                                 : isMemberFreshTokenReady
@@ -1348,28 +1896,27 @@ export default function SuperAdminCockpitPage() {
         {activeTab === 'CRISIS' && (
           <section className="space-y-4">
             <div>
-              <h2 className="text-base font-bold text-white">Radar Krisis &amp; SLA Eskalasi</h2>
+              <h2 className="text-base font-bold text-white">Crisis Radar &amp; SLA Escalations</h2>
               <p className="text-xs text-slate-400">
-                Tiket dengan tingkat urgensi CRITICAL yang dideteksi oleh AI serta tiket yang melampaui batas waktu respons SLA (&gt; 15 Menit).
+                Tickets flagged with CRITICAL urgency by AI triage and tickets exceeding the 15-minute SLA response threshold.
               </p>
             </div>
 
             {crisisTickets.length === 0 && slaBreachedTickets.length === 0 ? (
               <div className="p-8 text-center bg-[#111827] border border-slate-800 rounded-2xl">
                 <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
-                <h3 className="text-sm font-bold text-white">Tidak Ada Krisis Aktif</h3>
+                <h3 className="text-sm font-bold text-white">No Active Crises</h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Seluruh pod beroperasi dalam ambang batas SLA normal tanpa ada eskalasi hukum atau darurat.
+                  All operational pods are running within normal SLA thresholds with no emergency escalations.
                 </p>
               </div>
             ) : (
               <div className="space-y-5">
-                {/* 1. Tiket Prioritas Kritis (CRITICAL) */}
                 {crisisTickets.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Eskalasi Krisis Tingkat Tinggi (AI Triage Detected)</span>
+                      <span>High-Severity Crisis Escalations (AI Triage Detected)</span>
                     </h3>
                     <div className="space-y-3">
                       {crisisTickets.map((t: any) => (
@@ -1385,7 +1932,7 @@ export default function SuperAdminCockpitPage() {
                               <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
                                 {t.priority}
                               </span>
-                              <span className="text-xs text-slate-400">di {t.podName}</span>
+                              <span className="text-xs text-slate-400">in {t.podName}</span>
                             </div>
                             <h4 className="text-xs font-bold text-white">{t.title}</h4>
                           </div>
@@ -1393,7 +1940,7 @@ export default function SuperAdminCockpitPage() {
                             href="/dashboard"
                             className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition-all"
                           >
-                            Buka Tiket
+                            Open Ticket
                           </Link>
                         </div>
                       ))}
@@ -1401,12 +1948,11 @@ export default function SuperAdminCockpitPage() {
                   </div>
                 )}
 
-                {/* 2. Tiket Pelanggaran Batas Waktu SLA (> 15 Menit) */}
                 {slaBreachedTickets.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5" />
-                      <span>Pelanggaran Batas Waktu SLA (&gt; 15 Menit Belum Direspons)</span>
+                      <span>SLA Threshold Breaches (&gt; 15 Minutes Unresponsive)</span>
                     </h3>
                     <div className="space-y-3">
                       {slaBreachedTickets.map((t: any) => (
@@ -1420,9 +1966,9 @@ export default function SuperAdminCockpitPage() {
                                 #{t.ticketNumber}
                               </span>
                               <span className="text-[10px] font-bold bg-amber-900/60 text-amber-200 px-2 py-0.5 rounded">
-                                Terlambat {t.elapsedMinutes} Menit
+                                Delayed {t.elapsedMinutes} Min
                               </span>
-                              <span className="text-xs text-slate-400">di {t.podName}</span>
+                              <span className="text-xs text-slate-400">in {t.podName}</span>
                             </div>
                             <h4 className="text-xs font-bold text-white">{t.title}</h4>
                           </div>
@@ -1430,7 +1976,7 @@ export default function SuperAdminCockpitPage() {
                             href="/dashboard"
                             className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all"
                           >
-                            Buka Tiket
+                            Open Ticket
                           </Link>
                         </div>
                       ))}
@@ -1442,22 +1988,22 @@ export default function SuperAdminCockpitPage() {
           </section>
         )}
 
-        {/* Tab 5: Kanal Masuk & Integrasi Portal */}
+        {/* Tab 5: Inbound Channels & Customer Gateways */}
         {activeTab === 'CHANNELS' && (
           <section className="space-y-6 animate-fadeIn">
-            {/* Header Deskripsi */}
+            {/* Header Box */}
             <div className="p-6 rounded-2xl bg-[#111827] border border-slate-800 space-y-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
                     <Globe className="w-5 h-5 text-blue-400" />
                     <h2 className="text-base font-bold text-white tracking-tight">
-                      Pusat Kendali Kanal Masuk &amp; Integrasi Pelanggan (Inbound Gateways)
+                      Inbound Channels &amp; Customer Gateways Control Center
                     </h2>
                   </div>
                   <p className="text-xs text-slate-400 mt-1 max-w-3xl leading-relaxed">
-                    Kelola dan distribusikan jembatan komunikasi antara pelanggan Pihak A dengan meja kerja Helpdesk (Leader &amp; Member).
-                    Semua keluhan yang masuk dari ketiga saluran ini otomatis di-triage oleh <strong className="text-blue-400">Gemini 3.8 Flash Grounded</strong> dan didistribusikan ke Pod yang tepat.
+                    Manage and route customer communication channels directly to the Pod Helpdesk queue (Leaders &amp; Agents).
+                    Inbound requests across these channels are automatically triaged by <strong className="text-blue-400">Gemini 3.8 Flash Grounded</strong> and dispatched to the designated Pod.
                   </p>
                 </div>
 
@@ -1467,15 +2013,15 @@ export default function SuperAdminCockpitPage() {
                     disabled={isCleaningDemo}
                     onClick={handleCleanupDemo}
                     className="px-3.5 py-1.5 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
-                    title="Hapus seluruh tiket demo showcase yang dibuat saat simulasi"
+                    title="Clean all showcase demo tickets from system"
                   >
                     <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>{isCleaningDemo ? 'Membersihkan...' : 'Bersihkan Tiket Demo'}</span>
+                    <span>{isCleaningDemo ? 'Cleaning...' : 'Clean Demo Tickets'}</span>
                   </button>
 
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs font-semibold shrink-0">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>3 Saluran Integrasi Aktif</span>
+                    <span>3 Inbound Gateways Active</span>
                   </div>
                 </div>
               </div>
@@ -1488,9 +2034,9 @@ export default function SuperAdminCockpitPage() {
               )}
             </div>
 
-            {/* Grid 3 Saluran Masuk Utama */}
+            {/* 3 Channel Cards */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              {/* Saluran 1: Portal Bantuan Pelanggan (Web & HP Responsive) */}
+              {/* Channel 1: Web Customer Portal */}
               <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1498,21 +2044,21 @@ export default function SuperAdminCockpitPage() {
                       <Globe className="w-5 h-5" />
                     </div>
                     <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 px-2.5 py-0.5 rounded-full">
-                      ● Live Web &amp; HP
+                      ● Live Web &amp; Mobile
                     </span>
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-bold text-white">1. Portal Web Pelanggan</h3>
+                    <h3 className="text-sm font-bold text-white">1. Web Customer Portal</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Customer Support Portal mandiri. Tampilan otomatis responsif di browser ponsel (Android/iOS) tanpa perlu download aplikasi.
+                      Standalone self-service customer portal. Responsively adapts across mobile and desktop browsers with zero app install required.
                     </p>
                   </div>
 
                   {/* URL Box */}
                   <div className="space-y-1.5 pt-2">
                     <label className="text-[11px] font-semibold text-slate-300 block">
-                      Tautan Resmi Portal:
+                      Official Portal URL:
                     </label>
                     <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-blue-400">
                       <span className="truncate flex-1">http://localhost:3000/portal</span>
@@ -1520,17 +2066,17 @@ export default function SuperAdminCockpitPage() {
                         type="button"
                         onClick={() => handleCopyChannel('http://localhost:3000/portal', 'portal-url')}
                         className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
-                        title="Salin Tautan"
+                        title="Copy URL"
                       >
                         {copiedChannelItem === 'portal-url' ? (
                           <>
                             <Check className="w-3 h-3" />
-                            <span>Tersalin</span>
+                            <span>Copied</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-3 h-3" />
-                            <span>Salin</span>
+                            <span>Copy</span>
                           </>
                         )}
                       </button>
@@ -1538,11 +2084,11 @@ export default function SuperAdminCockpitPage() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
-                    <span className="font-semibold text-slate-300 block">Rekomendasi Penempatan:</span>
+                    <span className="font-semibold text-slate-300 block">Deployment Recommendations:</span>
                     <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[10.5px]">
-                      <li>Tempel di menu footer website resmi Pihak A</li>
-                      <li>Pasang di bio Instagram / Twitter CS</li>
-                      <li>Template balasan otomatis WhatsApp Business</li>
+                      <li>Embed in corporate website footer navigation</li>
+                      <li>Place in customer support social links / Linktree</li>
+                      <li>Configure in WhatsApp Business auto-responder template</li>
                     </ul>
                   </div>
                 </div>
@@ -1554,12 +2100,12 @@ export default function SuperAdminCockpitPage() {
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-700"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Buka Tampilan Portal (Preview)</span>
+                    <span>Open Customer Portal (Preview)</span>
                   </Link>
                 </div>
               </div>
 
-              {/* Saluran 2: Integrasi Aplikasi Mobile (REST API) */}
+              {/* Channel 2: Mobile App Ingestion */}
               <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1572,16 +2118,16 @@ export default function SuperAdminCockpitPage() {
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-bold text-white">2. Integrasi Aplikasi Mobile HP</h3>
+                    <h3 className="text-sm font-bold text-white">2. Mobile App REST Ingestion</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Untuk tombol "Laporkan Masalah" di dalam aplikasi Android / iOS Pihak A. Pengguna tidak perlu keluar dari aplikasi HP.
+                      Direct integration for in-app "Report an Issue" buttons within native Android / iOS applications.
                     </p>
                   </div>
 
                   {/* API Box */}
                   <div className="space-y-1.5 pt-2">
                     <label className="text-[11px] font-semibold text-slate-300 block">
-                      Endpoint Ingestion API:
+                      Ingestion API Endpoint:
                     </label>
                     <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-emerald-400">
                       <span className="truncate flex-1">POST /api/v1/tickets</span>
@@ -1589,17 +2135,17 @@ export default function SuperAdminCockpitPage() {
                         type="button"
                         onClick={() => handleCopyChannel('http://localhost:4000/api/v1/tickets', 'api-url')}
                         className="px-2.5 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
-                        title="Salin Endpoint"
+                        title="Copy Endpoint"
                       >
                         {copiedChannelItem === 'api-url' ? (
                           <>
                             <Check className="w-3 h-3" />
-                            <span>Tersalin</span>
+                            <span>Copied</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-3 h-3" />
-                            <span>Salin</span>
+                            <span>Copy</span>
                           </>
                         )}
                       </button>
@@ -1607,12 +2153,12 @@ export default function SuperAdminCockpitPage() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
-                    <span className="font-semibold text-slate-300 block">Format Payload JSON:</span>
+                    <span className="font-semibold text-slate-300 block">JSON Payload Schema:</span>
                     <pre className="text-[10px] font-mono text-slate-400 bg-[#0B0F19] p-2 rounded-lg border border-slate-800 overflow-x-auto">
 {`{
-  "title": "Kendala Transaksi",
-  "description": "Uraian masalah...",
-  "customerName": "Nama User",
+  "title": "Payment Settlement Delay",
+  "description": "Issue details...",
+  "customerName": "Client Name",
   "tags": ["mobile-app", "billing"]
 }`}
                     </pre>
@@ -1625,18 +2171,18 @@ export default function SuperAdminCockpitPage() {
                     onClick={() => handleCopyChannel(
 `curl -X POST http://localhost:4000/api/v1/tickets \\
   -H "Content-Type: application/json" \\
-  -d '{"title":"API Test Ticket","description":"Test keluhan dari HP","customerName":"Customer Testing"}'`,
+  -d '{"title":"API Ingested Ticket","description":"Customer report via mobile SDK","customerName":"Demo Customer"}'`,
                       'curl-sample'
                     )}
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 border border-slate-700 cursor-pointer"
                   >
                     <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>{copiedChannelItem === 'curl-sample' ? 'cURL Tersalin!' : 'Salin Contoh Request (cURL)'}</span>
+                    <span>{copiedChannelItem === 'curl-sample' ? 'cURL Copied!' : 'Copy Sample Request (cURL)'}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Saluran 3: Integrasi Email Forwarding */}
+              {/* Channel 3: Email Forwarding Gateway */}
               <div className="p-5 rounded-2xl bg-[#111827] border border-slate-800 flex flex-col justify-between space-y-4 hover:border-slate-700 transition-all">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1649,16 +2195,16 @@ export default function SuperAdminCockpitPage() {
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-bold text-white">3. Integrasi Forwarding Email</h3>
+                    <h3 className="text-sm font-bold text-white">3. Email Gateway Forwarding</h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Customer kirim email via Gmail/Outlook mereka ke help@perusahaanA.com, otomatis diteruskan menjadi tiket di Sentirix.
+                      Customers send emails from Gmail/Outlook to your company domain (e.g. support@company.com), automatically ingested into Sentirix.
                     </p>
                   </div>
 
                   {/* Email Inbound Box */}
                   <div className="space-y-1.5 pt-2">
                     <label className="text-[11px] font-semibold text-slate-300 block">
-                      Alamat Gateway Terusan:
+                      Inbound Gateway Address:
                     </label>
                     <div className="flex items-center gap-2 bg-[#0B0F19] border border-slate-800 rounded-xl p-2 font-mono text-xs text-amber-400">
                       <span className="truncate flex-1">inbound@tickets.sentirix.com</span>
@@ -1666,17 +2212,17 @@ export default function SuperAdminCockpitPage() {
                         type="button"
                         onClick={() => handleCopyChannel('inbound@tickets.sentirix.com', 'email-gw')}
                         className="px-2.5 py-1 rounded-lg bg-amber-700 hover:bg-amber-600 text-white text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer"
-                        title="Salin Email Gateway"
+                        title="Copy Gateway Address"
                       >
                         {copiedChannelItem === 'email-gw' ? (
                           <>
                             <Check className="w-3 h-3" />
-                            <span>Tersalin</span>
+                            <span>Copied</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-3 h-3" />
-                            <span>Salin</span>
+                            <span>Copy</span>
                           </>
                         )}
                       </button>
@@ -1684,18 +2230,18 @@ export default function SuperAdminCockpitPage() {
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1 text-[11px] text-slate-400">
-                    <span className="font-semibold text-slate-300 block">3 Langkah Pengaturan Cepat:</span>
+                    <span className="font-semibold text-slate-300 block">3-Step Fast Setup Guide:</span>
                     <ol className="list-decimal list-inside space-y-1 text-slate-400 text-[10.5px]">
-                      <li>Buka Google Workspace / cPanel email Pihak A</li>
-                      <li>Buat Forward Rule: help@perusahaan.com ➔ inbound@tickets.sentirix.com</li>
-                      <li>Balasan Public Reply agen otomatis dikirim balik ke Gmail customer</li>
+                      <li>Open your Google Workspace / cPanel mail administration</li>
+                      <li>Create forwarding rule: support@company.com &rarr; inbound@tickets.sentirix.com</li>
+                      <li>Public replies from agents are automatically routed back to customer inbox</li>
                     </ol>
                   </div>
                 </div>
 
                 <div className="pt-2">
                   <div className="py-2.5 px-3 rounded-xl bg-amber-950/20 border border-amber-800/40 text-amber-300 text-center text-xs font-semibold">
-                    Zero-Install (Customer Pakai Gmail Biasa)
+                    Zero-Install (Customers use regular email)
                   </div>
                 </div>
               </div>
@@ -1710,7 +2256,7 @@ export default function SuperAdminCockpitPage() {
                 <div>
                   <h4 className="text-xs font-bold text-white">Sentirix Unified Message Lifecycle Active</h4>
                   <p className="text-[11px] text-slate-400">
-                    Seluruh pesan dari Web Portal, Mobile App, maupun Email bermuara pada satu antrean meja kerja Pod, dipantau live oleh Radar Krisis SLA (&lt; 15 Menit).
+                    All incoming messages across Web Portal, Mobile App, and Email funnel into one unified Pod workbench queue, monitored in real time by the SLA Crisis Radar (&lt; 15 Minutes).
                   </p>
                 </div>
               </div>
@@ -1719,11 +2265,382 @@ export default function SuperAdminCockpitPage() {
                 href="/dashboard"
                 className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-md shadow-blue-500/20"
               >
-                <span>Lihat Meja Kerja Pod</span>
+                <span>View Pod Workstations</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
           </section>
+        )}
+
+        {/* MODAL: EDIT PERSONNEL IDENTITY (SUPER ADMIN SOVEREIGN OVERRIDE) */}
+        {editingUser && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                    <Pencil className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Edit Personnel Identity</h3>
+                    <p className="text-[11px] text-slate-400">Super Admin Sovereign Override</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isSavingName) setEditingUser(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSavePersonnelName} className="p-5 space-y-4">
+                {/* Info Box */}
+                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Current Role</span>
+                    <span className="font-bold text-white uppercase px-2 py-0.5 rounded bg-slate-800 text-[10px]">
+                      {editingUser.role === 'LEADER' ? 'Pod Leader' : 'Frontline Agent'}
+                    </span>
+                  </div>
+                  {editingUser.podName && (
+                    <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                      <span>Assigned Pod</span>
+                      <span className="font-semibold text-slate-200">{editingUser.podName}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Account Identifier</span>
+                    <span className="font-mono text-slate-400 text-[10px]">{editingUser.id}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Official Full Name <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    disabled={isSavingName}
+                    value={editNameInput}
+                    onChange={(e) => setEditNameInput(e.target.value)}
+                    placeholder="Enter personnel full name..."
+                    className="w-full bg-[#0B0F19] border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all disabled:opacity-50"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Updating this will synchronize the name across attendance logs, ticket assignments, and invite token records.
+                  </p>
+                </div>
+
+                {editNameError && (
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                    <span className="text-red-400 font-bold">Error:</span>
+                    <span>{editNameError}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isSavingName}
+                    onClick={() => setEditingUser(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingName || !editNameInput.trim()}
+                    className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingName ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Changes...</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: PROMOTE TO POD LEADER (INTRA-POD ROLE SWITCH - CAPACITY FIXED) */}
+        {promotingUser && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-600/20 border border-amber-500/40 text-amber-400 flex items-center justify-center">
+                    <Crown className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Promote to Pod Leader</h3>
+                    <p className="text-[11px] text-slate-400">Intra-Pod Role Switch &bull; Strict Fixed Quota</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isPromoting) setPromotingUser(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleExecutePromote} className="p-5 space-y-4">
+                {/* Role Switch Exchange Visual */}
+                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Target Pod</span>
+                    <span className="font-semibold text-slate-200">{promotingUser.podName}</span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/60 grid grid-cols-2 gap-3">
+                    <div className="p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30">
+                      <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
+                        Promote to Leader
+                      </span>
+                      <span className="text-xs font-bold text-white mt-1 block">
+                        {promotingUser.fullName}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Will become new Pod Leader
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-amber-950/30 border border-amber-500/30">
+                      <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider block">
+                        Demote to Agent
+                      </span>
+                      <span className="text-xs font-bold text-white mt-1 block">
+                        {promotingUser.currentLeaderName}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Will step down to Frontline Agent
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Capacity Fixed Notice */}
+                <div className="p-3 rounded-xl bg-blue-950/30 border border-blue-500/30 text-blue-300 text-xs flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed">
+                    <strong>Strict Fixed Capacity Governance:</strong> Role switch occurs entirely within this pod. The total pod headcount remains strictly locked at <strong>{promotingUser.quota} Staff</strong> (0 seat increase or decrease).
+                  </p>
+                </div>
+
+                {promoteError && (
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                    <span className="text-red-400 font-bold">Error:</span>
+                    <span>{promoteError}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isPromoting}
+                    onClick={() => setPromotingUser(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isPromoting}
+                    className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-md shadow-amber-600/30 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isPromoting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Updating Leadership...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Crown className="w-3.5 h-3.5" />
+                        <span>Confirm Promotion</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: SWAP PERSONNEL ACROSS PODS (1-TO-1 RECIPROCAL EXCHANGE - FIXED CAPACITY) */}
+        {swappingUserA && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-600/20 border border-purple-500/40 text-purple-400 flex items-center justify-center">
+                    <ArrowRightLeft className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Swap Personnel Across Pods</h3>
+                    <p className="text-[11px] text-slate-400">1-to-1 Reciprocal Exchange &bull; Fixed Quotas Preserved</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isSwapping) setSwappingUserA(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleExecuteSwap} className="p-5 space-y-4">
+                {/* Personnel A Info */}
+                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-2 text-xs">
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Source Personnel (User A)</span>
+                    <span className="font-bold text-white">{swappingUserA.fullName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Source Pod</span>
+                    <span className="font-semibold text-slate-200">{swappingUserA.podName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Current Role</span>
+                    <span className="font-bold text-white uppercase px-2 py-0.5 rounded bg-slate-800 text-[10px]">
+                      {swappingUserA.role === 'LEADER' ? 'Pod Leader' : 'Frontline Agent'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Target Pod Selector */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Select Target Operational Pod <span className="text-red-400">*</span>
+                  </label>
+                  <select
+                    required
+                    disabled={isSwapping}
+                    value={swapTargetPodId}
+                    onChange={(e) => {
+                      const targetId = e.target.value;
+                      setSwapTargetPodId(targetId);
+                      const targetPod = workspaces.find((w: any) => w.id === targetId);
+                      const targetUsers = (cockpitData?.presenceMonitoring || []).filter(
+                        (u: any) => u.workspaceId === targetId || (targetPod && u.podName === targetPod.name),
+                      );
+                      setSwapTargetUserBId(targetUsers[0]?.userId || targetUsers[0]?.id || '');
+                    }}
+                    className="w-full bg-[#0B0F19] border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none transition-all cursor-pointer"
+                  >
+                    {workspaces
+                      .filter((w: any) => w.id !== swappingUserA.podId)
+                      .map((w: any) => {
+                        const podUsers = (cockpitData?.presenceMonitoring || []).filter(
+                          (u: any) => u.workspaceId === w.id || u.podName === w.name,
+                        );
+                        return (
+                          <option key={w.id} value={w.id}>
+                            {cleanPodName(w.name)} (Locked: {w.assignedQuota || podUsers.length} Staff)
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                {/* Target Personnel B Selector */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Select Exchange Partner in Target Pod (User B) <span className="text-red-400">*</span>
+                  </label>
+                  {(() => {
+                    const targetPod = workspaces.find((w: any) => w.id === swapTargetPodId);
+                    const targetUsers = (cockpitData?.presenceMonitoring || []).filter(
+                      (u: any) => u.workspaceId === swapTargetPodId || (targetPod && u.podName === targetPod.name),
+                    );
+
+                    if (targetUsers.length === 0) {
+                      return (
+                        <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 text-xs italic">
+                          No personnel available in this pod to swap with.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <select
+                        required
+                        disabled={isSwapping}
+                        value={swapTargetUserBId}
+                        onChange={(e) => setSwapTargetUserBId(e.target.value)}
+                        className="w-full bg-[#0B0F19] border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none transition-all cursor-pointer"
+                      >
+                        {targetUsers.map((u: any) => (
+                          <option key={u.userId || u.id} value={u.userId || u.id}>
+                            {u.fullName || u.username} &bull; {u.role === 'LEADER' ? 'Pod Leader' : 'Frontline Agent'}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
+                </div>
+
+                {/* Fixed Quota Guarantee Notice */}
+                <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/30 text-purple-300 text-xs flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed">
+                    <strong>Zero-Quota Fluctuation Guarantee:</strong> This is a strict 1-to-1 reciprocal exchange. Source Pod capacity remains 100% unchanged, and Target Pod capacity remains 100% unchanged. Open tickets assigned to both staff will safely return to unassigned status in their respective pods.
+                  </p>
+                </div>
+
+                {swapError && (
+                  <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                    <span className="text-red-400 font-bold">Error:</span>
+                    <span>{swapError}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    disabled={isSwapping}
+                    onClick={() => setSwappingUserA(null)}
+                    className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSwapping || !swapTargetUserBId}
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/30 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSwapping ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Executing Swap...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                        <span>Confirm 1-to-1 Swap</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </main>
 

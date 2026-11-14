@@ -1498,8 +1498,14 @@ export default function LandingPage() {
       {/* 7. AUTHENTICATION MODAL */}
       {/* ========================================================================= */}
       {isAuthOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn">
-          <div className="bg-[#16191D] border border-[#2F343B] w-full max-w-md rounded-2xl shadow-2xl shadow-black/80 overflow-hidden relative animate-scaleUp">
+        <div
+          onClick={() => setIsAuthOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#16191D] border border-[#2F343B] w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl shadow-black/80 relative animate-scaleUp"
+          >
             {/* Close Button */}
             <button
               onClick={() => setIsAuthOpen(false)}
@@ -1523,7 +1529,7 @@ export default function LandingPage() {
               </div>
 
               {/* Mode Switcher: Sign In vs Sign Up */}
-              <div className="grid grid-cols-2 gap-1 bg-[#0D0F12] p-1 rounded-xl border border-[#262A30] mt-4">
+              <div className="grid grid-cols-2 gap-1.5 bg-[#0D0F12] p-1.5 rounded-xl border border-[#262A30] mt-4">
                 <button
                   type="button"
                   onClick={() => {
@@ -1531,13 +1537,14 @@ export default function LandingPage() {
                     setLoginError(null);
                     setSuccessBanner(null);
                   }}
-                  className={`text-xs font-bold py-2 rounded-lg transition-all cursor-pointer ${
+                  className={`text-xs font-bold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     authMode === 'LOGIN'
-                      ? 'bg-[#262A30] text-[#F8FAFC] shadow-sm border border-[#3F444D]'
-                      : 'text-[#94A3B8] hover:text-[#CBD5E1]'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-extrabold'
+                      : 'text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-[#1E2228]'
                   }`}
                 >
-                  Sign In
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
                 </button>
                 <button
                   type="button"
@@ -1546,13 +1553,14 @@ export default function LandingPage() {
                     setSignupError(null);
                     setSuccessBanner(null);
                   }}
-                  className={`text-xs font-bold py-2 rounded-lg transition-all cursor-pointer ${
+                  className={`text-xs font-bold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     authMode === 'SIGNUP'
-                      ? 'bg-[#262A30] text-[#F8FAFC] shadow-sm border border-[#3F444D]'
-                      : 'text-[#94A3B8] hover:text-[#CBD5E1]'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-extrabold'
+                      : 'text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-[#1E2228]'
                   }`}
                 >
-                  Create Account
+                  <User className="w-3.5 h-3.5" />
+                  <span>Create Account</span>
                 </button>
               </div>
             </div>
@@ -1635,8 +1643,8 @@ export default function LandingPage() {
                     <span>{isLoggingIn ? 'Authenticating...' : 'Sign In to Workspace'}</span>
                   </button>
 
-                  <div className="text-center pt-2">
-                    <span className="text-xs text-[#64748B]">
+                  <div className="text-center pt-2 pb-1 border-t border-[#262A30]/60 mt-3">
+                    <span className="text-xs text-[#94A3B8]">
                       Need a new team account?{' '}
                       <button
                         type="button"
@@ -1644,9 +1652,9 @@ export default function LandingPage() {
                           setAuthMode('SIGNUP');
                           setLoginError(null);
                         }}
-                        className="text-[#F8FAFC] font-bold hover:underline cursor-pointer"
+                        className="text-blue-400 font-bold hover:underline cursor-pointer ml-1 inline-flex items-center gap-1"
                       >
-                        Sign Up Now
+                        Sign Up Now &rarr;
                       </button>
                     </span>
                   </div>
@@ -1818,8 +1826,8 @@ export default function LandingPage() {
                     <span>{isSigningUp ? 'Encrypting & Registering...' : 'Create Account & Verify'}</span>
                   </button>
 
-                  <div className="text-center pt-1">
-                    <span className="text-xs text-[#64748B]">
+                  <div className="text-center pt-2 pb-1 border-t border-[#262A30]/60 mt-3">
+                    <span className="text-xs text-[#94A3B8]">
                       Already have an account?{' '}
                       <button
                         type="button"
@@ -1827,9 +1835,9 @@ export default function LandingPage() {
                           setAuthMode('LOGIN');
                           setSignupError(null);
                         }}
-                        className="text-[#F8FAFC] font-bold hover:underline cursor-pointer"
+                        className="text-blue-400 font-bold hover:underline cursor-pointer ml-1 inline-flex items-center gap-1"
                       >
-                        Sign In
+                        Sign In here &rarr;
                       </button>
                     </span>
                   </div>
@@ -1844,8 +1852,14 @@ export default function LandingPage() {
       {/* 8. POST SIGN-UP VERIFICATION NOTIFICATION MODAL */}
       {/* ========================================================================= */}
       {showVerificationNotice && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fadeIn">
-          <div className="bg-[#16191D] border border-[#2F343B] w-full max-w-md rounded-2xl shadow-2xl p-6 text-center animate-scaleUp">
+        <div
+          onClick={() => setShowVerificationNotice(false)}
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#16191D] border border-[#2F343B] w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl p-6 text-center animate-scaleUp"
+          >
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/25">
               <CheckCircle2 className="w-8 h-8" />
             </div>

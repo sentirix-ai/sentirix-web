@@ -368,7 +368,7 @@ export default function TitaniumOnboardingPage() {
             p.service?.trim() ||
             services[idx % services.length] ||
             p.name.replace(/\s+Pod$/i, '').trim() ||
-            'Layanan Utama';
+            'Core Service';
           return {
             name: p.name,
             podCategory: p.category || 'GENERAL',
@@ -379,11 +379,11 @@ export default function TitaniumOnboardingPage() {
 
         while (targetPods.length < calculatedPodCount) {
           const num = targetPods.length + 1;
-          const fallbackSvc = services[(num - 1) % services.length] || `Layanan Pod #${num}`;
+          const fallbackSvc = services[(num - 1) % services.length] || `Pod Service #${num}`;
           targetPods.push({
-            name: `Pod Spesialisasi ${num}`,
+            name: `Specialized Pod ${num}`,
             podCategory: 'GENERAL',
-            description: `Unit penanganan operasional spesialisasi #${num}`,
+            description: `Dedicated operational unit for specialization #${num}`,
             services: [fallbackSvc],
           });
         }
@@ -407,11 +407,11 @@ export default function TitaniumOnboardingPage() {
   const buildFallbackPods = (servicesList: string[], count: number) => {
     const list: PodDraft[] = [];
     for (let i = 1; i <= count; i++) {
-      const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Layanan Pod #${i}`;
+      const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Pod Service #${i}`;
       list.push({
         name: `${defaultSvc} Pod`,
         podCategory: 'GENERAL',
-        description: `Unit operasional penanganan fokus untuk ${defaultSvc}`,
+        description: `Dedicated operational unit for ${defaultSvc}`,
         services: [defaultSvc],
       });
     }
@@ -420,11 +420,11 @@ export default function TitaniumOnboardingPage() {
 
   const handleNextToStep2 = () => {
     if (!organizationName.trim()) {
-      setErrorMessage('Nama organisasi / perusahaan wajib diisi.');
+      setErrorMessage('Organization / company name is required.');
       return;
     }
     if (selectedIndustry === 'OTHER' && !customIndustryText.trim()) {
-      setErrorMessage('Mohon jelaskan jenis industri atau bidang usaha Anda.');
+      setErrorMessage('Please describe your industry or line of business.');
       return;
     }
     setErrorMessage(null);
@@ -433,7 +433,7 @@ export default function TitaniumOnboardingPage() {
 
   const handleNextToStep3 = async () => {
     if (!typedMembers || typedMembers < 1) {
-      setErrorMessage('Mohon ketikkan jumlah member minimal 1 orang.');
+      setErrorMessage('Please enter at least 1 team member.');
       return;
     }
     setErrorMessage(null);
@@ -499,7 +499,7 @@ export default function TitaniumOnboardingPage() {
       const res = await setupMultiPodV2(payload);
 
       if (!res.success) {
-        setErrorMessage(res.error || 'Gagal membentuk organisasi multi-pod.');
+        setErrorMessage(res.error || 'Failed to create multi-pod organization.');
         return;
       }
 
@@ -514,7 +514,7 @@ export default function TitaniumOnboardingPage() {
       setGeneratedLeaderTokens(res.leaderTokens || []);
       setCurrentStep(4);
     } catch {
-      setErrorMessage('Terjadi kendala jaringan saat menghubungkan ke server.');
+      setErrorMessage('A network error occurred while connecting to the server.');
     } finally {
       setIsSubmitting(false);
     }
@@ -539,10 +539,10 @@ export default function TitaniumOnboardingPage() {
           ),
         );
       } else {
-        setErrorMessage(res.error || 'Gagal meregenerate token.');
+        setErrorMessage(res.error || 'Failed to regenerate token.');
       }
     } catch {
-      setErrorMessage('Terjadi kesalahan jaringan.');
+      setErrorMessage('A network error occurred.');
     } finally {
       setRegeneratingToken(null);
     }
@@ -553,7 +553,7 @@ export default function TitaniumOnboardingPage() {
       <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center text-slate-400 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span>Memverifikasi sesi Sentirix...</span>
+          <span>Verifying Sentirix session...</span>
         </div>
       </div>
     );
@@ -579,14 +579,14 @@ export default function TitaniumOnboardingPage() {
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
-            {currentStep === 4 ? 'Aktivasi Token Kepemimpinan Leader' : 'Pengaturan Arsitektur Multi-Pod'}
+            {currentStep === 4 ? 'Leader Activation & Token Distribution' : 'Multi-Pod Architecture Setup'}
           </h1>
           <p className="text-sm text-slate-400 max-w-3xl mx-auto">
             {currentStep === 4
-              ? 'Bagikan token aktivasi sekali pakai kepada setiap Leader Pod sebelum masuk ke Executive Cockpit.'
+              ? 'Distribute single-use activation tokens to each Pod Leader before proceeding to the Executive Cockpit.'
               : (
                 <>
-                  Bangun tata kelola layanan pelanggan yang terfokus, tangkas, dan bebas bentrok <span className="whitespace-nowrap">antar divisi.</span>
+                  Build a focused, agile customer support governance free of inter-departmental friction <span className="whitespace-nowrap">across all teams.</span>
                 </>
               )}
           </p>
@@ -594,10 +594,10 @@ export default function TitaniumOnboardingPage() {
           {/* Stepper Dots */}
           <div className="flex items-center justify-center gap-3 mt-6">
             {[
-              { num: 1, label: 'Industri' },
-              { num: 2, label: 'Kapasitas' },
-              { num: 3, label: 'Pod & Layanan' },
-              { num: 4, label: 'Token Leader' },
+              { num: 1, label: 'Industry' },
+              { num: 2, label: 'Capacity' },
+              { num: 3, label: 'Pods & Services' },
+              { num: 4, label: 'Leader Tokens' },
             ].map((step) => {
               const isActive = currentStep === step.num;
               const isPast = currentStep > step.num;
@@ -644,17 +644,17 @@ export default function TitaniumOnboardingPage() {
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-blue-400" />
-                  Perusahaan Anda bergerak di bidang apa?
+                  What industry is your company in?
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Sentirix akan merekomendasikan pod spesialisasi dan jenis layanan yang tepat untuk sektor Anda.
+                  Sentirix will recommend specialized pods and tailored services designed for your sector.
                 </p>
               </div>
 
               {/* Organization Name Input */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                  <span>Nama Organisasi / Perusahaan</span>
+                  <span>Organization / Company Name</span>
                   <span className="text-red-400 font-bold">*</span>
                 </label>
                 <input
@@ -728,13 +728,13 @@ export default function TitaniumOnboardingPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Sektor Lainnya</h3>
+                      <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Other Sector</h3>
                       <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800">
                         AI INSTANT ARCHITECT
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      Punya model bisnis khusus atau niche? Ketikkan bidang usaha Anda dan AI akan merancang arsitektur pod operasional secara otomatis.
+                      Have a unique or niche business model? Enter your sector and our AI will automatically architect your operational pods.
                     </p>
                   </div>
                 </div>
@@ -748,17 +748,17 @@ export default function TitaniumOnboardingPage() {
                 <div className="p-4 rounded-xl bg-[#0B0F19] border border-fuchsia-500/30 animate-fadeIn">
                   <label className="block text-xs font-bold text-fuchsia-300 mb-1.5 flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
-                    Jelaskan Sektor Bisnis Kustom Anda
+                    Describe Your Custom Business Sector
                   </label>
                   <input
                     type="text"
                     value={customIndustryText}
                     onChange={(e) => setCustomIndustryText(e.target.value)}
-                    placeholder="Contoh: Drone Pertanian Otonom & Pemetaan Lahan Komersial"
+                    placeholder="e.g., Autonomous Agricultural Drones & Land Surveying"
                     className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-fuchsia-500 transition-all font-medium"
                   />
                   <p className="text-[11px] text-slate-400 mt-2">
-                    AI Architect akan merancang 6 pod spesifik dari penjelasan bisnis yang Anda ketikkan.
+                    AI Architect will design tailored specialized pods based on your business description.
                   </p>
                 </div>
               )}
@@ -770,7 +770,7 @@ export default function TitaniumOnboardingPage() {
                   onClick={handleNextToStep2}
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
                 >
-                  <span>Lanjut: Tentukan Jumlah Member</span>
+                  <span>Next: Set Team Member Capacity</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -783,17 +783,17 @@ export default function TitaniumOnboardingPage() {
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-blue-400" />
-                  Berapa jumlah member yang ingin Anda masukkan?
+                  How many team members do you want to add?
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Ketikkan total personel customer support yang akan mengoperasikan Sentirix di perusahaan Anda.
+                  Enter the total customer support personnel who will be using Sentirix at your company.
                 </p>
               </div>
 
               {/* Interactive Typing Input */}
               <div className="p-6 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-4">
                 <label className="block text-xs font-bold text-slate-300">
-                  Total Anggota Tim (Ketik Angka Bebas):
+                  Total Team Members (Enter any number):
                 </label>
                 <div className="flex items-center gap-4">
                   <div className="relative flex-1 max-w-xs">
@@ -809,12 +809,12 @@ export default function TitaniumOnboardingPage() {
                       className="w-full bg-[#111827] border-2 border-blue-500/60 focus:border-blue-400 text-white text-2xl font-black rounded-xl px-4 py-3 text-center tracking-wide focus:outline-hidden focus:ring-4 focus:ring-blue-500/20 transition-all font-mono"
                     />
                   </div>
-                  <span className="text-sm font-semibold text-slate-400">Orang Anggota Tim</span>
+                  <span className="text-sm font-semibold text-slate-400">Team Members</span>
                 </div>
 
                 {/* Professional Operational Rationale Text */}
                 <p className="text-xs text-slate-300 leading-relaxed pt-2">
-                  Dengan jumlah member sebanyak <span className="font-bold text-white">{typedMembers} orang</span>, maka jumlah pod operasional Anda adalah <span className="font-bold text-emerald-400">{calculatedPodCount} pod</span> guna memastikan rentang kendali (<em>span of control</em>) tetap optimal dan koordinasi penanganan komplain berjalan responsif.
+                  With a total of <span className="font-bold text-white">{typedMembers} members</span>, your operational setup will comprise <span className="font-bold text-emerald-400">{calculatedPodCount} pods</span> to maintain an optimal span of control and ensure highly responsive issue resolution.
                 </p>
               </div>
 
@@ -826,14 +826,14 @@ export default function TitaniumOnboardingPage() {
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Kembali</span>
+                  <span>Back</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleNextToStep3}
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
                 >
-                  <span>Lanjut: Atur Pod &amp; Jenis Layanan</span>
+                  <span>Next: Configure Pods &amp; Services</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
@@ -846,10 +846,10 @@ export default function TitaniumOnboardingPage() {
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Layers className="w-5 h-5 text-blue-400" />
-                  Petakan Jenis Layanan ke Dalam {calculatedPodCount} Pod
+                  Map Service Categories Across {calculatedPodCount} Pods
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Pilih jenis layanan yang akan ditangani oleh masing-masing pod. Satu pod dapat menangani lebih dari satu jenis layanan sekaligus.
+                  Select the service types handled by each pod. A single pod can manage multiple services simultaneously.
                 </p>
               </div>
 
@@ -860,7 +860,7 @@ export default function TitaniumOnboardingPage() {
                   value={newServiceInput}
                   onChange={(e) => setNewServiceInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleAddGlobalService()}
-                  placeholder="Tambah jenis layanan baru (misal: Layanan VIP Prioritas)..."
+                  placeholder="Add a new service category (e.g., VIP Priority Concierge)..."
                   className="flex-1 bg-[#111827] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
                 />
                 <button
@@ -869,7 +869,7 @@ export default function TitaniumOnboardingPage() {
                   className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Tambah Layanan</span>
+                  <span>Add Service</span>
                 </button>
               </div>
 
@@ -877,7 +877,7 @@ export default function TitaniumOnboardingPage() {
               {isGeneratingPods ? (
                 <div className="py-12 text-center text-slate-400 text-xs">
                   <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <span>AI sedang merancang {calculatedPodCount} pod spesialisasi...</span>
+                  <span>AI is architecting {calculatedPodCount} specialized pods...</span>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -906,7 +906,7 @@ export default function TitaniumOnboardingPage() {
                                   onClick={() => handleSavePodName(pIdx)}
                                   className="text-xs bg-blue-600 px-2 py-1 rounded text-white font-bold"
                                 >
-                                  Simpan
+                                  Save
                                 </button>
                               </div>
                             ) : (
@@ -926,14 +926,14 @@ export default function TitaniumOnboardingPage() {
                             )}
                           </div>
                           <span className="text-[10px] font-semibold uppercase bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                            Maks 8 Orang
+                            Max 8 Members
                           </span>
                         </div>
 
                         {/* Multi-Service Selector for this Pod */}
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
-                            Pilih Jenis Layanan yang Ditangani Pod Ini:
+                            Select Services Handled by This Pod:
                           </label>
                           <div className="flex flex-wrap gap-2">
                             {availableServices.map((svc) => {
@@ -975,11 +975,11 @@ export default function TitaniumOnboardingPage() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(2)}
-                  title="Kembali ke Penentuan Kapasitas Member (Langkah 2)"
+                  title="Back to Member Capacity Selection (Step 2)"
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
-                  <span>Kembali</span>
+                  <span>Back</span>
                 </button>
                 <button
                   type="button"
@@ -990,11 +990,11 @@ export default function TitaniumOnboardingPage() {
                   {isSubmitting ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Membentuk Organisasi &amp; Token...</span>
+                      <span>Creating Organization &amp; Tokens...</span>
                     </>
                   ) : (
                     <>
-                      <span>Buat Organisasi &amp; Dapatkan Token Leader</span>
+                      <span>Create Organization &amp; Generate Leader Tokens</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -1011,12 +1011,12 @@ export default function TitaniumOnboardingPage() {
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h2 className="text-lg font-extrabold text-white">
-                  Organisasi Berhasil Dibentuk!
+                  Organization Successfully Created!
                 </h2>
                 <p className="text-xs text-slate-400 mt-1 max-w-lg mx-auto">
-                  Sebelum masuk ke Executive Cockpit Super Admin, silakan bagikan token aktivasi di bawah ini ke masing-masing Leader.
+                  Before proceeding to the Super Admin Executive Cockpit, please distribute the activation tokens below to each respective Pod Leader.
                   <br />
-                  <strong className="text-blue-400">Catatan Keamanan:</strong> Setiap token di bawah ini berstatus <strong>Single-Use (hanya bisa diklaim 1 kali)</strong>.
+                  <strong className="text-blue-400">Security Notice:</strong> Each token below is <strong>Single-Use (can only be claimed once)</strong>.
                 </p>
               </div>
 
@@ -1025,7 +1025,7 @@ export default function TitaniumOnboardingPage() {
                 {generatedLeaderTokens.map((item, idx) => {
                   const isCopied = copiedToken === item.token;
                   const waText = encodeURIComponent(
-                    `Halo, Anda ditunjuk sebagai Leader untuk ${item.workspaceName} di Sentirix. Silakan aktivasi akun dan tentukan kuota tim Anda melalui link berikut: ${item.joinUrl}`,
+                    `Hello, you have been appointed as the Leader for ${item.workspaceName} on Sentirix. Please activate your account and configure your team quota using this link: ${item.joinUrl}`,
                   );
                   return (
                     <div
@@ -1049,7 +1049,7 @@ export default function TitaniumOnboardingPage() {
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          Layanan: {item.services.join(', ') || 'Umum'}
+                          Services: {item.services.join(', ') || 'General'}
                         </div>
                       </div>
 
@@ -1065,7 +1065,7 @@ export default function TitaniumOnboardingPage() {
                           }`}
                         >
                           {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{isCopied ? 'Tersalin!' : 'Salin Link'}</span>
+                          <span>{isCopied ? 'Copied!' : 'Copy Link'}</span>
                         </button>
 
                         <a
@@ -1083,14 +1083,14 @@ export default function TitaniumOnboardingPage() {
                           disabled={regeneratingToken === item.token}
                           onClick={() => handleRegenerateLeaderToken(item.token)}
                           className="px-3 py-1.5 rounded-lg bg-[#111827] border border-blue-500/40 hover:border-blue-400 text-blue-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                          title="Buat ulang token jika calon leader membutuhkan token baru"
+                          title="Regenerate token if the prospective leader needs a fresh link"
                         >
                           <RefreshCw
                             className={`w-3.5 h-3.5 ${
                               regeneratingToken === item.token ? 'animate-spin text-blue-400' : ''
                             }`}
                           />
-                          <span>{regeneratingToken === item.token ? 'Memproses...' : 'Regenerate'}</span>
+                          <span>{regeneratingToken === item.token ? 'Processing...' : 'Regenerate'}</span>
                         </button>
                       </div>
                     </div>
@@ -1106,7 +1106,7 @@ export default function TitaniumOnboardingPage() {
                   className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 mx-auto cursor-pointer"
                 >
                   <Crown className="w-4 h-4 text-amber-300" />
-                  <span>Selesai Membagikan ➔ Masuk ke Super Admin Executive Cockpit</span>
+                  <span>Done Sharing ➔ Enter Super Admin Executive Cockpit</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>

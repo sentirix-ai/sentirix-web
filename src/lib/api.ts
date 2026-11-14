@@ -763,6 +763,107 @@ export async function cleanupDemoTickets(): Promise<{ count: number }> {
   }
 }
 
+export async function renamePersonnel(
+  userId: string,
+  newFullName: string,
+): Promise<{ success: boolean; user?: any; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/rename-personnel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, newFullName }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to rename personnel.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
+export async function transferPersonnel(
+  userId: string,
+  targetWorkspaceId: string,
+  targetRole?: string,
+): Promise<{
+  success: boolean;
+  message?: string;
+  user?: any;
+  sourceWorkspace?: any;
+  targetWorkspace?: any;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/transfer-personnel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, targetWorkspaceId, targetRole }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to transfer personnel.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
+export async function promoteLeader(
+  userId: string,
+  workspaceId: string,
+): Promise<{
+  success: boolean;
+  message?: string;
+  newLeader?: any;
+  demotedLeader?: any;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/promote-leader`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, workspaceId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to promote personnel to leader.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
+export async function swapPersonnel(
+  userAId: string,
+  userBId: string,
+): Promise<{
+  success: boolean;
+  message?: string;
+  userA?: any;
+  userB?: any;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/swap-personnel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userAId, userBId }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to swap personnel across pods.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
+
+
 
 
 
