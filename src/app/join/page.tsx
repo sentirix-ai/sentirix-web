@@ -44,6 +44,7 @@ function JoinWorkspaceContent() {
   const [tokenType, setTokenType] = useState<'LEADER' | 'AGENT' | 'LEGACY'>('LEGACY');
   const [tokenData, setTokenData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLockedToOtherSession, setIsLockedToOtherSession] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form inputs
@@ -62,6 +63,16 @@ function JoinWorkspaceContent() {
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
 
+  const getClientSessionId = () => {
+    if (typeof window === 'undefined') return '';
+    let sid = sessionStorage.getItem('sentirix_client_session_id');
+    if (!sid) {
+      sid = 'sess_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now();
+      sessionStorage.setItem('sentirix_client_session_id', sid);
+    }
+    return sid;
+  };
+
   useEffect(() => {
     if (!token) {
       setIsLoading(false);
@@ -72,11 +83,14 @@ function JoinWorkspaceContent() {
     const inspectToken = async () => {
       setIsLoading(false);
       setErrorMessage(null);
+      setIsLockedToOtherSession(false);
+      const sid = getClientSessionId();
 
       if (token.startsWith('STX-LDR-')) {
         setTokenType('LEADER');
-        const res = await fetchLeaderTokenStatus(token);
+        const res = await fetchLeaderTokenStatus(token, sid);
         if (!res.valid) {
+          if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
           setErrorMessage(res.error || 'Leader token is invalid or has expired.');
         } else {
           setTokenData(res);
@@ -96,8 +110,9 @@ function JoinWorkspaceContent() {
         }
       } else if (token.startsWith('STX-AGT-')) {
         setTokenType('AGENT');
-        const res = await fetchAgentTokenStatus(token);
+        const res = await fetchAgentTokenStatus(token, sid);
         if (!res.valid) {
+          if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
           setErrorMessage(res.error || 'Agent token is invalid or has already been used.');
         } else {
           setTokenData(res);
@@ -109,8 +124,9 @@ function JoinWorkspaceContent() {
         // Fallback for legacy invite link
         setTokenType('LEGACY');
         try {
-          const res = await validateWorkspaceInvite(token);
+          const res = await validateWorkspaceInvite(token, sid);
           if (!res.valid) {
+            if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
             setErrorMessage(res.error || 'Invitation link is invalid.');
           } else {
             setTokenData(res);
@@ -138,12 +154,14 @@ function JoinWorkspaceContent() {
 
       const maxAllowed = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
       const safeSubordinates = Math.min(Number(selectedSubordinates) || 1, maxAllowed);
+      const sid = getClientSessionId();
 
       const res = await lockLeaderQuota({
         token,
         fullName: fullName.trim(),
         password: password.trim() || undefined,
         chosenSubordinates: safeSubordinates,
+        sessionId: sid,
       });
 
       if (!res.success) {
@@ -195,10 +213,12 @@ function JoinWorkspaceContent() {
       setIsSubmitting(true);
       setErrorMessage(null);
 
+      const sid = getClientSessionId();
       const res = await claimAgentToken({
         token,
         fullName: fullName.trim(),
         password: password.trim() || undefined,
+        sessionId: sid,
       });
 
       if (!res.success) {
@@ -323,29 +343,47 @@ function JoinWorkspaceContent() {
             <span className="text-xs text-slate-400">Validating activation token...</span>
           </div>
         ) : errorMessage ? (
-          <div className="p-8 bg-[#111827] border border-red-800/80 rounded-2xl text-center space-y-4 shadow-xl">
-            <div className="w-12 h-12 rounded-xl bg-red-950 text-red-400 flex items-center justify-center mx-auto border border-red-800">
-              <AlertCircle className="w-6 h-6" />
+          <div
+            className={`p-8 bg-[#111827] rounded-2xl text-center space-y-4 shadow-2xl border ${
+              isLockedToOtherSession
+                ? 'border-amber-500/60 ring-1 ring-amber-500/20'
+                : 'border-red-800/80'
+            }`}
+          >
+            <div
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto border shadow-lg ${
+                isLockedToOtherSession
+                  ? 'bg-amber-950/80 text-amber-400 border-amber-500/50 shadow-amber-950/40'
+                  : 'bg-red-950 text-red-400 border-red-800 shadow-red-950/40'
+              }`}
+            >
+              {isLockedToOtherSession ? (
+                <Lock className="w-7 h-7 text-amber-400" />
+              ) : (
+                <AlertCircle className="w-7 h-7" />
+              )}
             </div>
-            <h2 className="text-base font-bold text-white">Token Access Denied</h2>
-            <p className="text-xs text-red-300 leading-relaxed max-w-md mx-auto">{errorMessage}</p>
+
+            {isLockedToOtherSession && (
+              <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider bg-amber-950/90 text-amber-300 px-3 py-1 rounded-full border border-amber-500/40 font-mono">
+                SECURITY NOTICE • SINGLE-USE BROWSER LOCKED
+              </span>
+            )}
+
+            <h2 className="text-lg font-bold text-white tracking-tight">
+              {isLockedToOtherSession
+                ? 'Link Active in Another Browser Session'
+                : 'Token Access Denied'}
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
+              {errorMessage}
+            </p>
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setErrorMessage(null);
-                  setFormError(null);
-                }}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back to Token &amp; Quota Selection</span>
-              </button>
               <a
                 href="/"
-                className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2 rounded-xl border border-slate-800 hover:bg-slate-800 transition-all font-semibold"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold"
               >
-                <span>Back to Home</span>
+                <span>Return to Home</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </a>
             </div>

@@ -39,11 +39,18 @@ export function validateUsername(username: string): { isValid: boolean; error?: 
   if (!username || username.trim() === '') {
     return { isValid: false, error: 'Username is required.' };
   }
-  if (username.length > 20) {
-    return { isValid: false, error: 'Username must not exceed 20 characters.' };
+  const clean = username.toLowerCase().trim();
+  if (!/^[a-z]+$/.test(clean)) {
+    return {
+      isValid: false,
+      error: 'Username must contain lowercase letters only (a-z) without numbers, spaces, or symbols.',
+    };
   }
-  if (/\s/.test(username)) {
-    return { isValid: false, error: 'Username must not contain any spaces.' };
+  if (clean.length < 3) {
+    return { isValid: false, error: 'Username must be at least 3 letters long.' };
+  }
+  if (clean.length > 20) {
+    return { isValid: false, error: 'Username must not exceed 20 letters.' };
   }
   return { isValid: true };
 }
@@ -109,7 +116,7 @@ export async function registerUser(params: {
   verificationMethod: 'EMAIL' | 'PHONE';
   password: string;
 }): Promise<{ success: boolean; user?: UserSession; error?: string }> {
-  const cleanUsername = params.username.toLowerCase().trim().replace(/\s/g, '');
+  const cleanUsername = params.username.toLowerCase().trim().replace(/[^a-z]/g, '');
   const cleanEmail = params.email.toLowerCase().trim();
   const cleanPhone = params.phone.trim();
 

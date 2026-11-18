@@ -326,9 +326,13 @@ export async function fetchMyWorkspace(identifier: string): Promise<WorkspaceDat
   }
 }
 
-export async function validateWorkspaceInvite(token: string): Promise<ValidateInviteResult> {
+export async function validateWorkspaceInvite(
+  token: string,
+  sessionId?: string,
+): Promise<ValidateInviteResult> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/validate-invite/${encodeURIComponent(token)}`, {
+    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    const res = await fetch(`${API_BASE_URL}/workspace/validate-invite/${encodeURIComponent(token)}${q}`, {
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -636,10 +640,11 @@ export async function setupMultiPodV2(payload: {
 
 
 
-export async function fetchLeaderTokenStatus(token: string): Promise<any> {
+export async function fetchLeaderTokenStatus(token: string, sessionId?: string): Promise<any> {
   try {
+    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
     const res = await fetch(
-      `${API_BASE_URL}/workspace/leader-token-status/${encodeURIComponent(token)}`,
+      `${API_BASE_URL}/workspace/leader-token-status/${encodeURIComponent(token)}${q}`,
       { cache: 'no-store' },
     );
     return await res.json();
@@ -653,6 +658,7 @@ export async function lockLeaderQuota(payload: {
   fullName: string;
   password?: string;
   chosenSubordinates: number;
+  sessionId?: string;
 }): Promise<{
   success: boolean;
   isReLogin?: boolean;
@@ -677,10 +683,11 @@ export async function lockLeaderQuota(payload: {
   }
 }
 
-export async function fetchAgentTokenStatus(token: string): Promise<any> {
+export async function fetchAgentTokenStatus(token: string, sessionId?: string): Promise<any> {
   try {
+    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
     const res = await fetch(
-      `${API_BASE_URL}/workspace/agent-token-status/${encodeURIComponent(token)}`,
+      `${API_BASE_URL}/workspace/agent-token-status/${encodeURIComponent(token)}${q}`,
       { cache: 'no-store' },
     );
     return await res.json();
@@ -693,6 +700,7 @@ export async function claimAgentToken(payload: {
   token: string;
   fullName: string;
   password?: string;
+  sessionId?: string;
 }): Promise<{
   success: boolean;
   user?: any;
@@ -728,7 +736,101 @@ export async function fetchSuperAdminCockpit(identifier: string): Promise<any> {
   }
 }
 
-export async function regenerateToken(token: string, identifier?: string): Promise<{
+export async function fetchPendingLeaderTokens(identifier: string): Promise<{
+  success: boolean;
+  hasPendingTokens: boolean;
+  onboardingCompleted: boolean;
+  organizationName?: string;
+  industry?: string;
+  customIndustryDescription?: string | null;
+  totalSeats?: number;
+  pods?: Array<{
+    name: string;
+    podCategory: string;
+    description?: string;
+    services: string[];
+  }>;
+  availableServices?: string[];
+  leaderTokens: Array<{
+    workspaceId: string;
+    workspaceName: string;
+    podCategory: string;
+    services: string[];
+    token: string;
+    role: string;
+    isUsed: boolean;
+    joinUrl: string;
+  }>;
+} | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/pending-leader-tokens?identifier=${encodeURIComponent(identifier)}`,
+      { cache: 'no-store' },
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function completeOnboarding(identifier: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/complete-onboarding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to complete onboarding.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error.' };
+  }
+}
+
+export async function validateServiceSemantic(payload: {
+  originalService: string;
+  newServiceName: string;
+  industry?: string;
+}): Promise<{
+  isCompatible: boolean;
+  confidenceScore: number;
+  explanation: string;
+  suggestAddAsNew: boolean;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/ai/validate-service-semantic`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      return {
+        isCompatible: true,
+        confidenceScore: 50,
+        explanation: 'Could not perform semantic validation.',
+        suggestAddAsNew: false,
+      };
+    }
+    return await res.json();
+  } catch {
+    return {
+      isCompatible: true,
+      confidenceScore: 50,
+      explanation: 'Network offline.',
+      suggestAddAsNew: false,
+    };
+  }
+}
+
+export async function regenerateToken(
+  token: string,
+  identifier?: string,
+  workspaceId?: string,
+): Promise<{
   success: boolean;
   oldToken?: string;
   newToken?: string;
@@ -742,7 +844,7 @@ export async function regenerateToken(token: string, identifier?: string): Promi
     const res = await fetch(`${API_BASE_URL}/workspace/regenerate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, identifier }),
+      body: JSON.stringify({ token, identifier, workspaceId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

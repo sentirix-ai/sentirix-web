@@ -306,38 +306,16 @@ export default function LandingPage() {
           podName = 'Pod 02: Account Security & Biometric KYC';
         }
 
-        // Context-aware dynamic drafted response
+        // Context-aware dynamic drafted response (Corporate American Enterprise Tone)
         let dynamicDraft = '';
-        const isIndonesian =
-          lower.includes('saya') ||
-          lower.includes('dan') ||
-          lower.includes('yang') ||
-          lower.includes('tidak') ||
-          lower.includes('ini') ||
-          lower.includes('ada') ||
-          lower.includes('ke') ||
-          lower.includes('bisa') ||
-          lower.includes('tolong');
-
-        if (isIndonesian) {
-          if (lower.includes('refund') || lower.includes('uang') || lower.includes('kembali')) {
-            dynamicDraft = `Halo, terima kasih telah menghubungi kami. Kami memahami urgensi permintaan pengembalian dana terkait: "${text.slice(0, 70)}...". Laporan Anda telah diprioritaskan di ${podName}. Tim finansial kami telah mencatat transaksi ini untuk verifikasi kilat tanpa potongan biaya, dan Anda akan menerima konfirmasi via email dalam 1-3 hari kerja.`;
-          } else if (lower.includes('rusak') || lower.includes('cacat') || lower.includes('pecah')) {
-            dynamicDraft = `Halo, kami memohon maaf atas ketidaknyamanan akibat produk yang Anda terima dalam kondisi rusak. Pengaduan Anda telah dialihkan langsung ke ${podName}. Kami telah menyiapkan opsi penggantian unit kilat atau pengembalian dana penuh. Petugas kami akan memandu Anda untuk langkah penyelesaian dalam 15 menit ke depan.`;
-          } else if (lower.includes('paket') || lower.includes('belum sampai') || lower.includes('kurir') || lower.includes('resi')) {
-            dynamicDraft = `Halo, mohon maaf atas keterlambatan pesanan Anda. Kami telah melacak titik koordinat kurir melalui ${podName} dan menerbitkan tiket percepatan pengiriman darurat ke depo regional. Anda akan menerima pembaruan pelacakan GPS otomatis secara berkala hingga paket tiba di tujuan.`;
-          } else {
-            dynamicDraft = `Halo, terima kasih telah menghubungi tim Sentirix. Mengenai pesan Anda: "${text.slice(0, 80)}...", sistem telah mengarahkan tiket ini ke ${podName} untuk penanganan terfokus. Spesialis kami sedang meninjau rincian kebutuhan Anda dan akan memberikan solusi terbaik sesegera mungkin.`;
-          }
+        if (lower.includes('refund') || lower.includes('charge') || lower.includes('money') || lower.includes('uang') || lower.includes('kembali')) {
+          dynamicDraft = `Hello, thank you for reaching out. We recognize the urgency regarding your refund and billing inquiry: "${text.slice(0, 70)}...". This case has been prioritized directly with ${podName}. Our financial verification team has flagged this transaction for priority reversal, and funds will reflect on your statement within 1-3 business days.`;
+        } else if (lower.includes('broken') || lower.includes('damaged') || lower.includes('defective') || lower.includes('rusak') || lower.includes('cacat')) {
+          dynamicDraft = `Hello, we sincerely apologize for the inconvenience caused by the damaged delivery. Your claim has been routed to ${podName}. We have pre-approved an expedited replacement unit or a full refund at your preference. An automated return voucher has been generated for your convenience.`;
+        } else if (lower.includes('package') || lower.includes('tracking') || lower.includes('courier') || lower.includes('paket') || lower.includes('resi') || lower.includes('kurir')) {
+          dynamicDraft = `Hello, we apologize for the shipment delay. We have tracked your carrier coordinates through ${podName} and issued an expedited dispatch request to the regional distribution hub. Automated tracking updates will be provided periodically until delivery is confirmed.`;
         } else {
-          // English dynamic response
-          if (lower.includes('refund') || lower.includes('charge') || lower.includes('money')) {
-            dynamicDraft = `Hello, thank you for reaching out. We recognize the urgency regarding your refund and billing concern: "${text.slice(0, 70)}...". This case has been escalated directly to ${podName}. Our financial verification team has flagged this transaction for priority reversal, and funds will reflect on your statement within 1-3 business days.`;
-          } else if (lower.includes('broken') || lower.includes('damaged') || lower.includes('defective')) {
-            dynamicDraft = `Hello, we sincerely apologize for the inconvenience caused by the damaged delivery. Your claim has been routed to ${podName}. We have pre-approved an expedited replacement unit or a full refund at your preference. An automated return voucher has been generated for your convenience.`;
-          } else {
-            dynamicDraft = `Hello, thank you for contacting Sentirix Support. Regarding your inquiry: "${text.slice(0, 80)}...", our autonomous copilot has routed your ticket to ${podName} under priority protocol. A specialized agent is currently reviewing your request to ensure rapid resolution.`;
-          }
+          dynamicDraft = `Hello, thank you for contacting Sentirix Support. Regarding your inquiry: "${text.slice(0, 80)}...", our autonomous copilot has routed your ticket to ${podName} under priority protocol. A specialized agent is currently reviewing your request to ensure rapid resolution.`;
         }
 
         setSimResult({
@@ -381,6 +359,13 @@ export default function LandingPage() {
   useEffect(() => {
     const session = getSession();
     if (session) {
+      // 1. Check if user has an unfinished Step 4 Token Distribution session (Resilient restore on browser reopen/crash)
+      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
+      if (pendingStep === '4' || (!session.onboardingCompleted && session.role === 'ADMIN')) {
+        router.push('/onboarding?step=4');
+        return;
+      }
+
       if (session.role === 'ADMIN') {
         router.push('/admin/cockpit');
       } else if (session.isGuestMember || session.onboardingCompleted) {
@@ -422,8 +407,11 @@ export default function LandingPage() {
         return;
       }
 
-      // Check onboarding & role status: Super Admin is strictly routed to Executive Cockpit
-      if (res.user?.role === 'ADMIN') {
+      // Check onboarding & role status:
+      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
+      if (pendingStep === '4' || (!res.user?.onboardingCompleted && res.user?.role === 'ADMIN')) {
+        router.push('/onboarding?step=4');
+      } else if (res.user?.role === 'ADMIN') {
         router.push('/admin/cockpit');
       } else if (res.user?.isGuestMember || res.user?.onboardingCompleted) {
         router.push('/dashboard');
@@ -440,7 +428,7 @@ export default function LandingPage() {
     e.preventDefault();
     setSignupError(null);
 
-    const cleanUsername = signupUsername.toLowerCase().trim().replace(/\s/g, '');
+    const cleanUsername = signupUsername.toLowerCase().trim().replace(/[^a-z]/g, '');
     const cleanEmail = signupEmail.toLowerCase().trim();
 
     if (!cleanUsername) {
@@ -448,13 +436,18 @@ export default function LandingPage() {
       return;
     }
 
-    if (/\s/.test(cleanUsername)) {
-      setSignupError('Username must not contain any spaces.');
+    if (!/^[a-z]+$/.test(cleanUsername)) {
+      setSignupError('Username must contain lowercase letters only (a-z). Numbers, spaces, and symbols are not allowed.');
+      return;
+    }
+
+    if (cleanUsername.length < 3) {
+      setSignupError('Username must be at least 3 letters.');
       return;
     }
 
     if (cleanUsername.length > 20) {
-      setSignupError('Username cannot exceed 20 characters.');
+      setSignupError('Username cannot exceed 20 letters.');
       return;
     }
 
@@ -1610,7 +1603,7 @@ export default function LandingPage() {
                         required
                         value={loginIdentifier}
                         onChange={(e) => setLoginIdentifier(e.target.value.toLowerCase().trim())}
-                        placeholder="e.g. sarah_ops or sarah@company.com"
+                        placeholder="e.g. alexander or alexander@acmeglobal.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] focus:border-transparent transition-all"
                       />
                     </div>
@@ -1693,12 +1686,12 @@ export default function LandingPage() {
                       </label>
                       <span
                         className={`text-[10px] font-mono ${
-                          signupUsername.length > 20 || /\s/.test(signupUsername)
-                            ? 'text-rose-400 font-bold'
+                          signupUsername.length >= 20
+                            ? 'text-amber-400 font-bold'
                             : 'text-[#64748B]'
                         }`}
                       >
-                        {signupUsername.length}/20 chars
+                        {signupUsername.length}/20 letters
                       </span>
                     </div>
                     <div className="relative">
@@ -1708,18 +1701,18 @@ export default function LandingPage() {
                         required
                         maxLength={20}
                         value={signupUsername}
-                        onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
-                        placeholder="e.g. sarah_ops, pungkyrama (lowercase only)"
-                        className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
+                        onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z]/g, ''))}
+                        placeholder="e.g., alexander, david (letters only)"
+                        className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all font-mono"
                       />
                     </div>
                     <p className="text-[10px] text-[#64748B] mt-1">
-                      Standard Tech ID: auto-formatted in lowercase without spaces.
+                      Letters only (a-z). Numbers, spaces, and special symbols are strictly blocked.
                     </p>
                     {signupUsername.length >= 20 && (
                       <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-semibold">
                         <AlertCircle className="w-3 h-3" />
-                        Maximum limit of 20 characters reached.
+                        Maximum limit of 20 letters reached.
                       </p>
                     )}
                   </div>
@@ -1736,7 +1729,7 @@ export default function LandingPage() {
                         required
                         value={signupEmail}
                         onChange={(e) => setSignupEmail(e.target.value.toLowerCase().trim())}
-                        placeholder="e.g. sarah.jenkins@company.com"
+                        placeholder="alexander@acmeglobal.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
                       />
                     </div>
@@ -1757,7 +1750,7 @@ export default function LandingPage() {
                         required
                         value={signupPhone}
                         onChange={(e) => setSignupPhone(e.target.value)}
-                        placeholder="+1 (555) 019-2834"
+                        placeholder="+1 (415) 555-0192"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
                       />
                     </div>

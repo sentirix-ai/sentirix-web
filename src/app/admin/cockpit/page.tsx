@@ -459,6 +459,10 @@ export default function SuperAdminCockpitPage() {
           setErrorMessage('Failed to load organization cockpit data. Please ensure setup is completed.');
         }
       } else {
+        if (data?.organization?.onboardingCompleted === false) {
+          router.push('/onboarding?step=4');
+          return;
+        }
         setCockpitData(data);
       }
     } catch {
@@ -474,6 +478,10 @@ export default function SuperAdminCockpitPage() {
     const active = getSession();
     if (!active) {
       router.push('/');
+      return;
+    }
+    if (active.onboardingCompleted === false) {
+      router.push('/onboarding?step=4');
       return;
     }
     setLocalSession(active);
@@ -720,9 +728,11 @@ export default function SuperAdminCockpitPage() {
                   AI COPILOT COCKPIT
                 </span>
               </div>
-              <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">
-                AUTONOMOUS SUPPORT INTELLIGENCE &bull; {org.name || 'Enterprise Organization'}
-              </p>
+              <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-bold tracking-wider">
+                <span className="uppercase">AUTONOMOUS SUPPORT INTELLIGENCE</span>
+                <span>&bull;</span>
+                <span className="text-blue-300 font-bold">{org.name || 'Enterprise Organization'}</span>
+              </div>
             </div>
           </div>
 

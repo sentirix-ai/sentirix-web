@@ -99,10 +99,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         {!isConnected && (
           <div
             className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold animate-pulse shadow-xs"
-            title="Koneksi real-time terputus. Sistem sedang mencoba menyambungkan kembali..."
+            title="Real-time connection interrupted. System is attempting to reconnect..."
           >
             <WifiOff className="w-3.5 h-3.5 text-amber-600" />
-            <span>Koneksi Terputus (Menyambungkan...)</span>
+            <span>Connection Lost (Reconnecting...)</span>
           </div>
         )}
 
@@ -122,12 +122,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={handleCopyPortal}
             className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-lg border border-slate-200 transition-colors cursor-pointer"
-            title="Salin tautan portal pengaduan untuk dibagikan ke pelanggan"
+            title="Copy customer complaint portal link"
           >
             {copiedPortal ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="text-emerald-700">Tersalin!</span>
+                <span className="text-emerald-700">Copied!</span>
               </>
             ) : (
               <>

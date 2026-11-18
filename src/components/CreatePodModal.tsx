@@ -87,7 +87,7 @@ export const CreatePodModal: React.FC<CreatePodModalProps> = ({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Pod Kurir Instant & Sameday"
+              placeholder="e.g. Expedited Logistics & Same-Day Dispatch"
               className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               required
             />
@@ -101,7 +101,7 @@ export const CreatePodModal: React.FC<CreatePodModalProps> = ({
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
             >
               <option value="CUSTOM">CUSTOM (Custom Inquiries)</option>
-              <option value="TRACKING">TRACKING (Waybill & Resi)</option>
+              <option value="TRACKING">TRACKING (Waybill & Route Tracking)</option>
               <option value="CLAIMS">CLAIMS (Damage & Lost Cargo)</option>
               <option value="DISPATCH">DISPATCH (Courier Fleet)</option>
               <option value="BILLING">BILLING (Invoices & Payments)</option>

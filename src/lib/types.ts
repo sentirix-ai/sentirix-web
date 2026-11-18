@@ -82,6 +82,7 @@ export interface WorkspaceData {
 export interface ValidateInviteResult {
   valid: boolean;
   error?: string;
+  isLockedToOtherSession?: boolean;
   workspaceId?: string;
   workspaceName?: string;
   ownerName?: string;

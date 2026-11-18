@@ -88,6 +88,16 @@ export default function DashboardPage() {
       return;
     }
 
+    // Strictly route Super Admins / Org Owners out of frontline helpdesk
+    if (session.role === 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+      if (!session.onboardingCompleted) {
+        router.push('/onboarding?step=4');
+      } else {
+        router.push('/admin/cockpit');
+      }
+      return;
+    }
+
     const isSuperAdmin = session.username.toLowerCase() === 'pungkyrama' || (session.role === 'ADMIN' && !(session as any).workspaceId);
     const isLeader =
       !isSuperAdmin &&

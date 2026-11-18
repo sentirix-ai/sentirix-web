@@ -23,21 +23,30 @@ import {
   ArrowLeft,
   Sparkles,
   Layers,
-  Crown,
   Info,
   AlertCircle,
+  AlertTriangle,
   Edit3,
   Trash2,
   Plus,
   Check,
   Copy,
   Share2,
-  MessageCircle,
   ExternalLink,
   RefreshCw,
+  Lock,
+  RotateCcw,
 } from 'lucide-react';
 import { getSession, setSession, UserSession } from '../../lib/auth';
-import { generatePodsForIndustry, setupMultiPodV2, regenerateToken, fetchSuperAdminCockpit } from '../../lib/api';
+import {
+  generatePodsForIndustry,
+  setupMultiPodV2,
+  regenerateToken,
+  fetchSuperAdminCockpit,
+  fetchPendingLeaderTokens,
+  completeOnboarding,
+  validateServiceSemantic,
+} from '../../lib/api';
 
 interface IndustryOption {
   id: string;
@@ -247,6 +256,27 @@ interface PodDraft {
   services: string[];
 }
 
+const CORPORATE_ACRONYMS = new Set([
+  'PT', 'CV', 'UD', 'TBK', 'LLC', 'LTD', 'GMBH', 'PTE', 'USA', 'UK', 'ID', 'BCA', 'BRI', 'BNI', 'IBM', 'AWS', 'NASA', 'SAP', 'AI', 'IT', 'HQ'
+]);
+
+function toCorporateTitleCase(input: string): string {
+  if (!input) return '';
+  const trailingSpaces = input.match(/\s+$/)?.[0] || '';
+  const words = input.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return trailingSpaces;
+
+  const formattedWords = words.map((word) => {
+    const upper = word.toUpperCase();
+    if (CORPORATE_ACRONYMS.has(upper)) {
+      return upper;
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+
+  return formattedWords.join(' ') + trailingSpaces;
+}
+
 export default function TitaniumOnboardingPage() {
   const router = useRouter();
 
@@ -255,6 +285,7 @@ export default function TitaniumOnboardingPage() {
 
   // Stepper State (1: Industry, 2: Capacity Typing, 3: Pods & Multi-Services, 4: Distribution Tokens)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [maxUnlockedStep, setMaxUnlockedStep] = useState<number>(1);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Step 1: Industry
@@ -274,6 +305,13 @@ export default function TitaniumOnboardingPage() {
   const [newPodName, setNewPodName] = useState<string>('');
   const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
   const [editingServiceText, setEditingServiceText] = useState<string>('');
+  const [isValidatingSemantic, setIsValidatingSemantic] = useState<boolean>(false);
+  const [semanticWarning, setSemanticWarning] = useState<{
+    original: string;
+    proposed: string;
+    explanation: string;
+    index: number;
+  } | null>(null);
 
   // Step 4: Submission & Single-Use Leader Tokens Result
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -287,6 +325,8 @@ export default function TitaniumOnboardingPage() {
   }>>([]);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
+  const [dispatchedTokens, setDispatchedTokens] = useState<Set<string>>(new Set());
+  const [regeneratedTokens, setRegeneratedTokens] = useState<Set<string>>(new Set());
 
   // Auto-calculated pod count: Math.ceil(typedMembers / 8)
   const calculatedPodCount = Math.max(1, Math.ceil((Number(typedMembers) || 1) / 8));
@@ -300,6 +340,67 @@ export default function TitaniumOnboardingPage() {
     }
     setLocalSession(active);
     setIsVerifying(false);
+
+    // 1. Resilient Step 4 Recovery: Check Postgres Database & LocalStorage
+    fetchPendingLeaderTokens(active.username).then((dbRes) => {
+      if (dbRes?.hasPendingTokens) {
+        // Hydrate all previous step choices from PostgreSQL database so Step 1, 2, 3 remain 100% intact!
+        if (dbRes.organizationName) setOrganizationName(dbRes.organizationName);
+        if (dbRes.industry) setSelectedIndustry(dbRes.industry);
+        if (dbRes.customIndustryDescription) setCustomIndustryText(dbRes.customIndustryDescription);
+        if (dbRes.totalSeats) setTypedMembers(dbRes.totalSeats);
+        if (dbRes.pods && dbRes.pods.length > 0) {
+          setPods(dbRes.pods.map((p) => ({ ...p, description: p.description || '' })));
+        }
+        if (dbRes.availableServices && dbRes.availableServices.length > 0) setAvailableServices(dbRes.availableServices);
+        setMaxUnlockedStep(4);
+
+        const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+        const requestedStep = urlParams?.get('step');
+        const pendingLocalStorageStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
+
+        // If onboarding is NOT completed in database, or step 4 is requested / stored, stay on Step 4!
+        if (!dbRes.onboardingCompleted || requestedStep === '4' || pendingLocalStorageStep === '4') {
+          setGeneratedLeaderTokens(dbRes.leaderTokens);
+          setCurrentStep(4);
+
+          // Force session promotion to ADMIN with onboardingCompleted: false
+          const adminSession: UserSession = {
+            ...active,
+            role: 'ADMIN',
+            onboardingCompleted: false,
+          };
+          setSession(adminSession);
+          setLocalSession(adminSession);
+
+          // Restore dispatched & regenerated tokens
+          try {
+            localStorage.setItem('sentirix_onboarding_step', '4');
+            localStorage.setItem('sentirix_pending_tokens', JSON.stringify(dbRes.leaderTokens));
+            const rawDispatched = localStorage.getItem('sentirix_dispatched_tokens');
+            if (rawDispatched) setDispatchedTokens(new Set(JSON.parse(rawDispatched)));
+            const rawRegenerated = localStorage.getItem('sentirix_regenerated_tokens');
+            if (rawRegenerated) setRegeneratedTokens(new Set(JSON.parse(rawRegenerated)));
+          } catch {}
+          return;
+        }
+      }
+
+      // If already fully completed onboarding in both session and database, route to cockpit
+      if (active.onboardingCompleted && dbRes?.onboardingCompleted) {
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.get('step') !== '2') {
+            if (active.role === 'ADMIN' || dbRes?.hasPendingTokens) {
+              router.push('/admin/cockpit');
+            } else {
+              router.push('/dashboard');
+            }
+            return;
+          }
+        }
+      }
+    }).catch(() => {});
 
     // Read planned capacity from landing page calculator if present
     try {
@@ -425,15 +526,18 @@ export default function TitaniumOnboardingPage() {
   };
 
   const handleNextToStep2 = () => {
-    if (!organizationName.trim()) {
+    const cleanName = toCorporateTitleCase(organizationName.trim().replace(/\s+/g, ' '));
+    if (!cleanName) {
       setErrorMessage('Organization / company name is required.');
       return;
     }
+    setOrganizationName(cleanName);
     if (selectedIndustry === 'OTHER' && !customIndustryText.trim()) {
       setErrorMessage('Please describe your industry or line of business.');
       return;
     }
     setErrorMessage(null);
+    setMaxUnlockedStep((prev) => Math.max(prev, 2));
     setCurrentStep(2);
   };
 
@@ -443,8 +547,12 @@ export default function TitaniumOnboardingPage() {
       return;
     }
     setErrorMessage(null);
+    setMaxUnlockedStep((prev) => Math.max(prev, 3));
     setCurrentStep(3);
-    await prepareStep3Pods();
+    // If pods already exist and match calculatedPodCount, preserve them! Otherwise prepare fresh pods
+    if (pods.length === 0 || pods.length !== calculatedPodCount) {
+      await prepareStep3Pods();
+    }
   };
 
   const handleToggleServiceForPod = (podIndex: number, serviceName: string) => {
@@ -485,13 +593,44 @@ export default function TitaniumOnboardingPage() {
   const handleStartEditService = (index: number, currentText: string) => {
     setEditingServiceIndex(index);
     setEditingServiceText(currentText);
+    setSemanticWarning(null);
   };
 
-  const handleSaveEditService = (index: number) => {
+  const handleSaveEditService = async (index: number) => {
     if (!editingServiceText.trim()) return;
     const oldText = availableServices[index];
     const newText = editingServiceText.trim();
     if (!oldText) return;
+
+    // AI Semantic Guardian: Validate that renaming baseline categories (0-5) preserves the core domain
+    if (index < 6 && oldText.toLowerCase() !== newText.toLowerCase()) {
+      try {
+        setIsValidatingSemantic(true);
+        setErrorMessage(null);
+        const check = await validateServiceSemantic({
+          originalService: oldText,
+          newServiceName: newText,
+          industry: selectedIndustry,
+        });
+
+        if (check && !check.isCompatible) {
+          setSemanticWarning({
+            original: oldText,
+            proposed: newText,
+            explanation:
+              check.explanation ||
+              'The proposed name diverges from the core functional scope of this baseline category.',
+            index,
+          });
+          setIsValidatingSemantic(false);
+          return;
+        }
+      } catch {
+        // Fallback allow if network failure
+      } finally {
+        setIsValidatingSemantic(false);
+      }
+    }
 
     setAvailableServices((prev) =>
       prev.map((s, idx) => (idx === index ? newText : s)),
@@ -507,6 +646,22 @@ export default function TitaniumOnboardingPage() {
 
     setEditingServiceIndex(null);
     setEditingServiceText('');
+    setSemanticWarning(null);
+  };
+
+  const handleAddDivergentAsNewCategory = (proposedName: string) => {
+    const clean = proposedName.trim();
+    if (clean) {
+      setAvailableServices((prev) => {
+        if (!prev.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+          return [...prev, clean];
+        }
+        return prev;
+      });
+    }
+    setEditingServiceIndex(null);
+    setEditingServiceText('');
+    setSemanticWarning(null);
   };
 
   const handleDeleteService = (index: number, serviceName: string) => {
@@ -549,7 +704,7 @@ export default function TitaniumOnboardingPage() {
 
       const payload = {
         identifier: session.username,
-        organizationName: organizationName.trim(),
+        organizationName: toCorporateTitleCase(organizationName.trim().replace(/\s+/g, ' ')),
         industry: selectedIndustry,
         customIndustryDescription:
           selectedIndustry === 'OTHER' ? customIndustryText.trim() : undefined,
@@ -571,15 +726,23 @@ export default function TitaniumOnboardingPage() {
         return;
       }
 
-      // Update session
+      // Update session: PROMOTE TO ADMIN, but DO NOT complete onboarding yet!
       const updatedSession: UserSession = {
         ...session,
-        onboardingCompleted: true,
+        role: 'ADMIN',
+        onboardingCompleted: false,
       };
       setSession(updatedSession);
+      setLocalSession(updatedSession);
 
-      // Move to Step 4: Token Distribution Screen
-      setGeneratedLeaderTokens(res.leaderTokens || []);
+      // Persist Step 4 and Tokens to localStorage so accidental close / battery death resumes here
+      const tokens = res.leaderTokens || [];
+      setGeneratedLeaderTokens(tokens);
+      try {
+        localStorage.setItem('sentirix_onboarding_step', '4');
+        localStorage.setItem('sentirix_pending_tokens', JSON.stringify(tokens));
+      } catch {}
+
       setCurrentStep(4);
     } catch {
       setErrorMessage('A network error occurred while connecting to the server.');
@@ -591,21 +754,59 @@ export default function TitaniumOnboardingPage() {
   const handleCopyLink = (token: string, joinUrl: string) => {
     navigator.clipboard.writeText(joinUrl);
     setCopiedToken(token);
-    setTimeout(() => setCopiedToken(null), 2500);
+
+    // Lock this token so it cannot be re-copied without regenerating
+    setDispatchedTokens((prev) => {
+      const next = new Set(prev).add(token);
+      try {
+        localStorage.setItem('sentirix_dispatched_tokens', JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+
+    setTimeout(() => setCopiedToken(null), 2000);
   };
 
-  const handleRegenerateLeaderToken = async (oldToken: string) => {
+  const handleRegenerateLeaderToken = async (oldToken: string, workspaceId?: string) => {
     try {
       setRegeneratingToken(oldToken);
-      const res = await regenerateToken(oldToken);
+      const res = await regenerateToken(oldToken, undefined, workspaceId);
       if (res.success && res.newToken) {
-        setGeneratedLeaderTokens((prev) =>
-          prev.map((t) =>
-            t.token === oldToken
-              ? { ...t, token: res.newToken!, joinUrl: res.joinUrl! }
+        const freshToken = res.newToken;
+        const freshJoinUrl = res.joinUrl!;
+
+        // 1. Update token in state & storage
+        setGeneratedLeaderTokens((prev) => {
+          const updated = prev.map((t) =>
+            t.token === oldToken || (workspaceId && t.workspaceId === workspaceId)
+              ? { ...t, token: freshToken, joinUrl: freshJoinUrl }
               : t,
-          ),
-        );
+          );
+          try {
+            localStorage.setItem('sentirix_pending_tokens', JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+
+        // 2. Unlock this new token from dispatched/locked set (so it can be copied)
+        setDispatchedTokens((prev) => {
+          const next = new Set(prev);
+          next.delete(oldToken);
+          next.delete(freshToken);
+          try {
+            localStorage.setItem('sentirix_dispatched_tokens', JSON.stringify(Array.from(next)));
+          } catch {}
+          return next;
+        });
+
+        // 3. Mark the fresh token as regenerated (to change button background)
+        setRegeneratedTokens((prev) => {
+          const next = new Set(prev).add(freshToken);
+          try {
+            localStorage.setItem('sentirix_regenerated_tokens', JSON.stringify(Array.from(next)));
+          } catch {}
+          return next;
+        });
       } else {
         setErrorMessage(res.error || 'Failed to regenerate token.');
       }
@@ -614,6 +815,29 @@ export default function TitaniumOnboardingPage() {
     } finally {
       setRegeneratingToken(null);
     }
+  };
+
+  const handleDoneSharing = async () => {
+    const active = getSession();
+    if (active) {
+      const finalSession: UserSession = {
+        ...active,
+        role: 'ADMIN',
+        onboardingCompleted: true,
+      };
+      setSession(finalSession);
+      try {
+        await completeOnboarding(active.username);
+      } catch {}
+    }
+    try {
+      localStorage.removeItem('sentirix_onboarding_step');
+      localStorage.removeItem('sentirix_pending_tokens');
+      localStorage.removeItem('sentirix_dispatched_tokens');
+      localStorage.removeItem('sentirix_regenerated_tokens');
+    } catch {}
+
+    router.push('/admin/cockpit');
   };
 
   if (isVerifying) {
@@ -659,7 +883,7 @@ export default function TitaniumOnboardingPage() {
               )}
           </p>
 
-          {/* Stepper Dots */}
+          {/* Stepper Dots (Interactive & Clickable for Unlocked Steps) */}
           <div className="flex items-center justify-center gap-3 mt-6">
             {[
               { num: 1, label: 'Industry' },
@@ -669,26 +893,57 @@ export default function TitaniumOnboardingPage() {
             ].map((step) => {
               const isActive = currentStep === step.num;
               const isPast = currentStep > step.num;
+              const isUnlocked = step.num <= maxUnlockedStep || generatedLeaderTokens.length > 0;
+
               return (
                 <div key={step.num} className="flex items-center gap-2">
-                  <div
+                  <button
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => {
+                      if (isUnlocked) {
+                        setErrorMessage(null);
+                        setCurrentStep(step.num);
+                      }
+                    }}
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 ring-2 ring-blue-400'
-                        : isPast
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#111827] text-slate-500 border border-slate-800'
+                        : isUnlocked
+                        ? isPast
+                          ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer hover:scale-110 shadow-sm'
+                          : 'bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-500/50 cursor-pointer hover:scale-110'
+                        : 'bg-[#111827] text-slate-600 border border-slate-800 cursor-not-allowed opacity-40'
                     }`}
+                    title={
+                      isUnlocked
+                        ? `Navigate directly to Step ${step.num}: ${step.label}`
+                        : `Step ${step.num} is locked until previous steps are completed`
+                    }
                   >
                     {isPast ? <Check className="w-3.5 h-3.5" /> : step.num}
-                  </div>
-                  <span
-                    className={`text-xs hidden sm:inline font-medium ${
-                      isActive ? 'text-white' : isPast ? 'text-slate-300' : 'text-slate-500'
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!isUnlocked}
+                    onClick={() => {
+                      if (isUnlocked) {
+                        setErrorMessage(null);
+                        setCurrentStep(step.num);
+                      }
+                    }}
+                    className={`text-xs hidden sm:inline font-medium transition-colors ${
+                      isActive
+                        ? 'text-white font-bold'
+                        : isUnlocked
+                        ? isPast
+                          ? 'text-slate-300 hover:text-white cursor-pointer'
+                          : 'text-blue-300 hover:text-white cursor-pointer'
+                        : 'text-slate-600 cursor-not-allowed'
                     }`}
                   >
                     {step.label}
-                  </span>
+                  </button>
                   {step.num < 4 && <div className="w-6 h-0.5 bg-slate-800 hidden sm:block" />}
                 </div>
               );
@@ -730,14 +985,21 @@ export default function TitaniumOnboardingPage() {
                   required
                   value={organizationName}
                   onChange={(e) => {
-                    setOrganizationName(e.target.value);
+                    const formatted = toCorporateTitleCase(e.target.value);
+                    setOrganizationName(formatted);
                     if (errorMessage) setErrorMessage(null);
+                  }}
+                  onBlur={() => {
+                    setOrganizationName((prev) => toCorporateTitleCase(prev.trim().replace(/\s+/g, ' ')));
                   }}
                   placeholder="e.g., Acme Global Enterprises"
                   className={`w-full bg-[#0B0F19] border ${
                     !organizationName.trim() && errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-800'
                   } rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium`}
                 />
+                <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
+                  <span>Auto-capitalized to Title Case (e.g., Acme Global Enterprises, PT Sumber Makmur).</span>
+                </p>
               </div>
 
               {/* 12 Industry Preset Cards (3 rows of 4) */}
@@ -1027,44 +1289,104 @@ export default function TitaniumOnboardingPage() {
 
                               if (isEditingThis) {
                                 return (
-                                  <div
-                                    key={`${svc}-${sIdx}`}
-                                    className="w-full p-2.5 rounded-xl bg-[#111827] border border-blue-500/80 shadow-md flex items-center gap-3"
-                                  >
-                                    <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-blue-600/30 text-blue-300 border border-blue-500/50 shrink-0">
-                                      {indexNumber}
-                                    </span>
-                                    <input
-                                      type="text"
-                                      value={editingServiceText}
-                                      onChange={(e) => setEditingServiceText(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          handleSaveEditService(sIdx);
-                                        } else if (e.key === 'Escape') {
-                                          setEditingServiceIndex(null);
-                                        }
-                                      }}
-                                      className="flex-1 bg-[#0B0F19] border border-blue-500/50 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden font-medium"
-                                      autoFocus
-                                    />
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSaveEditService(sIdx)}
-                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-md transition-all cursor-pointer"
-                                      >
-                                        Save
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingServiceIndex(null)}
-                                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-md transition-all cursor-pointer"
-                                      >
-                                        Cancel
-                                      </button>
+                                  <div key={`${svc}-${sIdx}`} className="space-y-2">
+                                    <div className="w-full p-2.5 rounded-xl bg-[#111827] border border-blue-500/80 shadow-md flex items-center gap-3">
+                                      <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-blue-600/30 text-blue-300 border border-blue-500/50 shrink-0">
+                                        {indexNumber}
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={editingServiceText}
+                                        onChange={(e) => {
+                                          setEditingServiceText(e.target.value);
+                                          if (semanticWarning) setSemanticWarning(null);
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSaveEditService(sIdx);
+                                          } else if (e.key === 'Escape') {
+                                            setEditingServiceIndex(null);
+                                            setSemanticWarning(null);
+                                          }
+                                        }}
+                                        className="flex-1 bg-[#0B0F19] border border-blue-500/50 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden font-medium"
+                                        autoFocus
+                                      />
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={isValidatingSemantic}
+                                          onClick={() => handleSaveEditService(sIdx)}
+                                          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5"
+                                        >
+                                          {isValidatingSemantic ? (
+                                            <>
+                                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                              <span>Checking...</span>
+                                            </>
+                                          ) : (
+                                            <span>Save</span>
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingServiceIndex(null);
+                                            setSemanticWarning(null);
+                                          }}
+                                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-md transition-all cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
                                     </div>
+
+                                    {/* AI Semantic Guardian Divergence Warning Dialog - Corporate American Style */}
+                                    {semanticWarning && semanticWarning.index === sIdx && (
+                                      <div className="p-4 rounded-xl bg-[#13110C] border border-amber-500/80 text-amber-200 text-xs space-y-3 animate-fadeIn shadow-2xl ring-1 ring-amber-500/20">
+                                        <div className="flex items-start gap-3">
+                                          <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                                            <AlertTriangle className="w-4 h-4" />
+                                          </div>
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-2">
+                                              <h4 className="font-bold text-white text-xs tracking-tight">
+                                                Operational Scope Notice
+                                              </h4>
+                                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-600/50">
+                                                AI GOVERNANCE
+                                              </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-300 leading-relaxed font-normal">
+                                              {semanticWarning.explanation}
+                                            </p>
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleAddDivergentAsNewCategory(semanticWarning.proposed)}
+                                            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
+                                          >
+                                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                            <span>+ Add as New Category</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingServiceText(semanticWarning.original);
+                                              setSemanticWarning(null);
+                                            }}
+                                            className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                                            title="Restore the baseline category name"
+                                          >
+                                            <RotateCcw className="w-3.5 h-3.5" />
+                                            <span>Revert to Original Name</span>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               }
@@ -1159,13 +1481,18 @@ export default function TitaniumOnboardingPage() {
                 <button
                   type="button"
                   disabled={isSubmitting}
-                  onClick={handleFinalSubmit}
+                  onClick={generatedLeaderTokens.length > 0 ? () => setCurrentStep(4) : handleFinalSubmit}
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
                 >
                   {isSubmitting ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       <span>Creating Organization &amp; Tokens...</span>
+                    </>
+                  ) : generatedLeaderTokens.length > 0 ? (
+                    <>
+                      <span>Continue to Leader Tokens (Step 4)</span>
+                      <ArrowRight className="w-4 h-4" />
                     </>
                   ) : (
                     <>
@@ -1199,9 +1526,9 @@ export default function TitaniumOnboardingPage() {
               <div className="space-y-3.5">
                 {generatedLeaderTokens.map((item, idx) => {
                   const isCopied = copiedToken === item.token;
-                  const waText = encodeURIComponent(
-                    `Hello, you have been appointed as the Leader for ${item.workspaceName} on Sentirix. Please activate your account and configure your team quota using this link: ${item.joinUrl}`,
-                  );
+                  const isDispatched = dispatchedTokens.has(item.token);
+                  const isRegenerated = regeneratedTokens.has(item.token);
+
                   return (
                     <div
                       key={item.token}
@@ -1213,9 +1540,21 @@ export default function TitaniumOnboardingPage() {
                             {idx + 1}
                           </span>
                           <h4 className="text-xs font-bold text-white">{item.workspaceName}</h4>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-400">
-                            SINGLE-USE • UNCLAIMED
-                          </span>
+                          {isDispatched ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950/70 border border-blue-500/40 text-blue-300 flex items-center gap-1">
+                              <Lock className="w-3 h-3 text-blue-400" />
+                              LINK DISPATCHED • LOCKED
+                            </span>
+                          ) : isRegenerated ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/40 text-amber-300 flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-amber-400" />
+                              REGENERATED • SINGLE-USE
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-400">
+                              SINGLE-USE • UNCLAIMED
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
                           <span>Token:</span>
@@ -1223,49 +1562,74 @@ export default function TitaniumOnboardingPage() {
                             {item.token}
                           </span>
                         </div>
-                        <div className="text-[10px] text-slate-500">
-                          Services: {item.services.join(', ') || 'General'}
-                        </div>
                       </div>
 
-                      {/* Action Buttons */}
-                      <div className="flex flex-wrap items-center gap-2">
+                      {/* Action Buttons: Copy Link & Regenerate (Side-by-side, no blinking) */}
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
+                          disabled={isDispatched}
                           onClick={() => handleCopyLink(item.token, item.joinUrl)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                            isCopied
-                              ? 'bg-emerald-600 border-emerald-500 text-white'
-                              : 'bg-[#111827] border-slate-800 text-slate-200 hover:border-slate-700'
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                            isDispatched
+                              ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed opacity-75'
+                              : isCopied
+                              ? 'bg-emerald-600 border-emerald-500 text-white cursor-pointer'
+                              : 'bg-[#111827] border-slate-800 text-slate-200 hover:border-slate-700 cursor-pointer'
                           }`}
+                          title={
+                            isDispatched
+                              ? 'This single-use link has been copied & locked to prevent duplicate claims. Click Regenerate to issue a fresh link.'
+                              : 'Copy single-use invite link'
+                          }
                         >
-                          {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                          <span>{isCopied ? 'Copied!' : 'Copy Link'}</span>
+                          {isDispatched ? (
+                            <>
+                              <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Copied (Locked)</span>
+                            </>
+                          ) : isCopied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Link</span>
+                            </>
+                          )}
                         </button>
-
-                        <a
-                          href={`https://wa.me/?text=${waText}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-all"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" />
-                          <span>WhatsApp</span>
-                        </a>
 
                         <button
                           type="button"
                           disabled={regeneratingToken === item.token}
-                          onClick={() => handleRegenerateLeaderToken(item.token)}
-                          className="px-3 py-1.5 rounded-lg bg-[#111827] border border-blue-500/40 hover:border-blue-400 text-blue-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-                          title="Regenerate token if the prospective leader needs a fresh link"
+                          onClick={() => handleRegenerateLeaderToken(item.token, item.workspaceId)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border disabled:opacity-50 ${
+                            regeneratingToken === item.token
+                              ? 'bg-slate-900 border-slate-800 text-slate-400'
+                              : isRegenerated
+                              ? 'bg-amber-500/20 border-amber-500/80 text-amber-300 hover:bg-amber-500/30 shadow-sm shadow-amber-500/20'
+                              : isDispatched
+                              ? 'bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-600/20'
+                              : 'bg-[#111827] border-blue-500/40 hover:border-blue-400 text-blue-300'
+                          }`}
+                          title="Invalidates previous link and generates a brand new single-use token"
                         >
                           <RefreshCw
                             className={`w-3.5 h-3.5 ${
                               regeneratingToken === item.token ? 'animate-spin text-blue-400' : ''
                             }`}
                           />
-                          <span>{regeneratingToken === item.token ? 'Processing...' : 'Regenerate'}</span>
+                          <span>
+                            {regeneratingToken === item.token
+                              ? 'Processing...'
+                              : isRegenerated
+                              ? 'Regenerated ✓'
+                              : isDispatched
+                              ? 'Regenerate New Link'
+                              : 'Regenerate'}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1273,14 +1637,22 @@ export default function TitaniumOnboardingPage() {
                 })}
               </div>
 
-              {/* Proceed to Super Admin Cockpit Button */}
-              <div className="pt-4 border-t border-slate-800 text-center">
+              {/* Action Buttons: Back to Step 3 & Done Sharing */}
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => router.push('/admin/cockpit')}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 mx-auto cursor-pointer"
+                  onClick={() => setCurrentStep(3)}
+                  title="Back to Pod Architecture Setup (Step 3)"
+                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
-                  <Crown className="w-4 h-4 text-amber-300" />
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDoneSharing}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-2 cursor-pointer"
+                >
                   <span>Done Sharing ➔ Enter Super Admin Executive Cockpit</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
