@@ -109,16 +109,20 @@ export async function registerUser(params: {
   verificationMethod: 'EMAIL' | 'PHONE';
   password: string;
 }): Promise<{ success: boolean; user?: UserSession; error?: string }> {
-  const usernameCheck = validateUsername(params.username);
+  const cleanUsername = params.username.toLowerCase().trim().replace(/\s/g, '');
+  const cleanEmail = params.email.toLowerCase().trim();
+  const cleanPhone = params.phone.trim();
+
+  const usernameCheck = validateUsername(cleanUsername);
   if (!usernameCheck.isValid) {
     return { success: false, error: usernameCheck.error };
   }
 
-  if (!validateEmail(params.email)) {
+  if (!validateEmail(cleanEmail)) {
     return { success: false, error: 'Please enter a valid active work email address.' };
   }
 
-  if (!params.phone || params.phone.trim().length < 7) {
+  if (!cleanPhone || cleanPhone.length < 7) {
     return { success: false, error: 'Please enter an active phone number.' };
   }
 
@@ -127,12 +131,19 @@ export async function registerUser(params: {
     return { success: false, error: passwordCheck.error };
   }
 
+  const normalizedParams = {
+    ...params,
+    username: cleanUsername,
+    email: cleanEmail,
+    phone: cleanPhone,
+  };
+
   // 1. Try registering through Backend NestJS API
   try {
     const res = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify(normalizedParams),
     });
 
     if (res.ok) {
@@ -172,29 +183,29 @@ export async function registerUser(params: {
   } catch {
     // 2. Resilient Offline Local Fallback
     const existingUsers = getRegisteredUsers();
-    const lowerUsername = params.username.toLowerCase();
-    const lowerEmail = params.email.toLowerCase();
+    const lowerUsername = cleanUsername;
+    const lowerEmail = cleanEmail;
 
     if (
       lowerUsername === 'pungkyrama' ||
       existingUsers.some((u) => u.username.toLowerCase() === lowerUsername)
     ) {
-      return { success: false, error: 'This username is already taken. Please choose another.' };
+      return { success: false, error: `Username "@${lowerUsername}" is already registered. Please choose another username or log in.` };
     }
 
     if (existingUsers.some((u) => u.email.toLowerCase() === lowerEmail)) {
-      return { success: false, error: 'An account with this email address already exists.' };
+      return { success: false, error: `An account with email "${lowerEmail}" is already registered. Please log in.` };
     }
 
     const passwordHash = await hashPassword(params.password);
     const newUser: StoredUser = {
-      username: params.username,
-      email: params.email,
-      phone: params.phone,
+      username: lowerUsername,
+      email: lowerEmail,
+      phone: cleanPhone,
       role: 'USER',
       verificationMethod: params.verificationMethod,
       isVerified: true,
-      avatarText: params.username.slice(0, 2).toUpperCase(),
+      avatarText: lowerUsername.slice(0, 2).toUpperCase(),
       passwordHash,
       createdAt: new Date().toISOString(),
       onboardingCompleted: false,

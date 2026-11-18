@@ -75,6 +75,8 @@ export default function LandingPage() {
   const [verificationMethod, setVerificationMethod] = useState<'EMAIL' | 'PHONE'>('EMAIL');
   const [signupPassword, setSignupPassword] = useState('');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
+  const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [isSigningUp, setIsSigningUp] = useState(false);
 
@@ -438,22 +440,25 @@ export default function LandingPage() {
     e.preventDefault();
     setSignupError(null);
 
-    if (!signupUsername.trim()) {
+    const cleanUsername = signupUsername.toLowerCase().trim().replace(/\s/g, '');
+    const cleanEmail = signupEmail.toLowerCase().trim();
+
+    if (!cleanUsername) {
       setSignupError('Username is required.');
       return;
     }
 
-    if (/\s/.test(signupUsername)) {
+    if (/\s/.test(cleanUsername)) {
       setSignupError('Username must not contain any spaces.');
       return;
     }
 
-    if (signupUsername.length > 20) {
+    if (cleanUsername.length > 20) {
       setSignupError('Username cannot exceed 20 characters.');
       return;
     }
 
-    if (!validateEmail(signupEmail)) {
+    if (!validateEmail(cleanEmail)) {
       setSignupError('Please provide a valid active work email.');
       return;
     }
@@ -468,11 +473,21 @@ export default function LandingPage() {
       return;
     }
 
+    if (!signupConfirmPassword) {
+      setSignupError('Please confirm your password.');
+      return;
+    }
+
+    if (signupPassword !== signupConfirmPassword) {
+      setSignupError('Passwords do not match. Please verify both password entries.');
+      return;
+    }
+
     try {
       setIsSigningUp(true);
       const res = await registerUser({
-        username: signupUsername,
-        email: signupEmail,
+        username: cleanUsername,
+        email: cleanEmail,
         phone: signupPhone,
         verificationMethod,
         password: signupPassword,
@@ -497,6 +512,7 @@ export default function LandingPage() {
     setLoginRole('USER');
     setLoginIdentifier(createdUsernameNotice || signupEmail);
     setLoginPassword('');
+    setSignupConfirmPassword('');
     setSuccessBanner(
       `Account verified! Welcome aboard, @${createdUsernameNotice}. Please sign in with your password below to launch your workspace.`,
     );
@@ -1536,6 +1552,7 @@ export default function LandingPage() {
                     setAuthMode('LOGIN');
                     setLoginError(null);
                     setSuccessBanner(null);
+                    setSignupConfirmPassword('');
                   }}
                   className={`text-xs font-bold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     authMode === 'LOGIN'
@@ -1552,6 +1569,7 @@ export default function LandingPage() {
                     setAuthMode('SIGNUP');
                     setSignupError(null);
                     setSuccessBanner(null);
+                    setSignupConfirmPassword('');
                   }}
                   className={`text-xs font-bold py-2.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                     authMode === 'SIGNUP'
@@ -1591,7 +1609,7 @@ export default function LandingPage() {
                         type="text"
                         required
                         value={loginIdentifier}
-                        onChange={(e) => setLoginIdentifier(e.target.value)}
+                        onChange={(e) => setLoginIdentifier(e.target.value.toLowerCase().trim())}
                         placeholder="e.g. sarah_ops or sarah@company.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] focus:border-transparent transition-all"
                       />
@@ -1651,6 +1669,7 @@ export default function LandingPage() {
                         onClick={() => {
                           setAuthMode('SIGNUP');
                           setLoginError(null);
+                          setSignupConfirmPassword('');
                         }}
                         className="text-blue-400 font-bold hover:underline cursor-pointer ml-1 inline-flex items-center gap-1"
                       >
@@ -1687,24 +1706,20 @@ export default function LandingPage() {
                       <input
                         type="text"
                         required
-                        maxLength={25}
+                        maxLength={20}
                         value={signupUsername}
-                        onChange={(e) => setSignupUsername(e.target.value)}
-                        placeholder="max 20 chars, no spaces (e.g. sarah_99#)"
+                        onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                        placeholder="e.g. sarah_ops, pungkyrama (lowercase only)"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
                       />
                     </div>
-                    {/* Live space warning */}
-                    {/\s/.test(signupUsername) && (
-                      <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1 font-semibold">
+                    <p className="text-[10px] text-[#64748B] mt-1">
+                      Standard Tech ID: auto-formatted in lowercase without spaces.
+                    </p>
+                    {signupUsername.length >= 20 && (
+                      <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-semibold">
                         <AlertCircle className="w-3 h-3" />
-                        Spaces are strictly not allowed in username.
-                      </p>
-                    )}
-                    {signupUsername.length > 20 && (
-                      <p className="text-[10px] text-rose-400 mt-1 flex items-center gap-1 font-semibold">
-                        <AlertCircle className="w-3 h-3" />
-                        Maximum limit is 20 characters.
+                        Maximum limit of 20 characters reached.
                       </p>
                     )}
                   </div>
@@ -1720,13 +1735,13 @@ export default function LandingPage() {
                         type="email"
                         required
                         value={signupEmail}
-                        onChange={(e) => setSignupEmail(e.target.value)}
-                        placeholder="sarah.jenkins@company.com"
+                        onChange={(e) => setSignupEmail(e.target.value.toLowerCase().trim())}
+                        placeholder="e.g. sarah.jenkins@company.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
                       />
                     </div>
                     <p className="text-[10px] text-[#64748B] mt-1">
-                      A verification dispatch will be sent to this email address.
+                      Stored in standard lowercase format for verified workspace notifications.
                     </p>
                   </div>
 
@@ -1748,7 +1763,7 @@ export default function LandingPage() {
                     </div>
                   </div>
 
-                  {/* Field f & g: Password with validation breakdown */}
+                  {/* Field d: Password with validation breakdown */}
                   <div>
                     <label className="block text-xs font-semibold text-[#CBD5E1] mb-1">
                       Password (Encrypted) <span className="text-rose-400">*</span>
@@ -1809,6 +1824,63 @@ export default function LandingPage() {
                     </div>
                   </div>
 
+                  {/* Field e: Confirm Password */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-[#CBD5E1]">
+                        Confirm Password <span className="text-rose-400">*</span>
+                      </label>
+                      {signupConfirmPassword && (
+                        <span
+                          className={`text-[11px] font-medium flex items-center gap-1 ${
+                            signupPassword === signupConfirmPassword
+                              ? 'text-emerald-400'
+                              : 'text-rose-400'
+                          }`}
+                        >
+                          {signupPassword === signupConfirmPassword ? (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Passwords match
+                            </>
+                          ) : (
+                            <>
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              Passwords do not match
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-[#64748B] absolute left-3.5 top-3" />
+                      <input
+                        type={showSignupConfirmPassword ? 'text' : 'password'}
+                        required
+                        value={signupConfirmPassword}
+                        onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                        placeholder="Re-enter password to confirm"
+                        className={`w-full bg-[#0D0F12] border rounded-xl pl-10 pr-10 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 transition-all ${
+                          signupConfirmPassword
+                            ? signupPassword === signupConfirmPassword
+                              ? 'border-emerald-500/60 focus:ring-emerald-500'
+                              : 'border-rose-500/60 focus:ring-rose-500'
+                            : 'border-[#262A30] focus:ring-[#94A3B8]'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
+                        className="absolute right-3.5 top-3 text-[#64748B] hover:text-[#CBD5E1] cursor-pointer"
+                      >
+                        {showSignupConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-[#64748B] mt-1">
+                      Must match the password entered above exactly to prevent login lockout.
+                    </p>
+                  </div>
+
                   {/* Signup Error Banner */}
                   {signupError && (
                     <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
@@ -1819,7 +1891,13 @@ export default function LandingPage() {
 
                   <button
                     type="submit"
-                    disabled={isSigningUp || !pwdValidation.isValid || !usernameValidation.isValid}
+                    disabled={
+                      isSigningUp ||
+                      !pwdValidation.isValid ||
+                      !usernameValidation.isValid ||
+                      !signupConfirmPassword ||
+                      signupPassword !== signupConfirmPassword
+                    }
                     className="w-full py-3 rounded-xl bg-[#F8FAFC] hover:bg-[#E2E8F0] text-[#0D0F12] font-extrabold text-xs shadow-lg shadow-black/40 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 mt-2"
                   >
                     <ShieldCheck className="w-4 h-4" />
@@ -1834,6 +1912,7 @@ export default function LandingPage() {
                         onClick={() => {
                           setAuthMode('LOGIN');
                           setSignupError(null);
+                          setSignupConfirmPassword('');
                         }}
                         className="text-blue-400 font-bold hover:underline cursor-pointer ml-1 inline-flex items-center gap-1"
                       >

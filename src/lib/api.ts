@@ -633,6 +633,9 @@ export async function setupMultiPodV2(payload: {
 
 
 
+
+
+
 export async function fetchLeaderTokenStatus(token: string): Promise<any> {
   try {
     const res = await fetch(
@@ -751,6 +754,9 @@ export async function regenerateToken(token: string, identifier?: string): Promi
   }
 }
 
+
+
+
 export async function cleanupDemoTickets(): Promise<{ count: number }> {
   try {
     const res = await fetch(`${API_BASE_URL}/tickets/demo/cleanup`, {
@@ -783,6 +789,9 @@ export async function renamePersonnel(
   }
 }
 
+
+
+
 export async function transferPersonnel(
   userId: string,
   targetWorkspaceId: string,
@@ -811,6 +820,9 @@ export async function transferPersonnel(
   }
 }
 
+
+
+
 export async function promoteLeader(
   userId: string,
   workspaceId: string,
@@ -836,6 +848,9 @@ export async function promoteLeader(
     return { success: false, error: 'Network error connecting to backend.' };
   }
 }
+
+
+
 
 export async function swapPersonnel(
   userAId: string,
@@ -863,11 +878,58 @@ export async function swapPersonnel(
   }
 }
 
+export async function createSpecializedPod(payload: {
+  name: string;
+  podCategory?: string;
+  description?: string;
+  services?: string[];
+  quota?: number;
+  organizationId?: string;
+}): Promise<{
+  success: boolean;
+  message?: string;
+  workspace?: any;
+  leaderToken?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/create-pod`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to create specialized pod.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
 
-
-
-
-
-
-
-
+export async function addSeatToPod(payload: {
+  workspaceId: string;
+  seatCount: number;
+}): Promise<{
+  success: boolean;
+  message?: string;
+  workspace?: any;
+  newTokens?: { token: string; role: string; joinUrl: string }[];
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/add-seat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to add seats to pod.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}

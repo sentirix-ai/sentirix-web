@@ -33,6 +33,8 @@ import {
   Pencil,
   Search,
   ArrowRightLeft,
+  Plus,
+  UserPlus,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
 import {
@@ -43,18 +45,13 @@ import {
   transferPersonnel,
   promoteLeader,
   swapPersonnel,
+  createSpecializedPod,
+  addSeatToPod,
 } from '../../../lib/api';
 
 const cleanPodName = (name?: string) => {
   if (!name) return '';
-  const trimmed = name.replace(/\s+Pod$/i, '').trim();
-  if (trimmed.toLowerCase().includes('tax filing')) {
-    return 'Tax & IRS Compliance Operations';
-  }
-  if (trimmed.toLowerCase().includes('client retainer')) {
-    return 'Client Retainer & Contract Operations';
-  }
-  return trimmed;
+  return name.replace(/\s+Pod$/i, '').trim();
 };
 
 const INDUSTRY_DISPLAY_NAMES: Record<string, string> = {
@@ -119,6 +116,31 @@ export default function SuperAdminCockpitPage() {
   const [transferTargetRole, setTransferTargetRole] = useState<'AGENT' | 'LEADER'>('AGENT');
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+
+  // Commercial Monetization & Horizontal Expansion: Deploy Specialized Pod ($149/mo)
+  const [isCreatePodOpen, setIsCreatePodOpen] = useState(false);
+  const [newPodNameInput, setNewPodNameInput] = useState('');
+  const [newPodCategoryInput, setNewPodCategoryInput] = useState('ENTERPRISE_VIP');
+  const [newPodServicesInput, setNewPodServicesInput] = useState('VIP Priority, Dispute Resolution, Incident Hub');
+  const [newPodQuotaInput, setNewPodQuotaInput] = useState(3);
+  const [isDeployingPod, setIsDeployingPod] = useState(false);
+  const [createPodError, setCreatePodError] = useState<string | null>(null);
+  const [createPodSuccess, setCreatePodSuccess] = useState<{
+    podName: string;
+    leaderToken: string;
+    joinUrl: string;
+  } | null>(null);
+
+  // Commercial Monetization & Vertical Capacity Expansion: Add Seat (+$30/seat/mo)
+  const [selectedPodForAddSeat, setSelectedPodForAddSeat] = useState<any | null>(null);
+  const [additionalSeatsCount, setAdditionalSeatsCount] = useState<number>(1);
+  const [isProcessingAddSeat, setIsProcessingAddSeat] = useState(false);
+  const [addSeatError, setAddSeatError] = useState<string | null>(null);
+  const [addSeatSuccess, setAddSeatSuccess] = useState<{
+    podName: string;
+    newQuota: number;
+    tokens: { token: string; joinUrl: string }[];
+  } | null>(null);
 
   const handleOpenEditUser = (user: any, podName?: string) => {
     setEditingUser({
@@ -332,6 +354,81 @@ export default function SuperAdminCockpitPage() {
       setSwapError('Network error while executing personnel swap.');
     } finally {
       setIsSwapping(false);
+    }
+  };
+
+  const handleDeploySpecializedPod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPodNameInput.trim()) {
+      setCreatePodError('Please specify an enterprise pod division name.');
+      return;
+    }
+    try {
+      setIsDeployingPod(true);
+      setCreatePodError(null);
+      const parsedServices = newPodServicesInput
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const res = await createSpecializedPod({
+        name: newPodNameInput.trim(),
+        podCategory: newPodCategoryInput,
+        services: parsedServices.length > 0 ? parsedServices : ['VIP Priority Escalation', 'Dispute Resolution'],
+        quota: newPodQuotaInput,
+      });
+
+      if (!res.success) {
+        setCreatePodError(res.error || 'Failed to deploy specialized pod.');
+        return;
+      }
+
+      setCreatePodSuccess({
+        podName: newPodNameInput.trim(),
+        leaderToken: res.leaderToken || '',
+        joinUrl: `http://localhost:3000/join?token=${res.leaderToken}`,
+      });
+
+      if (session) {
+        await loadData(session, false);
+      }
+    } catch {
+      setCreatePodError('Network error while provisioning specialized pod.');
+    } finally {
+      setIsDeployingPod(false);
+    }
+  };
+
+  const handleAddSeatsToPod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPodForAddSeat) return;
+    try {
+      setIsProcessingAddSeat(true);
+      setAddSeatError(null);
+
+      const res = await addSeatToPod({
+        workspaceId: selectedPodForAddSeat.id,
+        seatCount: additionalSeatsCount,
+      });
+
+      if (!res.success) {
+        setAddSeatError(res.error || 'Failed to expand pod seat capacity.');
+        return;
+      }
+
+      setAddSeatSuccess({
+        podName: selectedPodForAddSeat.name,
+        newQuota: (selectedPodForAddSeat.assignedQuota || 0) + additionalSeatsCount,
+        tokens: res.newTokens || [],
+      });
+
+      if (session) {
+        await loadData(session, false);
+      }
+    } catch {
+      setAddSeatError('Network error while scaling pod seat capacity.');
+    } finally {
+      setIsProcessingAddSeat(false);
     }
   };
 
@@ -983,6 +1080,19 @@ export default function SuperAdminCockpitPage() {
               );
             })()}
 
+            {/* Pod Presence Roster Header */}
+            <div className="pb-1">
+              <h3 className="text-base font-bold text-white flex items-center gap-2.5">
+                <span>Specialized Division Pods</span>
+                <span className="text-xs font-mono font-semibold text-blue-300 bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-800/60">
+                  {workspaces.length} Active {workspaces.length === 1 ? 'Pod' : 'Pods'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Autonomous operational units with dedicated Leader governance, specialized copilot models, and strict quota locks.
+              </p>
+            </div>
+
             {/* Pod Presence Roster */}
             <div className="space-y-6">
               {workspaces.map((ws: any, wsIdx: number) => {
@@ -1417,17 +1527,24 @@ export default function SuperAdminCockpitPage() {
                                             {memberNumber}
                                           </span>
                                         )}
-                                        <div className="flex items-center gap-2">
-                                          <span className="font-bold text-white text-xs">
-                                            {user.fullName || user.username}
-                                          </span>
-                                          {isLeader ? (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                                              <span>Pod Leader</span>
+                                        <div className="flex flex-col">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-bold text-white text-xs">
+                                              {user.fullName || user.username}
                                             </span>
-                                          ) : (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-300 border border-blue-500/40">
-                                              Frontline Agent
+                                            {isLeader ? (
+                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                                                <span>Pod Leader</span>
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-300 border border-blue-500/40">
+                                                Frontline Agent
+                                              </span>
+                                            )}
+                                          </div>
+                                          {user.username && user.fullName && user.fullName !== user.username && (
+                                            <span className="text-[10.5px] text-slate-500 font-mono mt-0.5">
+                                              @{user.username}
                                             </span>
                                           )}
                                         </div>
@@ -1519,11 +1636,39 @@ export default function SuperAdminCockpitPage() {
         {/* TAB 2: SINGLE-USE TOKEN AUDIT HUB (GROUPED PER POD: 1 LEADER ON TOP + MEMBERS BELOW) */}
         {activeTab === 'TOKENS' && (
           <section className="space-y-6">
-            <div>
-              <h2 className="text-base font-bold text-white">Single-Use Token Audit Hub</h2>
-              <p className="text-xs text-slate-400">
-                Tokens grouped per Pod. Top position is reserved for the Pod Leader, followed by authorized agent tokens below.
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-white flex items-center gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-blue-400" />
+                  <span>Single-Use Token Audit &amp; Credential Governance Hub</span>
+                  <span className="text-xs font-mono font-semibold text-blue-300 bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-800/60">
+                    {tokenAudit.length} Active Tokens
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Cryptographic single-use token lifecycle &amp; capacity issuance. Provision new pods or expand agent seats with strict quota lock enforcement.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setNewPodNameInput('');
+                  setNewPodCategoryInput('ENTERPRISE_VIP');
+                  setNewPodServicesInput('VIP Priority, Dispute Resolution, Incident Hub');
+                  setNewPodQuotaInput(3);
+                  setCreatePodSuccess(null);
+                  setCreatePodError(null);
+                  setIsCreatePodOpen(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-2.5 shadow-lg shadow-blue-600/25 border border-blue-400/30 cursor-pointer shrink-0 self-start sm:self-auto group"
+              >
+                <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
+                <span>Create Specialized Pod</span>
+                <span className="text-[10px] bg-blue-950/90 text-blue-200 font-mono px-2 py-0.5 rounded-md border border-blue-700/50">
+                  $149/mo
+                </span>
+              </button>
             </div>
 
             {workspaces.length === 0 && tokenAudit.length === 0 ? (
@@ -1585,13 +1730,33 @@ export default function SuperAdminCockpitPage() {
                           </div>
                         </div>
 
-                        <div className="text-right sm:block hidden">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
-                            Pod Structure
-                          </span>
-                          <span className="text-xs font-mono font-bold text-slate-300">
-                            1 Leader + {Math.max(0, (ws.assignedQuota || podTokens.length) - 1)} Members
-                          </span>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right sm:block hidden shrink-0">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
+                              Pod Structure
+                            </span>
+                            <span className="text-xs font-mono font-bold text-slate-300">
+                              1 Leader + {Math.max(0, (ws.assignedQuota || podTokens.length) - 1)} Members
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedPodForAddSeat(ws);
+                              setAdditionalSeatsCount(1);
+                              setAddSeatSuccess(null);
+                              setAddSeatError(null);
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/60 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer group shrink-0"
+                            title="Expand Pod Staff Capacity (+$30/seat/mo)"
+                          >
+                            <UserPlus className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                            <span>Add Seat</span>
+                            <span className="text-[9.5px] text-emerald-400 font-mono bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                              +$30/mo
+                            </span>
+                          </button>
                         </div>
                       </div>
 
@@ -2640,6 +2805,532 @@ export default function SuperAdminCockpitPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 1: DEPLOY SPECIALIZED POD ($149/MO) */}
+        {isCreatePodOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white">Deploy Specialized Pod</h3>
+                      <span className="text-[10px] font-mono font-bold bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded-full">
+                        $149/mo
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Horizontal Multi-Division Expansion</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isDeployingPod) setIsCreatePodOpen(false);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {createPodSuccess ? (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs space-y-2">
+                      <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>Specialized Pod Successfully Deployed</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-300/90 leading-relaxed">
+                        Pod <strong>{createPodSuccess.podName}</strong> has been provisioned with dedicated copilot domain routing and isolated ticket isolation.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                          Pod Leader Single-Use Token
+                        </span>
+                        <span className="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded-md border border-amber-800 font-mono">
+                          LEADER TIER
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between bg-[#111827] px-3.5 py-2.5 rounded-xl border border-slate-700/80">
+                        <span className="font-mono text-xs font-black text-white tracking-wider">
+                          {createPodSuccess.leaderToken}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(createPodSuccess.leaderToken);
+                            setCopiedToken(createPodSuccess.leaderToken);
+                            setTimeout(() => setCopiedToken(null), 2000);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          {copiedToken === createPodSuccess.leaderToken ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-emerald-400">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Token</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(createPodSuccess.joinUrl);
+                            setCopiedToken('URL-' + createPodSuccess.leaderToken);
+                            setTimeout(() => setCopiedToken(null), 2000);
+                          }}
+                          className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                        >
+                          {copiedToken === 'URL-' + createPodSuccess.leaderToken ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span className="text-emerald-400 font-bold">Onboarding Link Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                              <span>Copy Direct Leader Onboarding Link</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <p className="text-[10.5px] text-slate-400 leading-relaxed italic">
+                        &bull; Send this single-use link to your newly appointed Pod Leader. When they complete authentication, their initial team quota will be strictly locked.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatePodOpen(false);
+                        setCreatePodSuccess(null);
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 cursor-pointer"
+                    >
+                      Done &amp; View in Cockpit
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleDeploySpecializedPod} className="space-y-4">
+                    {/* Pod Name */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-200 block">
+                        Specialized Pod Division Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        disabled={isDeployingPod}
+                        placeholder="e.g. VIP Priority & Dispute Resolution Operations"
+                        value={newPodNameInput}
+                        onChange={(e) => setNewPodNameInput(e.target.value)}
+                        className="w-full bg-[#0B0F19] border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                      />
+                      <p className="text-[10.5px] text-slate-500">
+                        This name identifies the operational domain across customer routing and executive cockpits.
+                      </p>
+                    </div>
+
+                    {/* Category */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-200 block">
+                        Specialization Domain Category
+                      </label>
+                      <select
+                        disabled={isDeployingPod}
+                        value={newPodCategoryInput}
+                        onChange={(e) => setNewPodCategoryInput(e.target.value)}
+                        className="w-full bg-[#0B0F19] border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none transition-all cursor-pointer"
+                      >
+                        <option value="ENTERPRISE_VIP">Enterprise VIP &amp; Executive Client Accounts</option>
+                        <option value="SECURITY_FRAUD">Trust, Security &amp; Fraud Prevention Incident Hub</option>
+                        <option value="BILLING_RETENTION">Billing Disputes, Refunds &amp; Subscription Retention</option>
+                        <option value="TIER_3_ESCALATION">Tier-3 SLA &amp; Critical Infrastructure Engineering</option>
+                        <option value="GLOBAL_EXPANSION">Global Markets &amp; Multilingual Support Division</option>
+                      </select>
+                    </div>
+
+                    {/* Services Tags */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-200 block">
+                        Core Domain Services &amp; Routing Keywords
+                      </label>
+                      <input
+                        type="text"
+                        disabled={isDeployingPod}
+                        placeholder="e.g. VIP Priority, Dispute Resolution, Incident Hub"
+                        value={newPodServicesInput}
+                        onChange={(e) => setNewPodServicesInput(e.target.value)}
+                        className="w-full bg-[#0B0F19] border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                      />
+                      <p className="text-[10.5px] text-slate-500">
+                        Comma-separated service topics used by Sentirix Copilot for ticket auto-classification.
+                      </p>
+                    </div>
+
+                    {/* Initial Capacity */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-200 block">
+                        Initial Pod Staff Allocation
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <select
+                          disabled={isDeployingPod}
+                          value={newPodQuotaInput}
+                          onChange={(e) => setNewPodQuotaInput(Number(e.target.value))}
+                          className="w-40 bg-[#0B0F19] border border-slate-700 focus:border-blue-500 rounded-xl px-3.5 py-2 text-xs text-white outline-none transition-all cursor-pointer"
+                        >
+                          <option value={2}>2 Staff (1 Ldr + 1 Agt)</option>
+                          <option value={3}>3 Staff (1 Ldr + 2 Agt)</option>
+                          <option value={4}>4 Staff (1 Ldr + 3 Agt)</option>
+                          <option value={5}>5 Staff (1 Ldr + 4 Agt)</option>
+                          <option value={8}>8 Staff (1 Ldr + 7 Agt)</option>
+                        </select>
+                        <span className="text-[11px] text-slate-400">
+                          1 Leader token will be generated immediately.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Commercial Prorated Billing Box */}
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-2.5">
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Commercial Subscription Summary
+                      </span>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Dedicated Division License:</span>
+                        <span className="font-mono font-bold text-white">$149.00 / mo</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Autonomous Copilot Engine:</span>
+                        <span className="text-emerald-400 font-semibold">Included</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Leader Sovereign Governance:</span>
+                        <span className="text-emerald-400 font-semibold">Included</span>
+                      </div>
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-bold">
+                        <span className="text-white">Total Recurring License:</span>
+                        <span className="font-mono text-emerald-400 text-sm">$149.00 / month</span>
+                      </div>
+                    </div>
+
+                    {/* Security Invariant Notice */}
+                    <div className="p-3 rounded-xl bg-blue-950/30 border border-blue-500/30 text-blue-300 text-xs flex items-start gap-2">
+                      <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                      <p className="text-[11px] leading-relaxed">
+                        <strong>Security Invariant:</strong> Generates a pristine single-use token (<code className="font-mono text-blue-200">STX-LDR-</code>). Quota locking remains in strict compliance with Sentirix enterprise isolation standards.
+                      </p>
+                    </div>
+
+                    {createPodError && (
+                      <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                        <span className="text-red-400 font-bold">Error:</span>
+                        <span>{createPodError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center justify-end gap-2.5">
+                      <button
+                        type="button"
+                        disabled={isDeployingPod}
+                        onClick={() => setIsCreatePodOpen(false)}
+                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isDeployingPod || !newPodNameInput.trim()}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isDeployingPod ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Deploying Division...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Deploy Specialized Pod ($149/mo)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 2: EXPAND POD SEAT CAPACITY / ADD SEAT (+$30/SEAT/MO) */}
+        {selectedPodForAddSeat && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white">Expand Frontline Capacity</h3>
+                      <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">
+                        +$30/seat/mo
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Vertical Pod Staff Scaling</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isProcessingAddSeat) setSelectedPodForAddSeat(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1">
+                {addSeatSuccess ? (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs space-y-2">
+                      <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>Seat Capacity Successfully Expanded</span>
+                      </div>
+                      <p className="text-[11px] text-emerald-300/90 leading-relaxed">
+                        Pod <strong>{addSeatSuccess.podName}</strong> capacity expanded. Total quota is now <strong>{addSeatSuccess.newQuota} staff</strong>. Single-use invitation tokens have been generated below.
+                      </p>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
+                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                        New Single-Use Frontline Tokens ({addSeatSuccess.tokens.length})
+                      </span>
+
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {addSeatSuccess.tokens.map((tok, tIdx) => (
+                          <div
+                            key={tok.token || tIdx}
+                            className="flex items-center justify-between bg-[#111827] px-3.5 py-2 rounded-xl border border-slate-800 text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 font-mono">#{tIdx + 1}</span>
+                              <span className="font-mono font-bold text-white">{tok.token}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(tok.token);
+                                  setCopiedToken(tok.token);
+                                  setTimeout(() => setCopiedToken(null), 2000);
+                                }}
+                                className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-medium transition-colors"
+                              >
+                                {copiedToken === tok.token ? 'Copied' : 'Copy'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(tok.joinUrl);
+                                  setCopiedToken('URL-' + tok.token);
+                                  setTimeout(() => setCopiedToken(null), 2000);
+                                }}
+                                className="px-2 py-1 rounded-md bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-[10.5px] font-bold transition-colors"
+                              >
+                                {copiedToken === 'URL-' + tok.token ? 'Link Copied' : 'Copy Link'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <p className="text-[10.5px] text-slate-400 italic">
+                        &bull; Distribute each single-use link to your frontline agents. When an agent joins, their seat is claimed automatically.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPodForAddSeat(null);
+                        setAddSeatSuccess(null);
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 cursor-pointer"
+                    >
+                      Done &amp; Return to Cockpit
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAddSeatsToPod} className="space-y-4">
+                    {/* Selected Pod Identification */}
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-1.5">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
+                        Target Operational Pod
+                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white text-sm">
+                          {cleanPodName(selectedPodForAddSeat.name)}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40">
+                          Current Quota: {selectedPodForAddSeat.assignedQuota || 0} Staff
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Assigned Leader: <strong className="text-slate-200">{selectedPodForAddSeat.leaderName || 'Unclaimed'}</strong>
+                      </p>
+                    </div>
+
+                    {/* Quantity Stepper */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-200 block">
+                        Number of Additional Frontline Seats
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center bg-[#0B0F19] border border-slate-700 rounded-xl overflow-hidden p-1">
+                          <button
+                            type="button"
+                            disabled={isProcessingAddSeat || additionalSeatsCount <= 1}
+                            onClick={() => setAdditionalSeatsCount(Math.max(1, additionalSeatsCount - 1))}
+                            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="w-12 text-center font-mono font-bold text-white text-sm">
+                            {additionalSeatsCount}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isProcessingAddSeat || additionalSeatsCount >= 20}
+                            onClick={() => setAdditionalSeatsCount(Math.min(20, additionalSeatsCount + 1))}
+                            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div className="flex items-center gap-1.5">
+                          {[1, 2, 5].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => setAdditionalSeatsCount(preset)}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                additionalSeatsCount === preset
+                                  ? 'bg-blue-600 text-white font-bold'
+                                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300'
+                              }`}
+                            >
+                              +{preset} {preset === 1 ? 'Seat' : 'Seats'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Commercial Prorated Billing Box */}
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-2.5">
+                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Prorated Capacity Billing Calculation
+                      </span>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Current Pod Quota:</span>
+                        <span className="font-mono text-slate-200">{selectedPodForAddSeat.assignedQuota || 0} Staff</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Additional Frontline Capacity:</span>
+                        <span className="font-mono font-bold text-emerald-400">
+                          +{additionalSeatsCount} {additionalSeatsCount === 1 ? 'Seat' : 'Seats'} (&times; $30/mo)
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-slate-300">
+                        <span>Projected New Pod Quota:</span>
+                        <span className="font-mono font-black text-white">
+                          {(selectedPodForAddSeat.assignedQuota || 0) + additionalSeatsCount} Staff
+                        </span>
+                      </div>
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-bold">
+                        <span className="text-white">Additional Monthly Billing:</span>
+                        <span className="font-mono text-emerald-400 text-sm">
+                          +${(additionalSeatsCount * 30).toFixed(2)} / month
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Invariant Guarantee Notice */}
+                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <p className="text-[11px] leading-relaxed">
+                        <strong>Quota Invariant Guarantee:</strong> Adding seats immediately locks the pod quota to the new ceiling and generates {additionalSeatsCount} single-use agent token(s) (<code className="font-mono text-emerald-200">STX-AGT-</code>). Existing agent assignments and leader governance are preserved 100%.
+                      </p>
+                    </div>
+
+                    {addSeatError && (
+                      <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                        <span className="text-red-400 font-bold">Error:</span>
+                        <span>{addSeatError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center justify-end gap-2.5">
+                      <button
+                        type="button"
+                        disabled={isProcessingAddSeat}
+                        onClick={() => setSelectedPodForAddSeat(null)}
+                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isProcessingAddSeat}
+                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isProcessingAddSeat ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Allocating Seats...</span>
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>Confirm &amp; Allocate Seats (+${(additionalSeatsCount * 30).toFixed(2)}/mo)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             </div>
           </div>
         )}

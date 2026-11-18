@@ -272,6 +272,8 @@ export default function TitaniumOnboardingPage() {
   const [isGeneratingPods, setIsGeneratingPods] = useState<boolean>(false);
   const [editingPodIndex, setEditingPodIndex] = useState<number | null>(null);
   const [newPodName, setNewPodName] = useState<string>('');
+  const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
+  const [editingServiceText, setEditingServiceText] = useState<string>('');
 
   // Step 4: Submission & Single-Use Leader Tokens Result
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -369,8 +371,10 @@ export default function TitaniumOnboardingPage() {
             services[idx % services.length] ||
             p.name.replace(/\s+Pod$/i, '').trim() ||
             'Core Service';
+          const podNum = idx + 1;
+          const podLabel = podNum < 10 ? `Pod 0${podNum}` : `Pod ${podNum}`;
           return {
-            name: p.name,
+            name: podLabel,
             podCategory: p.category || 'GENERAL',
             description: p.description || '',
             services: [podSvc],
@@ -379,9 +383,10 @@ export default function TitaniumOnboardingPage() {
 
         while (targetPods.length < calculatedPodCount) {
           const num = targetPods.length + 1;
-          const fallbackSvc = services[(num - 1) % services.length] || `Pod Service #${num}`;
+          const fallbackSvc = services[(num - 1) % services.length] || `Core Service #${num}`;
+          const podLabel = num < 10 ? `Pod 0${num}` : `Pod ${num}`;
           targetPods.push({
-            name: `Specialized Pod ${num}`,
+            name: podLabel,
             podCategory: 'GENERAL',
             description: `Dedicated operational unit for specialization #${num}`,
             services: [fallbackSvc],
@@ -407,9 +412,10 @@ export default function TitaniumOnboardingPage() {
   const buildFallbackPods = (servicesList: string[], count: number) => {
     const list: PodDraft[] = [];
     for (let i = 1; i <= count; i++) {
-      const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Pod Service #${i}`;
+      const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
+      const podLabel = i < 10 ? `Pod 0${i}` : `Pod ${i}`;
       list.push({
-        name: `${defaultSvc} Pod`,
+        name: podLabel,
         podCategory: 'GENERAL',
         description: `Dedicated operational unit for ${defaultSvc}`,
         services: [defaultSvc],
@@ -457,7 +463,10 @@ export default function TitaniumOnboardingPage() {
   const handleAddGlobalService = () => {
     if (!newServiceInput.trim()) return;
     const clean = newServiceInput.trim();
-    if (!availableServices.includes(clean)) {
+    const alreadyExists = availableServices.some(
+      (s) => s.toLowerCase() === clean.toLowerCase(),
+    );
+    if (!alreadyExists) {
       setAvailableServices((prev) => [...prev, clean]);
     }
     setNewServiceInput('');
@@ -465,11 +474,70 @@ export default function TitaniumOnboardingPage() {
 
   const handleSavePodName = (index: number) => {
     if (!newPodName.trim()) return;
+    const cleanName = newPodName.replace(/\s+Pod$/i, '').trim();
     setPods((prev) =>
-      prev.map((p, idx) => (idx === index ? { ...p, name: newPodName.trim() } : p)),
+      prev.map((p, idx) => (idx === index ? { ...p, name: cleanName } : p)),
     );
     setEditingPodIndex(null);
     setNewPodName('');
+  };
+
+  const handleStartEditService = (index: number, currentText: string) => {
+    setEditingServiceIndex(index);
+    setEditingServiceText(currentText);
+  };
+
+  const handleSaveEditService = (index: number) => {
+    if (!editingServiceText.trim()) return;
+    const oldText = availableServices[index];
+    const newText = editingServiceText.trim();
+    if (!oldText) return;
+
+    setAvailableServices((prev) =>
+      prev.map((s, idx) => (idx === index ? newText : s)),
+    );
+
+    // Synchronize renamed service across all pods
+    setPods((prev) =>
+      prev.map((pod) => ({
+        ...pod,
+        services: pod.services.map((s) => (s === oldText ? newText : s)),
+      })),
+    );
+
+    setEditingServiceIndex(null);
+    setEditingServiceText('');
+  };
+
+  const handleDeleteService = (index: number, serviceName: string) => {
+    // Safety guard: Protect default industry baseline categories (0-5)
+    if (index < 6) return;
+
+    setAvailableServices((prev) => prev.filter((_, idx) => idx !== index));
+    // Remove deleted service from all pods
+    setPods((prev) =>
+      prev.map((pod) => ({
+        ...pod,
+        services: pod.services.filter((s) => s !== serviceName),
+      })),
+    );
+    if (editingServiceIndex === index) {
+      setEditingServiceIndex(null);
+      setEditingServiceText('');
+    }
+  };
+
+  const handleResetServicesToDefault = () => {
+    const preset = INDUSTRY_PRESETS.find((p) => p.id === selectedIndustry);
+    const defaults = preset
+      ? [...preset.defaultServices]
+      : [...CUSTOM_INDUSTRY_DEFAULT_SERVICES];
+
+    // Restore standard 6 baseline names while preserving user's custom additions (indices 6+)
+    const customServices = availableServices.slice(6);
+    setAvailableServices([...defaults, ...customServices]);
+    setEditingServiceIndex(null);
+    setEditingServiceText('');
   };
 
   const handleFinalSubmit = async () => {
@@ -487,8 +555,8 @@ export default function TitaniumOnboardingPage() {
           selectedIndustry === 'OTHER' ? customIndustryText.trim() : undefined,
         totalSeats: Number(typedMembers),
         leadershipMode: 'DEDICATED' as const,
-        pods: pods.map((p) => ({
-          name: p.name,
+        pods: pods.map((p, idx) => ({
+          name: `Pod ${idx + 1 < 10 ? `0${idx + 1}` : idx + 1}`,
           podCategory: p.podCategory,
           description: p.description,
           services: p.services,
@@ -665,7 +733,7 @@ export default function TitaniumOnboardingPage() {
                     setOrganizationName(e.target.value);
                     if (errorMessage) setErrorMessage(null);
                   }}
-                  placeholder="Express Company"
+                  placeholder="e.g., Acme Global Enterprises"
                   className={`w-full bg-[#0B0F19] border ${
                     !organizationName.trim() && errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-800'
                   } rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium`}
@@ -846,120 +914,227 @@ export default function TitaniumOnboardingPage() {
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Layers className="w-5 h-5 text-blue-400" />
-                  Map Service Categories Across {calculatedPodCount} Pods
+                  Configure Operational Pods &amp; Assign Ticket Categories
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Select the service types handled by each pod. A single pod can manage multiple services simultaneously.
+                  Assign customer issue categories to your {calculatedPodCount} operational pods. Inbound tickets will be intelligently classified and routed by AI Triage based on these scopes.
                 </p>
               </div>
 
-              {/* Quick Add Custom Service Tag */}
-              <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800 flex items-center gap-3">
-                <input
-                  type="text"
-                  value={newServiceInput}
-                  onChange={(e) => setNewServiceInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddGlobalService()}
-                  placeholder="Add a new service category (e.g., VIP Priority Concierge)..."
-                  className="flex-1 bg-[#111827] border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddGlobalService}
-                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Service</span>
-                </button>
+              {/* Quick Add Custom Service Tag - American Corporate Style */}
+              <div className="p-5 rounded-2xl bg-[#0B0F19] border border-slate-800/90 shadow-lg space-y-3">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 font-mono">
+                    <Plus className="w-4 h-4 text-blue-400" />
+                    Add Custom Ticket Category
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Enter a new service specialization or customer complaint category. It will appear at the bottom of the list for all pods.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    value={newServiceInput}
+                    onChange={(e) => setNewServiceInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddGlobalService();
+                      }
+                    }}
+                    placeholder="e.g., VIP Priority Concierge & White-Glove Support"
+                    className="flex-1 bg-[#111827] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleAddGlobalService();
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/25 transition-all shrink-0 active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Category</span>
+                  </button>
+                </div>
               </div>
 
               {/* Pod Cards List */}
               {isGeneratingPods ? (
                 <div className="py-12 text-center text-slate-400 text-xs">
                   <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <span>AI is architecting {calculatedPodCount} specialized pods...</span>
+                  <span>AI Architect is designing {calculatedPodCount} operational pods...</span>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-5">
                   {pods.map((pod, pIdx) => {
                     const isEditing = editingPodIndex === pIdx;
                     return (
                       <div
                         key={pIdx}
-                        className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-slate-700 transition-all space-y-3"
+                        className="p-6 rounded-2xl bg-[#0B0F19] border border-slate-800/80 shadow-xl shadow-black/40 space-y-5"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-blue-900/60 border border-blue-500/40 text-blue-300 text-xs font-bold flex items-center justify-center">
-                              {pIdx + 1}
-                            </span>
-                            {isEditing ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={newPodName}
-                                  onChange={(e) => setNewPodName(e.target.value)}
-                                  className="bg-[#111827] border border-blue-500 text-white text-xs px-2.5 py-1 rounded"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSavePodName(pIdx)}
-                                  className="text-xs bg-blue-600 px-2 py-1 rounded text-white font-bold"
-                                >
-                                  Save
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-xs font-extrabold text-white">{pod.name}</h3>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingPodIndex(pIdx);
-                                    setNewPodName(pod.name);
-                                  }}
-                                  className="text-slate-500 hover:text-slate-300"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
+                        {/* Header: Fixed Paten Pod Identity */}
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                            <h3 className="text-base font-bold text-white tracking-tight font-mono">
+                              {`Pod ${pIdx + 1 < 10 ? `0${pIdx + 1}` : pIdx + 1}`}
+                            </h3>
                           </div>
-                          <span className="text-[10px] font-semibold uppercase bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                            Max 8 Members
-                          </span>
+
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider bg-slate-800/80 border border-slate-700/50 text-slate-300 px-3 py-1 rounded-full font-mono">
+                              Max 8 Members
+                            </span>
+                          </div>
                         </div>
 
-                        {/* Multi-Service Selector for this Pod */}
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">
-                            Select Services Handled by This Pod:
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            {availableServices.map((svc) => {
+                        {/* Category Assignment Section */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
+                                Ticket Issue Categories Handled by This Pod (AI Routing Scope)
+                              </h4>
+                              <p className="text-[11px] text-slate-400 mt-0.5">
+                                Select the issue types handled by this pod. Inbound tickets matching these topics will route directly here.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleResetServicesToDefault}
+                                title="Reset all categories back to standard industry presets"
+                                className="text-[11px] font-mono text-slate-400 hover:text-blue-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Reset Defaults</span>
+                              </button>
+                              <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-0.5 rounded-md font-semibold">
+                                {pod.services.length} Selected
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Vertical Stack: Numbered 1 to 6, then 7+ from top to bottom */}
+                          <div className="space-y-2">
+                            {availableServices.map((svc, sIdx) => {
                               const isChecked = pod.services.includes(svc);
+                              const indexNumber = sIdx + 1 < 10 ? `0${sIdx + 1}` : `${sIdx + 1}`;
+                              const isEditingThis = editingServiceIndex === sIdx;
+
+                              if (isEditingThis) {
+                                return (
+                                  <div
+                                    key={`${svc}-${sIdx}`}
+                                    className="w-full p-2.5 rounded-xl bg-[#111827] border border-blue-500/80 shadow-md flex items-center gap-3"
+                                  >
+                                    <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-blue-600/30 text-blue-300 border border-blue-500/50 shrink-0">
+                                      {indexNumber}
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={editingServiceText}
+                                      onChange={(e) => setEditingServiceText(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          handleSaveEditService(sIdx);
+                                        } else if (e.key === 'Escape') {
+                                          setEditingServiceIndex(null);
+                                        }
+                                      }}
+                                      className="flex-1 bg-[#0B0F19] border border-blue-500/50 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden font-medium"
+                                      autoFocus
+                                    />
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveEditService(sIdx)}
+                                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-md transition-all cursor-pointer"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingServiceIndex(null)}
+                                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-md transition-all cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
+
                               return (
-                                <button
-                                  key={svc}
-                                  type="button"
+                                <div
+                                  key={`${svc}-${sIdx}`}
                                   onClick={() => handleToggleServiceForPod(pIdx, svc)}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5 border ${
+                                  className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer flex items-center justify-between gap-3 border group ${
                                     isChecked
-                                      ? 'bg-blue-950/70 border-blue-500 text-blue-200 shadow-sm'
-                                      : 'bg-[#111827] border-slate-800 text-slate-400 hover:text-slate-300'
+                                      ? 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30'
+                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827]'
                                   }`}
                                 >
-                                  <div
-                                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
+                                  {/* Left: Index Number */}
+                                  <span
+                                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 transition-colors ${
                                       isChecked
-                                        ? 'bg-blue-600 border-blue-500 text-white'
-                                        : 'border-slate-700'
+                                        ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
+                                        : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 group-hover:text-slate-300'
                                     }`}
                                   >
-                                    {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                    {indexNumber}
+                                  </span>
+
+                                  {/* Middle: Service Name */}
+                                  <span className="flex-1 text-xs font-semibold tracking-wide truncate">
+                                    {svc}
+                                  </span>
+
+                                  {/* Actions: Rename & Delete buttons */}
+                                  <div className="flex items-center gap-1 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartEditService(sIdx, svc);
+                                      }}
+                                      title="Rename this category"
+                                      className="p-1.5 rounded-md text-slate-500 hover:text-blue-400 hover:bg-slate-800/80 transition-all cursor-pointer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    {/* Delete button: ONLY available for custom added categories (index 6+, #07 onwards) */}
+                                    {sIdx >= 6 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteService(sIdx, svc);
+                                        }}
+                                        title="Delete this custom category"
+                                        className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition-all cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
-                                  <span>{svc}</span>
-                                </button>
+
+                                  {/* Right: Checklist Checkbox */}
+                                  <div
+                                    className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                                      isChecked
+                                        ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
+                                        : 'border-slate-700 bg-slate-800/40 group-hover:border-slate-600'
+                                    }`}
+                                  >
+                                    {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                  </div>
+                                </div>
                               );
                             })}
                           </div>
