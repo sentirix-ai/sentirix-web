@@ -128,8 +128,11 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to access th
 # Compile and optimize for production
 npm run build
 
-# Start production server
+# Start standard Next.js production server
 npm run start
+
+# Alternatively: Start using custom standalone server
+node server.js
 ```
 
 ---
