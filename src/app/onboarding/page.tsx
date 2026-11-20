@@ -37,6 +37,7 @@ import {
   RefreshCw,
   Lock,
   RotateCcw,
+  GitFork,
 } from 'lucide-react';
 import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
 import {
@@ -859,15 +860,6 @@ export default function TitaniumOnboardingPage() {
   };
 
   const handleToggleServiceForPod = (podIndex: number, serviceName: string) => {
-    // Check if this category is already claimed by another pod
-    const claimingPod = pods.find((p, idx) => idx !== podIndex && p.services.includes(serviceName));
-    if (claimingPod) {
-      setErrorMessage(
-        `"${serviceName}" is already assigned to ${claimingPod.name}. Uncheck it from ${claimingPod.name} first to reassign.`
-      );
-      return;
-    }
-
     if (errorMessage) setErrorMessage(null);
 
     let nextPods: PodDraft[] = [];
@@ -1592,7 +1584,7 @@ export default function TitaniumOnboardingPage() {
                   Configure Operational Pods &amp; Assign Ticket Categories
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Assign customer issue categories to your {calculatedPodCount} operational pods. Inbound tickets will be intelligently classified and routed by AI Triage based on these scopes.
+                  Assign customer issue categories to your {calculatedPodCount} operational pods. Pods can operate exclusively or share high-volume scopes with dynamic AI load balancing.
                 </p>
               </div>
 
@@ -1684,10 +1676,9 @@ export default function TitaniumOnboardingPage() {
                         <div className="space-y-2">
                             {availableServices.map((svc, sIdx) => {
                               const isChecked = pod.services.includes(svc);
-                              const claimingPod = !isChecked
-                                ? pods.find((p, idx) => idx !== pIdx && p.services.includes(svc))
-                                : null;
-                              const isClaimedByOther = !!claimingPod;
+                              const otherPodsSharing = pods.filter((p, idx) => idx !== pIdx && p.services.includes(svc));
+                              const isCoveredByOther = otherPodsSharing.length > 0;
+                              const otherPodNames = otherPodsSharing.map((p) => p.name).join(', ');
                               const indexNumber = sIdx + 1 < 10 ? `0${sIdx + 1}` : `${sIdx + 1}`;
                               const isEditingThis = editingServiceIndex === sIdx;
 
@@ -1799,18 +1790,20 @@ export default function TitaniumOnboardingPage() {
                                 <div
                                   key={`${svc}-${sIdx}`}
                                   onClick={() => handleToggleServiceForPod(pIdx, svc)}
-                                  className={`w-full p-3 rounded-xl text-left transition-all flex items-center justify-between gap-3 border group ${
+                                  className={`w-full p-3 rounded-xl text-left transition-all flex items-center justify-between gap-3 border group cursor-pointer ${
                                     isChecked
-                                      ? 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30 cursor-pointer'
-                                      : isClaimedByOther
-                                      ? 'bg-[#0A0D14]/70 border-slate-900/80 text-slate-500 opacity-60 cursor-not-allowed'
-                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827] cursor-pointer'
+                                      ? isCoveredByOther
+                                        ? 'bg-indigo-950/25 border-indigo-500/60 text-white shadow-sm ring-1 ring-indigo-500/30'
+                                        : 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30'
+                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827]'
                                   }`}
                                   title={
-                                    isClaimedByOther
-                                      ? `Assigned to ${claimingPod?.name}. Uncheck from ${claimingPod?.name} to assign here.`
-                                      : isChecked
-                                      ? 'Click to remove from this pod'
+                                    isChecked
+                                      ? isCoveredByOther
+                                        ? `Click to remove from this pod (currently shared with ${otherPodNames})`
+                                        : 'Click to remove from this pod'
+                                      : isCoveredByOther
+                                      ? `Click to assign to this pod and enable AI load balancing with ${otherPodNames}`
                                       : 'Click to assign to this pod'
                                   }
                                 >
@@ -1818,9 +1811,9 @@ export default function TitaniumOnboardingPage() {
                                   <span
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 transition-colors ${
                                       isChecked
-                                        ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
-                                        : isClaimedByOther
-                                        ? 'bg-slate-900/70 text-slate-600 border border-slate-800/60'
+                                        ? isCoveredByOther
+                                          ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/50'
+                                          : 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
                                         : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 group-hover:text-slate-300'
                                     }`}
                                   >
@@ -1828,7 +1821,7 @@ export default function TitaniumOnboardingPage() {
                                   </span>
 
                                   {/* Middle: Service Name */}
-                                  <span className={`flex-1 text-xs font-semibold tracking-wide truncate ${isClaimedByOther ? 'text-slate-500' : ''}`}>
+                                  <span className="flex-1 text-xs font-semibold tracking-wide truncate">
                                     {svc}
                                   </span>
 
@@ -1861,23 +1854,46 @@ export default function TitaniumOnboardingPage() {
                                     )}
                                   </div>
 
-                                  {/* Right: Checklist Checkbox or Claimed Lock Badge */}
-                                  {isClaimedByOther ? (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] font-mono font-medium text-slate-400 shrink-0 shadow-xs">
-                                      <Lock className="w-3 h-3 text-slate-500" />
-                                      <span>Assigned to {claimingPod?.name}</span>
-                                    </div>
-                                  ) : (
+                                  {/* Right Section: Inline Shared Scope Badge (if shared or covered) + Checkbox */}
+                                  <div className="flex items-center gap-2.5 shrink-0">
+                                    {isChecked && isCoveredByOther ? (
+                                      <div
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0c1527] border border-cyan-500/30 text-[10px] font-mono shadow-xs shrink-0 select-none transition-all group-hover:border-cyan-500/50"
+                                        title={`Shared with ${otherPodNames}: Inbound tickets will be dynamically balanced by AI Triage based on real-time agent availability.`}
+                                      >
+                                        <GitFork className="w-3 h-3 text-cyan-400 shrink-0" />
+                                        <span className="text-slate-300 font-semibold tracking-wide uppercase">
+                                          SHARED SCOPE &bull; {otherPodNames}
+                                        </span>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
+                                        <span className="text-cyan-300 font-bold uppercase tracking-wider text-[9px] bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/25">
+                                          AI BALANCED
+                                        </span>
+                                      </div>
+                                    ) : !isChecked && isCoveredByOther ? (
+                                      <div
+                                        className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[10px] font-mono text-slate-400 shrink-0 select-none group-hover:border-slate-700 transition-colors"
+                                        title={`Covered by ${otherPodNames}. Click checkbox to include this pod in shared load balancing.`}
+                                      >
+                                        <GitFork className="w-3 h-3 text-slate-500 shrink-0" />
+                                        <span className="text-slate-400 font-medium">Covered by {otherPodNames}</span>
+                                        <span className="text-[9px] text-slate-500">&bull; Click to share</span>
+                                      </div>
+                                    ) : null}
+
+                                    {/* Checkbox */}
                                     <div
                                       className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
                                         isChecked
-                                          ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
+                                          ? isCoveredByOther
+                                            ? 'bg-gradient-to-br from-indigo-600 to-blue-600 border-indigo-400 text-white shadow-md shadow-indigo-500/30'
+                                            : 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
                                           : 'border-slate-700 bg-slate-800/40 group-hover:border-slate-600'
                                       }`}
                                     >
                                       {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                     </div>
-                                  )}
+                                  </div>
                                 </div>
                               );
                             })}

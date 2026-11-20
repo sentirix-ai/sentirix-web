@@ -120,101 +120,112 @@ function JoinWorkspaceContent() {
     }
 
     const inspectToken = async () => {
-      setIsLoading(false);
+      setIsLoading(true);
       setErrorMessage(null);
       setIsLockedToOtherSession(false);
       const sid = getClientSessionId();
 
-      if (token.startsWith('STX-LDR-')) {
-        setTokenType('LEADER');
-        const res = await fetchLeaderTokenStatus(token, sid);
-        if (!res.valid) {
-          if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
-          setErrorMessage(res.error || 'Leader token is invalid or has expired.');
-        } else {
-          setTokenData(res);
-          if (res.isExistingLeader && res.existingLeaderName) {
-            setFullName(res.existingLeaderName);
-          }
-
-          // Restore or maintain Leader activation success screen if not yet entered workspace
-          if (typeof window !== 'undefined' && token.startsWith('STX-LDR-')) {
-            const alreadyEntered =
-              sessionStorage.getItem(`sentirix_leader_entered_${token}`) ||
-              localStorage.getItem(`sentirix_leader_entered_${token}`);
-
-            if (!alreadyEntered) {
-              const cached = sessionStorage.getItem(`sentirix_leader_locked_${token}`);
-              if (cached) {
-                try {
-                  const parsed = JSON.parse(cached);
-                  if (parsed?.workspaceName && Array.isArray(parsed?.agentTokens)) {
-                    setLeaderLockedResult(parsed);
-                  }
-                } catch {}
-              } else if (res.workspace?.isQuotaLocked && res.agentTokens && res.agentTokens.length > 0) {
-                const autoRestored = {
-                  workspaceName: res.workspace.name,
-                  assignedQuota: res.workspace.assignedQuota || res.agentTokens.length + 1,
-                  agentTokens: res.agentTokens,
-                };
-                sessionStorage.setItem(`sentirix_leader_locked_${token}`, JSON.stringify(autoRestored));
-                setLeaderLockedResult(autoRestored);
-              }
-
-              // Restore persistent copiedTokens
-              const rawCopied = sessionStorage.getItem(`sentirix_copied_tokens_${token}`);
-              if (rawCopied) {
-                try {
-                  const parsedCopied = JSON.parse(rawCopied);
-                  if (Array.isArray(parsedCopied)) {
-                    setCopiedTokens(parsedCopied);
-                  }
-                } catch {}
-              }
-            }
-          }
-
-          if (res.workspace?.isQuotaLocked) {
-            setIsQuotaLocked(true);
-            if (res.workspace.assignedQuota > 1) {
-              setSelectedSubordinates(res.workspace.assignedQuota - 1);
-            }
-          } else if (res.quotaStats?.allowedOptions?.length > 0) {
-            const opts = res.quotaStats.allowedOptions;
-            if (res.quotaStats.isLastPod) {
-              setSelectedSubordinates(opts[0]);
-            } else {
-              setSelectedSubordinates(opts[opts.length - 1]);
-            }
-          }
-        }
-      } else if (token.startsWith('STX-AGT-')) {
-        setTokenType('AGENT');
-        const res = await fetchAgentTokenStatus(token, sid);
-        if (!res.valid) {
-          if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
-          setErrorMessage(res.error || 'Agent token is invalid or has already been used.');
-        } else {
-          setTokenData(res);
-          if (res.assignedMemberName) {
-            setFullName(res.assignedMemberName);
-          }
-        }
-      } else {
-        // Fallback for legacy invite link
-        setTokenType('LEGACY');
-        try {
-          const res = await validateWorkspaceInvite(token, sid);
+      try {
+        if (token.startsWith('STX-LDR-')) {
+          setTokenType('LEADER');
+          const res = await fetchLeaderTokenStatus(token, sid);
           if (!res.valid) {
             if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
-            setErrorMessage(res.error || 'Invitation link is invalid.');
+            setErrorMessage(res.error || 'Leader token is invalid or has expired.');
           } else {
             setTokenData(res);
+            if (res.isExistingLeader && res.existingLeaderName) {
+              setFullName(res.existingLeaderName);
+            }
+
+            // If this is an existing leader returning to service, ensure leaderLockedResult is null
+            // so they are directly presented with the "Selamat Datang / Welcome Back" screen, NOT the token distribution screen.
+            if (res.isExistingLeader) {
+              setLeaderLockedResult(null);
+              if (typeof window !== 'undefined') {
+                try {
+                  sessionStorage.removeItem(`sentirix_leader_locked_${token}`);
+                } catch {}
+              }
+            } else if (typeof window !== 'undefined' && token.startsWith('STX-LDR-')) {
+              const alreadyEntered =
+                sessionStorage.getItem(`sentirix_leader_entered_${token}`) ||
+                localStorage.getItem(`sentirix_leader_entered_${token}`);
+
+              if (!alreadyEntered) {
+                const cached = sessionStorage.getItem(`sentirix_leader_locked_${token}`);
+                if (cached) {
+                  try {
+                    const parsed = JSON.parse(cached);
+                    if (parsed?.workspaceName && Array.isArray(parsed?.agentTokens)) {
+                      setLeaderLockedResult(parsed);
+                    }
+                  } catch {}
+                } else if (res.workspace?.isQuotaLocked && res.agentTokens && res.agentTokens.length > 0) {
+                  const autoRestored = {
+                    workspaceName: res.workspace.name,
+                    assignedQuota: res.workspace.assignedQuota || res.agentTokens.length + 1,
+                    agentTokens: res.agentTokens,
+                  };
+                  sessionStorage.setItem(`sentirix_leader_locked_${token}`, JSON.stringify(autoRestored));
+                  setLeaderLockedResult(autoRestored);
+                }
+
+                // Restore persistent copiedTokens
+                const rawCopied = sessionStorage.getItem(`sentirix_copied_tokens_${token}`);
+                if (rawCopied) {
+                  try {
+                    const parsedCopied = JSON.parse(rawCopied);
+                    if (Array.isArray(parsedCopied)) {
+                      setCopiedTokens(parsedCopied);
+                    }
+                  } catch {}
+                }
+              }
+            }
+
+            if (res.workspace?.isQuotaLocked) {
+              setIsQuotaLocked(true);
+              if (res.workspace.assignedQuota > 1) {
+                setSelectedSubordinates(res.workspace.assignedQuota - 1);
+              }
+            } else if (res.quotaStats?.allowedOptions?.length > 0) {
+              const opts = res.quotaStats.allowedOptions;
+              // Penambahan kuota bawahan selalu default dimulai dari 1 anggota (opts[0]), bukan nilai maksimal
+              setSelectedSubordinates(opts[0]);
+            }
           }
-        } catch {
-          setErrorMessage('Failed to connect to server to validate token.');
+        } else if (token.startsWith('STX-AGT-')) {
+          setTokenType('AGENT');
+          const res = await fetchAgentTokenStatus(token, sid);
+          if (!res.valid) {
+            if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
+            setErrorMessage(res.error || 'Agent token is invalid or has already been used.');
+          } else {
+            setTokenData(res);
+            if (res.assignedMemberName) {
+              setFullName(res.assignedMemberName);
+            }
+          }
+        } else {
+          // Fallback for legacy invite link
+          setTokenType('LEGACY');
+          try {
+            const res = await validateWorkspaceInvite(token, sid);
+            if (!res.valid) {
+              if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
+              setErrorMessage(res.error || 'Invitation link is invalid.');
+            } else {
+              setTokenData(res);
+            }
+          } catch {
+            setErrorMessage('Failed to connect to server to validate token.');
+          }
         }
+      } catch (err) {
+        setErrorMessage('Failed to connect to server to validate token.');
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -314,7 +325,8 @@ function JoinWorkspaceContent() {
   // Handle Leader Quota Locking (Click [✓ Lock Pod Quota])
   const handleLockLeaderQuota = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || fullName.trim().length < 2) {
+    const effectiveName = (tokenData?.existingLeaderName || fullName || '').trim();
+    if (!tokenData?.isExistingLeader && (!effectiveName || effectiveName.length < 2)) {
       setFormError('Please enter your full name (at least 2 characters).');
       return;
     }
@@ -329,7 +341,7 @@ function JoinWorkspaceContent() {
 
       const res = await lockLeaderQuota({
         token,
-        fullName: fullName.trim(),
+        fullName: effectiveName || 'Leader',
         password: password.trim() || undefined,
         chosenSubordinates: safeSubordinates,
         sessionId: sid,
@@ -355,7 +367,7 @@ function JoinWorkspaceContent() {
           workspaceId: res.workspace?.id || res.leader.workspaceId,
         });
 
-        if (res.isReLogin) {
+        if (res.isReLogin || tokenData?.isExistingLeader) {
           if (typeof window !== 'undefined' && token) {
             try {
               sessionStorage.setItem(`sentirix_leader_entered_${token}`, 'true');
@@ -482,6 +494,7 @@ function JoinWorkspaceContent() {
   };
 
   const handleRegenerateAgentToken = async (oldTok: string) => {
+    const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
     try {
       setRegeneratingToken(oldTok);
       const res = await regenerateToken(oldTok);
@@ -525,6 +538,11 @@ function JoinWorkspaceContent() {
       setErrorMessage('Connection error occurred.');
     } finally {
       setRegeneratingToken(null);
+      if (typeof window !== 'undefined') {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        });
+      }
     }
   };
 

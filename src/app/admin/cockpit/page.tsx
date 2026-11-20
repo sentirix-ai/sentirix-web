@@ -35,6 +35,7 @@ import {
   ArrowRightLeft,
   Plus,
   UserPlus,
+  ShieldAlert,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
 import {
@@ -84,6 +85,16 @@ export default function SuperAdminCockpitPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [dispatchedTokens, setDispatchedTokens] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('sentirix_admin_dispatched_tokens');
+        if (raw) return new Set(JSON.parse(raw));
+      } catch {}
+    }
+    return new Set<string>();
+  });
+  const [freshRegeneratedTokens, setFreshRegeneratedTokens] = useState<Set<string>>(new Set());
   const [copiedChannelItem, setCopiedChannelItem] = useState<string | null>(null);
   const [isCleaningDemo, setIsCleaningDemo] = useState(false);
   const [demoNotice, setDemoNotice] = useState<string | null>(null);
@@ -129,10 +140,11 @@ export default function SuperAdminCockpitPage() {
 
   // Commercial Monetization & Horizontal Expansion: Deploy Specialized Pod ($149/mo)
   const [isCreatePodOpen, setIsCreatePodOpen] = useState(false);
+  const [isPodCapacityNoticeOpen, setIsPodCapacityNoticeOpen] = useState(false);
   const [newPodNameInput, setNewPodNameInput] = useState('');
   const [newPodCategoryInput, setNewPodCategoryInput] = useState('ENTERPRISE_VIP');
   const [newPodServicesInput, setNewPodServicesInput] = useState('VIP Priority, Dispute Resolution, Incident Hub');
-  const [newPodQuotaInput, setNewPodQuotaInput] = useState(3);
+  const [newPodQuotaInput, setNewPodQuotaInput] = useState(2);
   const [isDeployingPod, setIsDeployingPod] = useState(false);
   const [createPodError, setCreatePodError] = useState<string | null>(null);
   const [createPodSuccess, setCreatePodSuccess] = useState<{
@@ -367,10 +379,31 @@ export default function SuperAdminCockpitPage() {
     }
   };
 
+  // Pod Allocation & Density Governance:
+  // Each pod holds up to 8 members (1 Leader + 7 Agents).
+  // All existing pods must reach full capacity (currentPodsCount * 8) before an additional pod can be deployed.
+  const workspaces = cockpitData?.workspaces || [];
+  const currentPodsCount = workspaces.length;
+  const totalActiveMembersAcrossPods = workspaces.reduce(
+    (sum: number, ws: any) => sum + (ws.membersCount || 0),
+    0,
+  );
+  const requiredCapacityToUnlockNextPod = currentPodsCount * 8;
+  const isPodCapacityRequirementMet =
+    currentPodsCount === 0 || totalActiveMembersAcrossPods >= requiredCapacityToUnlockNextPod;
+  const podMembersDeficit = Math.max(0, requiredCapacityToUnlockNextPod - totalActiveMembersAcrossPods);
+  const nextPodSequenceNumber = currentPodsCount + 1;
+
   const handleDeploySpecializedPod = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPodNameInput.trim()) {
       setCreatePodError('Please specify an enterprise pod division name.');
+      return;
+    }
+    if (!isPodCapacityRequirementMet) {
+      setCreatePodError(
+        `Cannot deploy an additional pod. All existing pods must reach maximum capacity (8 members per pod). Currently at ${totalActiveMembersAcrossPods} of ${requiredCapacityToUnlockNextPod} members. Need ${podMembersDeficit} more member(s) to unlock Pod #${nextPodSequenceNumber}.`,
+      );
       return;
     }
     try {
@@ -412,13 +445,20 @@ export default function SuperAdminCockpitPage() {
   const handleAddSeatsToPod = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPodForAddSeat) return;
+    const currentQuota = selectedPodForAddSeat.assignedQuota || selectedPodForAddSeat.maxMembers || 0;
+    const maxAddable = Math.max(0, 8 - currentQuota);
+    const countToAdd = Math.min(Math.max(1, additionalSeatsCount), maxAddable);
+    if (countToAdd <= 0) {
+      setAddSeatError('Pod has reached its maximum capacity of 8 members.');
+      return;
+    }
     try {
       setIsProcessingAddSeat(true);
       setAddSeatError(null);
 
       const res = await addSeatToPod({
         workspaceId: selectedPodForAddSeat.id,
-        seatCount: additionalSeatsCount,
+        seatCount: countToAdd,
       });
 
       if (!res.success) {
@@ -428,7 +468,7 @@ export default function SuperAdminCockpitPage() {
 
       setAddSeatSuccess({
         podName: selectedPodForAddSeat.name,
-        newQuota: (selectedPodForAddSeat.assignedQuota || 0) + additionalSeatsCount,
+        newQuota: currentQuota + countToAdd,
         tokens: res.newTokens || [],
       });
 
@@ -515,8 +555,21 @@ export default function SuperAdminCockpitPage() {
 
   const handleCopyLink = (token: string) => {
     const url = `http://localhost:3000/join?token=${token}`;
-    navigator.clipboard.writeText(url);
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+    }
     setCopiedToken(token);
+    setDispatchedTokens((prev) => {
+      const next = new Set(prev);
+      next.add(token);
+      try {
+        sessionStorage.setItem(
+          'sentirix_admin_dispatched_tokens',
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {}
+      return next;
+    });
     setTimeout(() => setCopiedToken(null), 2500);
   };
 
@@ -544,11 +597,38 @@ export default function SuperAdminCockpitPage() {
   };
 
   const handleRegenerateToken = async (oldToken: string) => {
+    const scrollY = typeof window !== 'undefined' ? window.scrollY : 0;
     try {
       setRegeneratingToken(oldToken);
       const res = await regenerateToken(oldToken);
       if (res.success && session) {
-        await loadData(session);
+        setDispatchedTokens((prev) => {
+          const next = new Set(prev);
+          next.delete(oldToken);
+          if (res.newToken) next.delete(res.newToken);
+          try {
+            sessionStorage.setItem(
+              'sentirix_admin_dispatched_tokens',
+              JSON.stringify(Array.from(next)),
+            );
+          } catch {}
+          return next;
+        });
+
+        if (res.newToken) {
+          setFreshRegeneratedTokens((prev) => {
+            const next = new Set(prev);
+            next.add(res.newToken!);
+            return next;
+          });
+        }
+
+        await loadData(session, false);
+        if (typeof window !== 'undefined') {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: scrollY, behavior: 'instant' });
+          });
+        }
       } else {
         setErrorMessage(res.error || 'Failed to regenerate token.');
       }
@@ -556,6 +636,11 @@ export default function SuperAdminCockpitPage() {
       setErrorMessage('Network connection error.');
     } finally {
       setRegeneratingToken(null);
+      if (typeof window !== 'undefined') {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: scrollY, behavior: 'instant' });
+        });
+      }
     }
   };
 
@@ -580,10 +665,10 @@ export default function SuperAdminCockpitPage() {
         setConfirmForceLogoutTarget(null);
         await loadData(activeSession, false);
       } else {
-        setErrorMessage(res.error || 'Failed to force logout user.');
+        setErrorMessage(res.error || 'Failed to revoke user session.');
       }
     } catch {
-      setErrorMessage('Network connection error while executing force logout.');
+      setErrorMessage('Network connection error while executing session revocation.');
     } finally {
       setForcingLogoutUser(null);
     }
@@ -610,7 +695,6 @@ export default function SuperAdminCockpitPage() {
 
   const org = cockpitData?.organization || {};
   const stats = cockpitData?.stats || {};
-  const workspaces = cockpitData?.workspaces || [];
   const tokenAudit = cockpitData?.tokenAudit || [];
   const crisisTickets = cockpitData?.crisisTickets || [];
   const slaBreachedTickets = cockpitData?.slaBreachedTickets || [];
@@ -956,7 +1040,10 @@ export default function SuperAdminCockpitPage() {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-white">Specialized Pod Topology</h2>
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-blue-400" />
+                  <span>Specialized Pod Topology</span>
+                </h2>
                 <p className="text-xs text-slate-400">
                   Real-time quota lock status per Pod Leader and active ticket load.
                 </p>
@@ -1052,8 +1139,9 @@ export default function SuperAdminCockpitPage() {
           <section className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-white">
-                  Staff Presence &amp; Online Duration (Leaders &amp; Agents)
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-blue-400" />
+                  <span>Staff Presence &amp; Online Duration (Leaders &amp; Agents)</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Real-time online duration tracking, login/logout session audit, and automated disconnection logging when browsers close.
@@ -1691,14 +1779,14 @@ export default function SuperAdminCockpitPage() {
                                               })
                                             }
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 hover:text-white text-xs font-bold transition-all shadow-sm hover:shadow-rose-500/20 cursor-pointer disabled:opacity-50"
-                                            title="Force logout active session"
+                                            title="Revoke active personnel session"
                                           >
                                             <LogOut className="w-3.5 h-3.5 text-rose-400" />
                                             <span>
                                               {forcingLogoutUser === (user.userId || user.id) ||
                                               forcingLogoutUser === user.username
                                                 ? 'Revoking...'
-                                                : 'Force Logout'}
+                                                : 'Revoke Session'}
                                             </span>
                                           </button>
                                         )}
@@ -1728,7 +1816,7 @@ export default function SuperAdminCockpitPage() {
                   <ShieldCheck className="w-5 h-5 text-blue-400" />
                   <span>Single-Use Token Audit &amp; Credential Governance Hub</span>
                   <span className="text-xs font-mono font-semibold text-blue-300 bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-800/60">
-                    {tokenAudit.length} Active Tokens
+                    {tokenAudit.length} Registered Tokens
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -1739,21 +1827,31 @@ export default function SuperAdminCockpitPage() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!isPodCapacityRequirementMet) {
+                    setIsPodCapacityNoticeOpen(true);
+                    return;
+                  }
                   setNewPodNameInput('');
                   setNewPodCategoryInput('ENTERPRISE_VIP');
                   setNewPodServicesInput('VIP Priority, Dispute Resolution, Incident Hub');
-                  setNewPodQuotaInput(3);
+                  setNewPodQuotaInput(2);
                   setCreatePodSuccess(null);
                   setCreatePodError(null);
                   setIsCreatePodOpen(true);
                 }}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center gap-2.5 shadow-lg shadow-blue-600/25 border border-blue-400/30 cursor-pointer shrink-0 self-start sm:self-auto group"
+                className={`px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg border cursor-pointer shrink-0 self-start sm:self-auto group ${
+                  isPodCapacityRequirementMet
+                    ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/25 border-blue-400/30'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700 shadow-slate-900/30'
+                }`}
               >
                 <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
                 <span>Create Specialized Pod</span>
-                <span className="text-[10px] bg-blue-950/90 text-blue-200 font-mono px-2 py-0.5 rounded-md border border-blue-700/50">
-                  $149/mo
-                </span>
+                {!isPodCapacityRequirementMet && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {totalActiveMembersAcrossPods}/{requiredCapacityToUnlockNextPod}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -1830,18 +1928,17 @@ export default function SuperAdminCockpitPage() {
                             type="button"
                             onClick={() => {
                               setSelectedPodForAddSeat(ws);
-                              setAdditionalSeatsCount(1);
+                              const curQuota = ws.assignedQuota || ws.maxMembers || 0;
+                              const maxAdd = Math.max(0, 8 - curQuota);
+                              setAdditionalSeatsCount(maxAdd > 0 ? 1 : 0);
                               setAddSeatSuccess(null);
                               setAddSeatError(null);
                             }}
-                            className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/60 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer group shrink-0"
-                            title="Expand Pod Staff Capacity (+$30/seat/mo)"
+                            className="px-3 py-1.5 rounded-lg bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/60 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer group shrink-0"
+                            title="Expand Pod Staff Capacity"
                           >
-                            <UserPlus className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                            <Plus className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
                             <span>Add Seat</span>
-                            <span className="text-[9.5px] text-emerald-400 font-mono bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                              +$30/mo
-                            </span>
                           </button>
                         </div>
                       </div>
@@ -1930,7 +2027,7 @@ export default function SuperAdminCockpitPage() {
                                               {tok.hadForceLogout ? (
                                                 <div className="flex items-center gap-1 text-rose-400 font-semibold">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                                  <span>&bull; (Force Logged Out)</span>
+                                                  <span>&bull; (Session Revoked)</span>
                                                 </div>
                                               ) : tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
@@ -1974,35 +2071,88 @@ export default function SuperAdminCockpitPage() {
                                               })
                                             }
                                             className="px-2.5 py-1 rounded text-[11px] font-bold border border-rose-500/50 bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 shadow-sm disabled:opacity-50"
-                                            title="Force logout Leader session immediately"
+                                            title="Revoke active Leader session immediately"
                                           >
                                             <LogOut className="w-3 h-3 text-rose-400" />
                                             <span>
                                               {forcingLogoutUser === tok.token ||
                                               forcingLogoutUser === (tok.userId || tok.usedBy)
                                                 ? 'Revoking...'
-                                                : 'Force Logout'}
+                                                : 'Revoke Session'}
                                             </span>
                                           </button>
                                         )}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCopyLink(tok.token)}
-                                          className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                                            isCopied
-                                              ? 'bg-emerald-600 border-emerald-500 text-white'
-                                              : isLeaderFreshTokenReady
-                                                ? 'bg-amber-600 border-amber-500 text-white hover:bg-amber-500 shadow-sm'
-                                                : 'bg-[#0B0F19] border-amber-500/50 text-amber-200 hover:text-white hover:border-amber-400'
-                                          }`}
-                                          title="Copy Leader access link"
-                                        >
-                                          {isCopied ? 'Copied' : isLeaderFreshTokenReady ? 'Copy New Link' : 'Copy Link'}
-                                        </button>
+                                        {(() => {
+                                          const isDispatched = dispatchedTokens.has(tok.token);
+                                          const isOnline = Boolean(tok.isUserOnline);
+                                          const isFreshReady = (isLeaderFreshTokenReady || freshRegeneratedTokens.has(tok.token)) && !isDispatched && !isOnline;
+
+                                          if (isOnline) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900/40 border-slate-800/60 text-slate-600 cursor-not-allowed opacity-30 select-none flex items-center gap-1"
+                                                title="Leader is currently online. Token link cannot be copied while active."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-600" />
+                                                <span>Copy Link</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          if (leaderNeedsRegen) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900/60 border-slate-800/80 text-slate-600 cursor-not-allowed opacity-40 select-none flex items-center gap-1"
+                                                title="Leader has logged out. You must click Regenerate to issue a fresh link."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-600" />
+                                                <span>Copy Link</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          if (isDispatched) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed opacity-60 select-none flex items-center gap-1"
+                                                title="This single-use link has been copied & locked. Click Regenerate to issue a fresh link."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-400" />
+                                                <span>Copied (Locked)</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopyLink(tok.token)}
+                                              className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                                isCopied
+                                                  ? 'bg-emerald-600 border-emerald-500 text-white'
+                                                  : isFreshReady
+                                                    ? 'bg-amber-600 border-amber-500 text-white hover:bg-amber-500 shadow-sm'
+                                                    : 'bg-[#0B0F19] border-amber-500/50 text-amber-200 hover:text-white hover:border-amber-400'
+                                              }`}
+                                              title={isFreshReady ? 'Copy newly regenerated single-use Leader link' : 'Copy single-use Leader access link'}
+                                            >
+                                              {isCopied ? 'Copied' : isFreshReady ? 'Copy New Link' : 'Copy Link'}
+                                            </button>
+                                          );
+                                        })()}
                                         <button
                                           type="button"
                                           disabled={regeneratingToken === tok.token}
-                                          onClick={() => handleRegenerateToken(tok.token)}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            handleRegenerateToken(tok.token);
+                                          }}
                                           className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50 ${
                                             leaderNeedsRegen
                                               ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white shadow-md shadow-red-950/60 font-extrabold'
@@ -2106,7 +2256,7 @@ export default function SuperAdminCockpitPage() {
                                               {tok.hadForceLogout ? (
                                                 <div className="flex items-center gap-1 text-rose-400 font-semibold">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                                                  <span>&bull; (Force Logged Out)</span>
+                                                  <span>&bull; (Session Revoked)</span>
                                                 </div>
                                               ) : tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
@@ -2150,35 +2300,88 @@ export default function SuperAdminCockpitPage() {
                                               })
                                             }
                                             className="px-2.5 py-1 rounded text-[11px] font-bold border border-rose-500/50 bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 shadow-sm disabled:opacity-50"
-                                            title="Force logout Agent session immediately"
+                                            title="Revoke active Agent session immediately"
                                           >
                                             <LogOut className="w-3 h-3 text-rose-400" />
                                             <span>
                                               {forcingLogoutUser === tok.token ||
                                               forcingLogoutUser === (tok.userId || tok.usedBy)
                                                 ? 'Revoking...'
-                                                : 'Force Logout'}
+                                                : 'Revoke Session'}
                                             </span>
                                           </button>
                                         )}
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCopyLink(tok.token)}
-                                          className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                                            isCopied
-                                              ? 'bg-emerald-600 border-emerald-500 text-white'
-                                              : isMemberFreshTokenReady
-                                                ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-sm'
-                                                : 'bg-[#0B0F19] border-slate-700 text-slate-300 hover:text-white'
-                                          }`}
-                                          title="Copy Agent access link"
-                                        >
-                                          {isCopied ? 'Copied' : isMemberFreshTokenReady ? 'Copy New Link' : 'Copy Link'}
-                                        </button>
+                                        {(() => {
+                                          const isDispatched = dispatchedTokens.has(tok.token);
+                                          const isOnline = Boolean(tok.isUserOnline);
+                                          const isFreshReady = (isMemberFreshTokenReady || freshRegeneratedTokens.has(tok.token)) && !isDispatched && !isOnline;
+
+                                          if (isOnline) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900/40 border-slate-800/60 text-slate-600 cursor-not-allowed opacity-30 select-none flex items-center gap-1"
+                                                title="Agent is currently online. Token link cannot be copied while active."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-600" />
+                                                <span>Copy Link</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          if (memberNeedsRegen) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900/60 border-slate-800/80 text-slate-600 cursor-not-allowed opacity-40 select-none flex items-center gap-1"
+                                                title="Agent has logged out. You must click Regenerate to issue a fresh link."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-600" />
+                                                <span>Copy Link</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          if (isDispatched) {
+                                            return (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="px-2.5 py-1 rounded text-[11px] font-bold border bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed opacity-60 select-none flex items-center gap-1"
+                                                title="This single-use link has been copied & locked. Click Regenerate to issue a fresh link."
+                                              >
+                                                <Lock className="w-3 h-3 text-slate-400" />
+                                                <span>Copied (Locked)</span>
+                                              </button>
+                                            );
+                                          }
+
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopyLink(tok.token)}
+                                              className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                                                isCopied
+                                                  ? 'bg-emerald-600 border-emerald-500 text-white'
+                                                  : isFreshReady
+                                                    ? 'bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-sm'
+                                                    : 'bg-[#0B0F19] border-slate-700 text-slate-300 hover:text-white'
+                                              }`}
+                                              title={isFreshReady ? 'Copy newly regenerated single-use Agent link' : 'Copy single-use Agent access link'}
+                                            >
+                                              {isCopied ? 'Copied' : isFreshReady ? 'Copy New Link' : 'Copy Link'}
+                                            </button>
+                                          );
+                                        })()}
                                         <button
                                           type="button"
                                           disabled={regeneratingToken === tok.token}
-                                          onClick={() => handleRegenerateToken(tok.token)}
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            handleRegenerateToken(tok.token);
+                                          }}
                                           className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50 ${
                                             memberNeedsRegen
                                               ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white shadow-md shadow-red-950/60 font-extrabold'
@@ -2230,7 +2433,10 @@ export default function SuperAdminCockpitPage() {
         {activeTab === 'CRISIS' && (
           <section className="space-y-4">
             <div>
-              <h2 className="text-base font-bold text-white">Crisis Radar &amp; SLA Escalations</h2>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <span>Crisis Radar &amp; SLA Escalations</span>
+              </h2>
               <p className="text-xs text-slate-400">
                 Tickets flagged with CRITICAL urgency by AI triage and tickets exceeding the 15-minute SLA response threshold.
               </p>
@@ -2591,10 +2797,10 @@ export default function SuperAdminCockpitPage() {
         )}
 
         {/* MODAL: EDIT PERSONNEL IDENTITY (SUPER ADMIN SOVEREIGN OVERRIDE) */}
-        {/* MODAL: FORCE LOGOUT CONFIRMATION (SUPER ADMIN SOVEREIGN REVOCATION) */}
+        {/* MODAL: ZERO-TRUST SESSION REVOCATION (SUPER ADMIN SOVEREIGN OVERRIDE) */}
         {confirmForceLogoutTarget && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#111827] border border-rose-500/40 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-[#111827] border border-rose-500/40 rounded-2xl w-full max-w-lg shadow-2xl shadow-rose-950/40 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
               <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-400 flex items-center justify-center">
@@ -2602,7 +2808,7 @@ export default function SuperAdminCockpitPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Sovereign Session Revocation</h3>
-                    <p className="text-[11px] text-rose-400/90 font-medium">Force Logout Personnel</p>
+                    <p className="text-[11px] text-rose-400/90 font-medium">Zero-Trust Session Invalidation</p>
                   </div>
                 </div>
                 <button
@@ -2617,36 +2823,36 @@ export default function SuperAdminCockpitPage() {
               </div>
 
               <div className="p-5 space-y-4">
-                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-1.5 text-xs">
+                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-2 text-xs">
                   <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                    <span>Personnel</span>
+                    <span>Target Personnel</span>
                     <span className="font-bold text-white text-xs">
                       {confirmForceLogoutTarget.name}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                    <span>Tier / Role</span>
-                    <span className="font-bold text-rose-300 uppercase px-2 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-[10px]">
-                      {confirmForceLogoutTarget.role}
+                    <span>Operational Tier</span>
+                    <span className="font-bold text-rose-300 uppercase px-2 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-[10px] tracking-wider">
+                      {confirmForceLogoutTarget.role === 'Leader' ? 'POD LEADER • HIGH PRIVILEGE' : 'FRONTLINE AGENT • STANDARD ACCESS'}
                     </span>
                   </div>
                   {confirmForceLogoutTarget.token && (
                     <div className="flex justify-between items-center text-slate-400 text-[11px]">
-                      <span>Associated Token</span>
-                      <span className="font-mono text-slate-300 text-[10px] font-semibold">
+                      <span>Cryptographic Token</span>
+                      <span className="font-mono text-amber-300 text-[10.5px] font-bold">
                         {confirmForceLogoutTarget.token}
                       </span>
                     </div>
                   )}
                 </div>
 
-                <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs space-y-1">
-                  <p className="font-bold flex items-center gap-1.5 text-rose-300">
+                <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5 text-rose-300 text-xs">
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
-                    Tindakan Keamanan Langsung (Instant Effect)
+                    Immediate Revocation Protocol
                   </p>
-                  <p className="text-[11px] text-rose-200/80 leading-relaxed">
-                    Sesi pengguna akan langsung diputus dan browser mereka akan diarahkan keluar ke halaman utama. Akses token mereka akan kedaluwarsa dan memerlukan <strong>Regenerate</strong> oleh Admin jika ingin login kembali.
+                  <p className="text-[11px] text-rose-200/90 leading-relaxed">
+                    This action will terminate all active WebSocket tunnels and purge browser authentication tokens immediately. Re-entry will be prohibited until an administrator re-provisions a single-use token.
                   </p>
                 </div>
 
@@ -2657,7 +2863,7 @@ export default function SuperAdminCockpitPage() {
                     onClick={() => setConfirmForceLogoutTarget(null)}
                     className="px-4 py-2 rounded-xl bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
                   >
-                    Batal
+                    Cancel
                   </button>
                   <button
                     type="button"
@@ -2666,7 +2872,7 @@ export default function SuperAdminCockpitPage() {
                     className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/30 border border-rose-400/40 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>{forcingLogoutUser ? 'Memproses Logout...' : 'Ya, Putus Sesi Sekarang'}</span>
+                    <span>{forcingLogoutUser ? 'Revoking Active Session...' : 'Revoke Session Immediately'}</span>
                   </button>
                 </div>
               </div>
@@ -3044,6 +3250,85 @@ export default function SuperAdminCockpitPage() {
           </div>
         )}
 
+        {/* MODAL: POD CAPACITY REQUIREMENT NOTICE */}
+        {isPodCapacityNoticeOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col">
+              {/* Header */}
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center">
+                    <ShieldAlert className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Pod Capacity Requirement</h3>
+                    <p className="text-[11px] text-slate-400">Frontline Density &amp; Expansion Policy</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPodCapacityNoticeOpen(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                <div className="bg-amber-950/30 border border-amber-700/40 rounded-xl p-3.5 text-xs text-amber-300/90 leading-relaxed">
+                  <div className="font-semibold text-amber-200 mb-1 flex items-center gap-1.5">
+                    <span>Cannot Deploy Additional Pod</span>
+                  </div>
+                  All existing pods must reach full capacity (8 members per pod: 1 Leader + 7 Agents) before unlocking an additional operational pod.
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active Roster</div>
+                    <div className="text-sm font-bold text-white mt-1">
+                      {totalActiveMembersAcrossPods} <span className="text-[11px] font-normal text-slate-400">Members</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Required</div>
+                    <div className="text-sm font-bold text-emerald-400 mt-1">
+                      {requiredCapacityToUnlockNextPod} <span className="text-[11px] font-normal text-slate-400">({currentPodsCount}×8)</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Needed</div>
+                    <div className="text-sm font-bold text-amber-400 mt-1">
+                      +{podMembersDeficit} <span className="text-[11px] font-normal text-slate-400">More</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-400 leading-relaxed bg-[#0B0F19] border border-slate-800 rounded-xl p-3.5 space-y-2">
+                  <p>
+                    Your organization currently operates <span className="font-semibold text-slate-200">{currentPodsCount} {currentPodsCount === 1 ? 'pod' : 'pods'}</span> with a combined roster of <span className="font-semibold text-slate-200">{totalActiveMembersAcrossPods} active members</span>.
+                  </p>
+                  <p>
+                    To unlock <span className="font-semibold text-blue-400">Pod #{nextPodSequenceNumber}</span>, you must recruit or assign <span className="font-semibold text-amber-300">{podMembersDeficit} more member{podMembersDeficit > 1 ? 's' : ''}</span> until all existing {currentPodsCount === 1 ? 'pod is' : 'pods are'} filled to maximum capacity ({requiredCapacityToUnlockNextPod} members total).
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-[#0B0F19] border-t border-slate-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setIsPodCapacityNoticeOpen(false)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all border border-slate-700 cursor-pointer"
+                >
+                  Understood &amp; Return to Cockpit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MODAL 1: DEPLOY SPECIALIZED POD ($149/MO) */}
         {isCreatePodOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -3057,9 +3342,6 @@ export default function SuperAdminCockpitPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white">Deploy Specialized Pod</h3>
-                      <span className="text-[10px] font-mono font-bold bg-blue-950 text-blue-300 border border-blue-800 px-2 py-0.5 rounded-full">
-                        $149/mo
-                      </span>
                     </div>
                     <p className="text-[11px] text-slate-400">Horizontal Multi-Division Expansion</p>
                   </div>
@@ -3248,29 +3530,6 @@ export default function SuperAdminCockpitPage() {
                       </div>
                     </div>
 
-                    {/* Commercial Prorated Billing Box */}
-                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-2.5">
-                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Commercial Subscription Summary
-                      </span>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Dedicated Division License:</span>
-                        <span className="font-mono font-bold text-white">$149.00 / mo</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Autonomous Copilot Engine:</span>
-                        <span className="text-emerald-400 font-semibold">Included</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Leader Sovereign Governance:</span>
-                        <span className="text-emerald-400 font-semibold">Included</span>
-                      </div>
-                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-bold">
-                        <span className="text-white">Total Recurring License:</span>
-                        <span className="font-mono text-emerald-400 text-sm">$149.00 / month</span>
-                      </div>
-                    </div>
-
                     {/* Security Invariant Notice */}
                     <div className="p-3 rounded-xl bg-blue-950/30 border border-blue-500/30 text-blue-300 text-xs flex items-start gap-2">
                       <ShieldCheck className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
@@ -3303,12 +3562,12 @@ export default function SuperAdminCockpitPage() {
                         {isDeployingPod ? (
                           <>
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Deploying Division...</span>
+                            <span>Creating Pod...</span>
                           </>
                         ) : (
                           <>
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Deploy Specialized Pod ($149/mo)</span>
+                            <span>Create Specialized Pod</span>
                           </>
                         )}
                       </button>
@@ -3333,9 +3592,6 @@ export default function SuperAdminCockpitPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white">Expand Frontline Capacity</h3>
-                      <span className="text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full">
-                        +$30/seat/mo
-                      </span>
                     </div>
                     <p className="text-[11px] text-slate-400">Vertical Pod Staff Scaling</p>
                   </div>
@@ -3345,7 +3601,7 @@ export default function SuperAdminCockpitPage() {
                   onClick={() => {
                     if (!isProcessingAddSeat) setSelectedPodForAddSeat(null);
                   }}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer"
                 >
                   ✕
                 </button>
@@ -3355,62 +3611,42 @@ export default function SuperAdminCockpitPage() {
               <div className="p-6 overflow-y-auto space-y-5 flex-1">
                 {addSeatSuccess ? (
                   <div className="space-y-4">
-                    <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-200 text-xs space-y-2">
-                      <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                        <CheckCircle2 className="w-5 h-5" />
-                        <span>Seat Capacity Successfully Expanded</span>
-                      </div>
-                      <p className="text-[11px] text-emerald-300/90 leading-relaxed">
-                        Pod <strong>{addSeatSuccess.podName}</strong> capacity expanded. Total quota is now <strong>{addSeatSuccess.newQuota} staff</strong>. Single-use invitation tokens have been generated below.
-                      </p>
-                    </div>
-
+                    {/* Ultra-Clean Token List Box */}
                     <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3">
-                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                        New Single-Use Frontline Tokens ({addSeatSuccess.tokens.length})
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>New Frontline Token Ready ({addSeatSuccess.tokens.length})</span>
+                        </span>
+                        <span className="text-[11px] font-mono font-semibold text-emerald-400">
+                          Quota: {addSeatSuccess.newQuota} Members
+                        </span>
+                      </div>
 
                       <div className="space-y-2 max-h-48 overflow-y-auto">
                         {addSeatSuccess.tokens.map((tok, tIdx) => (
                           <div
                             key={tok.token || tIdx}
-                            className="flex items-center justify-between bg-[#111827] px-3.5 py-2 rounded-xl border border-slate-800 text-xs"
+                            className="flex items-center justify-between bg-[#111827] px-3.5 py-2.5 rounded-xl border border-slate-800 text-xs"
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-slate-500 font-mono">#{tIdx + 1}</span>
-                              <span className="font-mono font-bold text-white">{tok.token}</span>
+                              <span className="font-mono font-bold text-white text-xs">{tok.token}</span>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(tok.token);
-                                  setCopiedToken(tok.token);
-                                  setTimeout(() => setCopiedToken(null), 2000);
-                                }}
-                                className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10.5px] font-medium transition-colors"
-                              >
-                                {copiedToken === tok.token ? 'Copied' : 'Copy'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(tok.joinUrl);
-                                  setCopiedToken('URL-' + tok.token);
-                                  setTimeout(() => setCopiedToken(null), 2000);
-                                }}
-                                className="px-2 py-1 rounded-md bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-[10.5px] font-bold transition-colors"
-                              >
-                                {copiedToken === 'URL-' + tok.token ? 'Link Copied' : 'Copy Link'}
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(tok.joinUrl);
+                                setCopiedToken('URL-' + tok.token);
+                                setTimeout(() => setCopiedToken(null), 2000);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              {copiedToken === 'URL-' + tok.token ? 'Link Copied!' : 'Copy Link'}
+                            </button>
                           </div>
                         ))}
                       </div>
-
-                      <p className="text-[10.5px] text-slate-400 italic">
-                        &bull; Distribute each single-use link to your frontline agents. When an agent joins, their seat is claimed automatically.
-                      </p>
                     </div>
 
                     <button
@@ -3425,145 +3661,175 @@ export default function SuperAdminCockpitPage() {
                     </button>
                   </div>
                 ) : (
-                  <form onSubmit={handleAddSeatsToPod} className="space-y-4">
-                    {/* Selected Pod Identification */}
-                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-1.5">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
-                        Target Operational Pod
-                      </span>
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-white text-sm">
-                          {cleanPodName(selectedPodForAddSeat.name)}
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-500/40">
-                          Current Quota: {selectedPodForAddSeat.assignedQuota || 0} Staff
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        Assigned Leader: <strong className="text-slate-200">{selectedPodForAddSeat.leaderName || 'Unclaimed'}</strong>
-                      </p>
-                    </div>
+                  (() => {
+                    const maxPodCapacity = 8;
+                    const currentSeats = selectedPodForAddSeat.assignedQuota || selectedPodForAddSeat.maxMembers || 0;
+                    const maxAddable = Math.max(0, maxPodCapacity - currentSeats);
+                    const effectiveAdditionalSeats = maxAddable > 0 ? Math.min(Math.max(1, additionalSeatsCount), maxAddable) : 0;
 
-                    {/* Quantity Stepper */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-200 block">
-                        Number of Additional Frontline Seats
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center bg-[#0B0F19] border border-slate-700 rounded-xl overflow-hidden p-1">
-                          <button
-                            type="button"
-                            disabled={isProcessingAddSeat || additionalSeatsCount <= 1}
-                            onClick={() => setAdditionalSeatsCount(Math.max(1, additionalSeatsCount - 1))}
-                            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
-                          >
-                            -
-                          </button>
-                          <span className="w-12 text-center font-mono font-bold text-white text-sm">
-                            {additionalSeatsCount}
+                    return (
+                      <form onSubmit={handleAddSeatsToPod} className="space-y-4">
+                        {/* Target Operational Pod */}
+                        <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-1">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold block">
+                            Target Operational Pod
                           </span>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-white text-sm">
+                              {cleanPodName(selectedPodForAddSeat.name)}
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              Assigned Leader: <strong className="text-slate-200">{selectedPodForAddSeat.leaderName || 'Unclaimed'}</strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Pod Capacity Stats Grid: 1. Max Capacity, 2. Current Roster (Leader + Members), 3. Available Slots */}
+                        <div className="grid grid-cols-3 gap-2.5">
+                          {/* 1. Max Pod Capacity */}
+                          <div className="p-3 rounded-xl bg-[#0B0F19] border border-slate-800 flex flex-col justify-between">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                              Max Capacity
+                            </span>
+                            <div className="mt-1.5 flex items-baseline gap-1">
+                              <span className="text-lg font-bold font-mono text-white">{maxPodCapacity}</span>
+                              <span className="text-xs text-slate-400">Members</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-500 mt-1">Pod Ceiling</span>
+                          </div>
+
+                          {/* 2. Current Roster (Leader & Members) */}
+                          <div className="p-3 rounded-xl bg-[#0B0F19] border border-slate-800 flex flex-col justify-between">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                              Current Roster
+                            </span>
+                            <div className="mt-1.5 flex items-baseline gap-1">
+                              <span className="text-lg font-bold font-mono text-blue-400">{currentSeats}</span>
+                              <span className="text-xs text-slate-400">Members</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-400 mt-1 truncate" title={`1 Leader + ${Math.max(0, currentSeats - 1)} ${Math.max(0, currentSeats - 1) === 1 ? 'Member' : 'Members'}`}>
+                              1 Leader + {Math.max(0, currentSeats - 1)} {Math.max(0, currentSeats - 1) === 1 ? 'Member' : 'Members'}
+                            </span>
+                          </div>
+
+                          {/* 3. Available Slots */}
+                          <div className="p-3 rounded-xl bg-[#0B0F19] border border-slate-800 flex flex-col justify-between">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+                              Available Slots
+                            </span>
+                            <div className="mt-1.5 flex items-baseline gap-1">
+                              <span className={`text-lg font-bold font-mono ${maxAddable > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                {maxAddable}
+                              </span>
+                              <span className="text-xs text-slate-400">Seats</span>
+                            </div>
+                            <span className="text-[9.5px] text-slate-500 mt-1">
+                              {maxAddable > 0 ? 'Open Capacity' : 'At Capacity'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 4. Controls (Stepper [-] count [+] & Quick Presets) */}
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-slate-200 block">
+                              Number of Additional Frontline Seats
+                            </label>
+                            {maxAddable > 0 && (
+                              <span className="text-[11px] text-slate-400">
+                                Target Quota: <strong className="text-emerald-400 font-mono">{currentSeats + effectiveAdditionalSeats} Members</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {maxAddable === 0 ? (
+                            <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              <span>This pod has reached its maximum capacity of {maxPodCapacity} members. No additional seats can be added.</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              {/* Stepper */}
+                              <div className="flex items-center bg-[#0B0F19] border border-slate-700 rounded-xl overflow-hidden p-1">
+                                <button
+                                  type="button"
+                                  disabled={isProcessingAddSeat || effectiveAdditionalSeats <= 1}
+                                  onClick={() => setAdditionalSeatsCount(Math.max(1, effectiveAdditionalSeats - 1))}
+                                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <span className="w-12 text-center font-mono font-bold text-white text-sm">
+                                  {effectiveAdditionalSeats}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isProcessingAddSeat || effectiveAdditionalSeats >= maxAddable}
+                                  onClick={() => setAdditionalSeatsCount(Math.min(maxAddable, effectiveAdditionalSeats + 1))}
+                                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              {/* Quick Presets */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {[1, 2, 3, 5].filter((preset) => preset <= maxAddable).map((preset) => (
+                                  <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={() => setAdditionalSeatsCount(preset)}
+                                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                      effectiveAdditionalSeats === preset
+                                        ? 'bg-blue-600 text-white font-bold'
+                                        : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300'
+                                    }`}
+                                  >
+                                    +{preset} {preset === 1 ? 'Seat' : 'Seats'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {addSeatError && (
+                          <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                            <span className="text-red-400 font-bold">Error:</span>
+                            <span>{addSeatError}</span>
+                          </div>
+                        )}
+
+                        <div className="pt-2 flex items-center justify-end gap-2.5">
                           <button
                             type="button"
-                            disabled={isProcessingAddSeat || additionalSeatsCount >= 20}
-                            onClick={() => setAdditionalSeatsCount(Math.min(20, additionalSeatsCount + 1))}
-                            className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                            disabled={isProcessingAddSeat}
+                            onClick={() => setSelectedPodForAddSeat(null)}
+                            className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
                           >
-                            +
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isProcessingAddSeat || maxAddable === 0}
+                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            {isProcessingAddSeat ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Adding Seat...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Seat</span>
+                              </>
+                            )}
                           </button>
                         </div>
-
-                        {/* Quick Presets */}
-                        <div className="flex items-center gap-1.5">
-                          {[1, 2, 5].map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() => setAdditionalSeatsCount(preset)}
-                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                                additionalSeatsCount === preset
-                                  ? 'bg-blue-600 text-white font-bold'
-                                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300'
-                              }`}
-                            >
-                              +{preset} {preset === 1 ? 'Seat' : 'Seats'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Commercial Prorated Billing Box */}
-                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-2.5">
-                      <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
-                        Prorated Capacity Billing Calculation
-                      </span>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Current Pod Quota:</span>
-                        <span className="font-mono text-slate-200">{selectedPodForAddSeat.assignedQuota || 0} Staff</span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Additional Frontline Capacity:</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          +{additionalSeatsCount} {additionalSeatsCount === 1 ? 'Seat' : 'Seats'} (&times; $30/mo)
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-slate-300">
-                        <span>Projected New Pod Quota:</span>
-                        <span className="font-mono font-black text-white">
-                          {(selectedPodForAddSeat.assignedQuota || 0) + additionalSeatsCount} Staff
-                        </span>
-                      </div>
-                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-bold">
-                        <span className="text-white">Additional Monthly Billing:</span>
-                        <span className="font-mono text-emerald-400 text-sm">
-                          +${(additionalSeatsCount * 30).toFixed(2)} / month
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Invariant Guarantee Notice */}
-                    <div className="p-3 rounded-xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-300 text-xs flex items-start gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <p className="text-[11px] leading-relaxed">
-                        <strong>Quota Invariant Guarantee:</strong> Adding seats immediately locks the pod quota to the new ceiling and generates {additionalSeatsCount} single-use agent token(s) (<code className="font-mono text-emerald-200">STX-AGT-</code>). Existing agent assignments and leader governance are preserved 100%.
-                      </p>
-                    </div>
-
-                    {addSeatError && (
-                      <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
-                        <span className="text-red-400 font-bold">Error:</span>
-                        <span>{addSeatError}</span>
-                      </div>
-                    )}
-
-                    <div className="pt-2 flex items-center justify-end gap-2.5">
-                      <button
-                        type="button"
-                        disabled={isProcessingAddSeat}
-                        onClick={() => setSelectedPodForAddSeat(null)}
-                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isProcessingAddSeat}
-                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
-                      >
-                        {isProcessingAddSeat ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Allocating Seats...</span>
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-3.5 h-3.5" />
-                            <span>Confirm &amp; Allocate Seats (+${(additionalSeatsCount * 30).toFixed(2)}/mo)</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
+                      </form>
+                    );
+                  })()
                 )}
               </div>
             </div>

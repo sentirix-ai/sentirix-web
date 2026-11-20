@@ -70,7 +70,7 @@ export default function PresenceHeartbeat() {
               !window.location.pathname.startsWith('/join')
             ) {
               alert(
-                'Sesi Anda telah diakhiri oleh Super Administrator. Silakan hubungi admin Anda untuk mendapatkan token akses baru.',
+                'Your active session has been revoked by a Super Administrator under Zero-Trust security protocol. Please contact your administrator to receive a new access token.',
               );
               window.location.href = '/';
             }
