@@ -344,21 +344,26 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
                         {member.token && (
                           <button
                             type="button"
-                            onClick={() => handleCopyMemberLink(member.token!, member.fullName)}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
-                              isCopied
-                                ? 'bg-emerald-600 border-emerald-600 text-white'
-                                : isFreshTokenReady
-                                  ? 'bg-blue-600 hover:bg-blue-700 border-blue-600 text-white shadow-xs'
-                                  : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
+                            disabled={member.isOnline}
+                            onClick={() => !member.isOnline && handleCopyMemberLink(member.token!, member.fullName)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 shadow-2xs ${
+                              member.isOnline
+                                ? 'bg-slate-100 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
+                                : isCopied
+                                  ? 'bg-emerald-600 border-emerald-600 text-white cursor-pointer'
+                                  : isFreshTokenReady
+                                    ? 'bg-blue-600 hover:bg-blue-700 border-blue-600 text-white shadow-xs cursor-pointer'
+                                    : 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700 cursor-pointer'
                             }`}
                             title={
-                              isFreshTokenReady
-                                ? 'Copy fresh activation link to share with agent'
-                                : 'Copy agent single-use login link'
+                              member.isOnline
+                                ? 'Agent is currently online and active. Token link is locked.'
+                                : isFreshTokenReady
+                                  ? 'Copy fresh activation link to share with agent'
+                                  : 'Copy agent single-use login link'
                             }
                           >
-                            {isCopied ? (
+                            {isCopied && !member.isOnline ? (
                               <>
                                 <Check className="w-3.5 h-3.5 text-white" />
                                 <span>Copied!</span>

@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { getSession, sendHeartbeat } from '../lib/auth';
+import { io, Socket } from 'socket.io-client';
+import { getSession, logoutUser, sendHeartbeat } from '../lib/auth';
 import { API_BASE_URL } from '../lib/api';
+
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 
 /**
  * PresenceHeartbeat Component
@@ -15,16 +18,18 @@ import { API_BASE_URL } from '../lib/api';
 export default function PresenceHeartbeat() {
   useEffect(() => {
     const session = getSession();
-    if (!session?.id) return;
+    const targetId = session?.id || session?.username;
+    if (!targetId) return;
 
     // 1. Initial ping
-    sendHeartbeat(session.id);
+    sendHeartbeat(targetId);
 
     // 2. Periodic heartbeat every 20 seconds
     const interval = setInterval(() => {
       const current = getSession();
-      if (current?.id) {
-        sendHeartbeat(current.id);
+      const currentId = current?.id || current?.username;
+      if (currentId) {
+        sendHeartbeat(currentId);
       }
     }, 20000);
 
@@ -32,13 +37,49 @@ export default function PresenceHeartbeat() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         const current = getSession();
-        if (current?.id) {
-          sendHeartbeat(current.id);
+        const currentId = current?.id || current?.username;
+        if (currentId) {
+          sendHeartbeat(currentId);
         }
       }
     };
 
-    // 4. Handle browser or tab close (Close Browser detection)
+    // 4. Instant force logout listener via WebSocket
+    let socket: Socket | null = null;
+    try {
+      socket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: 5,
+      });
+
+      socket.on(
+        'auth:force_logout',
+        (payload: { userId?: string; username?: string }) => {
+          const current = getSession();
+          if (!current) return;
+          const matchesId = payload.userId && current.id === payload.userId;
+          const matchesName =
+            payload.username &&
+            current.username?.toLowerCase() === payload.username.toLowerCase();
+
+          if (matchesId || matchesName) {
+            logoutUser(current.id);
+            if (
+              typeof window !== 'undefined' &&
+              window.location.pathname !== '/' &&
+              !window.location.pathname.startsWith('/join')
+            ) {
+              alert(
+                'Sesi Anda telah diakhiri oleh Super Administrator. Silakan hubungi admin Anda untuk mendapatkan token akses baru.',
+              );
+              window.location.href = '/';
+            }
+          }
+        },
+      );
+    } catch {}
+
+    // 5. Handle browser or tab close (Close Browser detection)
     const handleBrowserClose = () => {
       // If manual logout button was pressed, do not overwrite MANUAL_LOGOUT
       if (sessionStorage.getItem('is_manual_logout') === 'true') {
@@ -77,6 +118,9 @@ export default function PresenceHeartbeat() {
 
     return () => {
       clearInterval(interval);
+      try {
+        socket?.disconnect();
+      } catch {}
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
       window.removeEventListener('pagehide', handleBrowserClose);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ShoppingCart,
@@ -22,6 +22,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Sparkles,
+  SlidersHorizontal,
   Layers,
   Info,
   AlertCircle,
@@ -37,7 +38,7 @@ import {
   Lock,
   RotateCcw,
 } from 'lucide-react';
-import { getSession, setSession, UserSession } from '../../lib/auth';
+import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
 import {
   generatePodsForIndustry,
   setupMultiPodV2,
@@ -46,6 +47,10 @@ import {
   fetchPendingLeaderTokens,
   completeOnboarding,
   validateServiceSemantic,
+  checkMemberStatus,
+  saveOnboardingDraft,
+  fetchOnboardingDraft,
+  deleteOnboardingDraft,
 } from '../../lib/api';
 
 interface IndustryOption {
@@ -277,6 +282,41 @@ function toCorporateTitleCase(input: string): string {
   return formattedWords.join(' ') + trailingSpaces;
 }
 
+function getInitialDraft(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('fresh') === 'true') return null;
+    const active = getSession();
+    if (active?.onboardingDraft) return active.onboardingDraft;
+    if (active?.username) {
+      const raw = localStorage.getItem(`sentirix_onboarding_draft_${active.username.toLowerCase()}`);
+      if (raw) return JSON.parse(raw);
+    }
+    if (active?.email) {
+      const raw = localStorage.getItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`);
+      if (raw) return JSON.parse(raw);
+    }
+  } catch {}
+  return null;
+}
+
+function getInitialStep(): number {
+  if (typeof window === 'undefined') return 1;
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const stepParam = urlParams.get('step');
+    if (stepParam && ['1', '2', '3', '4'].includes(stepParam)) {
+      return Number(stepParam);
+    }
+    const draft = getInitialDraft();
+    if (draft?.lastActiveStep && draft.lastActiveStep >= 1 && draft.lastActiveStep <= 4) {
+      return draft.lastActiveStep;
+    }
+  } catch {}
+  return 1;
+}
+
 export default function TitaniumOnboardingPage() {
   const router = useRouter();
 
@@ -284,21 +324,28 @@ export default function TitaniumOnboardingPage() {
   const [isVerifying, setIsVerifying] = useState(true);
 
   // Stepper State (1: Industry, 2: Capacity Typing, 3: Pods & Multi-Services, 4: Distribution Tokens)
-  const [currentStep, setCurrentStep] = useState<number>(1);
-  const [maxUnlockedStep, setMaxUnlockedStep] = useState<number>(1);
+  const [currentStep, setCurrentStep] = useState<number>(getInitialStep);
+  const [maxUnlockedStep, setMaxUnlockedStep] = useState<number>(() => Math.max(getInitialStep(), getInitialDraft()?.maxUnlockedStep || 1));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Step 1: Industry
-  const [selectedIndustry, setSelectedIndustry] = useState<string>('ECOMMERCE');
-  const [customIndustryText, setCustomIndustryText] = useState<string>('');
-  const [organizationName, setOrganizationName] = useState<string>('');
+  const [selectedIndustry, setSelectedIndustry] = useState<string>(() => getInitialDraft()?.selectedIndustry || 'ECOMMERCE');
+  const [customIndustryText, setCustomIndustryText] = useState<string>(() => getInitialDraft()?.customIndustryText || '');
+  const [organizationName, setOrganizationName] = useState<string>(() => getInitialDraft()?.organizationName || '');
+  const customInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (selectedIndustry === 'OTHER') {
+      setTimeout(() => customInputRef.current?.focus(), 60);
+    }
+  }, [selectedIndustry]);
 
   // Step 2: Member Input via Typing
-  const [typedMembers, setTypedMembers] = useState<number>(20);
+  const [typedMembers, setTypedMembers] = useState<number>(() => getInitialDraft()?.typedMembers || 20);
 
   // Step 3: Pods & Multi-Services
-  const [pods, setPods] = useState<PodDraft[]>([]);
-  const [availableServices, setAvailableServices] = useState<string[]>([]);
+  const [pods, setPods] = useState<PodDraft[]>(() => getInitialDraft()?.pods || []);
+  const [availableServices, setAvailableServices] = useState<string[]>(() => getInitialDraft()?.availableServices || []);
   const [newServiceInput, setNewServiceInput] = useState<string>('');
   const [isGeneratingPods, setIsGeneratingPods] = useState<boolean>(false);
   const [editingPodIndex, setEditingPodIndex] = useState<number | null>(null);
@@ -338,6 +385,15 @@ export default function TitaniumOnboardingPage() {
       router.push('/');
       return;
     }
+
+    // Verify user account still exists in database (not wiped or frozen)
+    checkMemberStatus(active.id || active.username || active.email).then((isActive) => {
+      if (!isActive) {
+        logoutUser();
+        window.location.href = '/';
+      }
+    });
+
     setLocalSession(active);
     setIsVerifying(false);
 
@@ -414,6 +470,82 @@ export default function TitaniumOnboardingPage() {
       }
     } catch {}
 
+    // 2. In-Progress Onboarding Draft Restoration (Step 1, 2, 3 autosave recovery)
+    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const isFresh = urlParams?.get('fresh') === 'true';
+    if (isFresh) {
+      const draftKey = `sentirix_onboarding_draft_${active.username.toLowerCase()}`;
+      try {
+        localStorage.removeItem(draftKey);
+        if (active.email) {
+          localStorage.removeItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`);
+        }
+        localStorage.removeItem('sentirix_onboarding_step');
+        localStorage.removeItem('sentirix_pending_tokens');
+        localStorage.removeItem('sentirix_dispatched_tokens');
+        localStorage.removeItem('sentirix_regenerated_tokens');
+      } catch {}
+      setCurrentStep(1);
+      setMaxUnlockedStep(1);
+      setOrganizationName('');
+      setPods([]);
+      return;
+    }
+
+    const requestedStep = urlParams?.get('step');
+    if (requestedStep && ['1', '2', '3', '4'].includes(requestedStep)) {
+      const stepNum = Number(requestedStep);
+      setCurrentStep(stepNum);
+      setMaxUnlockedStep((prev) => Math.max(prev, stepNum));
+    }
+
+    const draftKey = `sentirix_onboarding_draft_${active.username.toLowerCase()}`;
+    const applyDraft = (draft: any) => {
+      if (!draft) return;
+      if (draft.organizationName) setOrganizationName(draft.organizationName);
+      if (draft.selectedIndustry) setSelectedIndustry(draft.selectedIndustry);
+      if (draft.customIndustryText) setCustomIndustryText(draft.customIndustryText);
+      if (draft.typedMembers) setTypedMembers(draft.typedMembers);
+      if (draft.pods && Array.isArray(draft.pods) && draft.pods.length > 0) {
+        setPods(draft.pods);
+      }
+      if (draft.availableServices && Array.isArray(draft.availableServices) && draft.availableServices.length > 0) {
+        setAvailableServices(draft.availableServices);
+      }
+      const isOrgValid = !!(draft.organizationName?.trim() || organizationName.trim());
+      const unlocked = Math.max(draft.maxUnlockedStep || 1, draft.lastActiveStep || 1);
+      setMaxUnlockedStep((prev) => Math.max(prev, isOrgValid ? unlocked : 1));
+
+      if (!requestedStep && draft.lastActiveStep && draft.lastActiveStep >= 1 && draft.lastActiveStep <= 4) {
+        if (draft.lastActiveStep > 1 && !isOrgValid) {
+          setCurrentStep(1);
+        } else {
+          setCurrentStep(draft.lastActiveStep);
+        }
+      }
+    };
+
+    // Apply server-delivered draft from active session first
+    if (active.onboardingDraft) {
+      applyDraft(active.onboardingDraft);
+    }
+
+    try {
+      const cached = localStorage.getItem(draftKey);
+      if (cached) {
+        applyDraft(JSON.parse(cached));
+      }
+    } catch {}
+
+    fetchOnboardingDraft(active.username).then((serverDraft) => {
+      if (serverDraft) {
+        applyDraft(serverDraft);
+        try {
+          localStorage.setItem(draftKey, JSON.stringify(serverDraft));
+        } catch {}
+      }
+    }).catch(() => {});
+
     // Handle redirection from Super Admin Cockpit "Refresh Team" (?step=2)
     try {
       if (typeof window !== 'undefined') {
@@ -432,6 +564,139 @@ export default function TitaniumOnboardingPage() {
       }
     } catch {}
   }, [router]);
+
+  // Autosave Draft Helper
+  const persistDraft = (overrides: Record<string, any> = {}) => {
+    const active = session || getSession();
+    if (!active?.username) return;
+    const uName = active.username.toLowerCase();
+    const draftKey = `sentirix_onboarding_draft_${uName}`;
+
+    const draftData = {
+      lastActiveStep: overrides.lastActiveStep ?? currentStep,
+      maxUnlockedStep: Math.max(maxUnlockedStep, overrides.maxUnlockedStep ?? (overrides.lastActiveStep ?? currentStep)),
+      organizationName: overrides.organizationName ?? organizationName,
+      selectedIndustry: overrides.selectedIndustry ?? selectedIndustry,
+      customIndustryText: overrides.customIndustryText ?? customIndustryText,
+      typedMembers: overrides.typedMembers ?? typedMembers,
+      pods: overrides.pods ?? pods,
+      availableServices: overrides.availableServices ?? availableServices,
+      username: active.username,
+      email: active.email,
+      userId: active.id,
+      ...overrides,
+    };
+
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(draftData));
+      if (active.email) {
+        localStorage.setItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
+      }
+    } catch {}
+
+    saveOnboardingDraft(active.username, draftData).catch(() => {});
+  };
+
+  const handleLogout = async () => {
+    const active = session || getSession();
+    if (active?.username) {
+      const draftData = {
+        lastActiveStep: currentStep,
+        maxUnlockedStep: Math.max(maxUnlockedStep, currentStep),
+        organizationName,
+        selectedIndustry,
+        customIndustryText,
+        typedMembers,
+        pods,
+        availableServices,
+        username: active.username,
+        email: active.email,
+        userId: active.id,
+      };
+
+      try {
+        localStorage.setItem(`sentirix_onboarding_draft_${active.username.toLowerCase()}`, JSON.stringify(draftData));
+        if (active.email) {
+          localStorage.setItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
+        }
+      } catch {}
+
+      try {
+        await saveOnboardingDraft(active.username, draftData);
+      } catch {}
+    }
+
+    await logoutUser();
+    router.push('/');
+  };
+
+  // Safety net & Reactive Pod Count Synchronization for Step 3
+  useEffect(() => {
+    if (currentStep === 3 && !isGeneratingPods) {
+      if (pods.length === 0) {
+        prepareStep3Pods();
+      } else if (pods.length !== calculatedPodCount) {
+        syncPodsWithCapacity(calculatedPodCount);
+      }
+    }
+  }, [currentStep, pods.length, calculatedPodCount, isGeneratingPods]);
+
+  // Dynamic Pod Synchronization (Adjusts count to match targetCount while preserving existing pod customizations)
+  const syncPodsWithCapacity = (targetCount: number) => {
+    if (targetCount < 1) targetCount = 1;
+    const preset = INDUSTRY_PRESETS.find((p) => p.id === selectedIndustry);
+    const services = availableServices.length > 0
+      ? availableServices
+      : (preset?.defaultServices || CUSTOM_INDUSTRY_DEFAULT_SERVICES);
+
+    let updatedList: PodDraft[] = [];
+
+    setPods((prev) => {
+      if (prev.length === targetCount && prev.length > 0) {
+        updatedList = prev;
+        return prev;
+      }
+
+      let current = [...prev];
+
+      // If we need more pods, append new ones without modifying existing configured pods
+      if (current.length < targetCount) {
+        const usedServices = new Set(current.flatMap((p) => p.services));
+        while (current.length < targetCount) {
+          const num = current.length + 1;
+          const unused = services.find((s) => !usedServices.has(s));
+          const fallbackSvc = unused || services[(num - 1) % services.length] || `Core Service #${num}`;
+          usedServices.add(fallbackSvc);
+          const podLabel = num < 10 ? `Pod 0${num}` : `Pod ${num}`;
+          current.push({
+            name: podLabel,
+            podCategory: 'GENERAL',
+            description: `Dedicated operational unit for ${fallbackSvc}`,
+            services: [fallbackSvc],
+          });
+        }
+      }
+      // If we have more pods than needed, trim the excess from the end
+      else if (current.length > targetCount) {
+        current = current.slice(0, targetCount);
+      }
+
+      updatedList = current;
+      return current;
+    });
+
+    if (updatedList.length > 0) {
+      persistDraft({
+        pods: updatedList,
+        typedMembers,
+        lastActiveStep: 3,
+        maxUnlockedStep: Math.max(maxUnlockedStep, 3),
+        availableServices: services,
+      });
+    }
+
+    return updatedList;
+  };
 
   // Load pods when entering Step 3
   const prepareStep3Pods = async () => {
@@ -465,13 +730,15 @@ export default function TitaniumOnboardingPage() {
           }
         }
 
-        // Adjust AI pods count to match calculatedPodCount
+        // Adjust AI pods count to match calculatedPodCount with mutually exclusive categories
+        const usedServices = new Set<string>();
         let targetPods = aiResult.pods.map((p, idx) => {
-          const podSvc =
-            p.service?.trim() ||
-            services[idx % services.length] ||
-            p.name.replace(/\s+Pod$/i, '').trim() ||
-            'Core Service';
+          let podSvc = p.service?.trim() || p.name.replace(/\s+Pod$/i, '').trim();
+          if (!podSvc || usedServices.has(podSvc)) {
+            const unused = services.find((s) => !usedServices.has(s));
+            podSvc = unused || services[idx % services.length] || `Core Service #${idx + 1}`;
+          }
+          usedServices.add(podSvc);
           const podNum = idx + 1;
           const podLabel = podNum < 10 ? `Pod 0${podNum}` : `Pod ${podNum}`;
           return {
@@ -484,7 +751,9 @@ export default function TitaniumOnboardingPage() {
 
         while (targetPods.length < calculatedPodCount) {
           const num = targetPods.length + 1;
-          const fallbackSvc = services[(num - 1) % services.length] || `Core Service #${num}`;
+          const unused = services.find((s) => !usedServices.has(s));
+          const fallbackSvc = unused || services[(num - 1) % services.length] || `Core Service #${num}`;
+          usedServices.add(fallbackSvc);
           const podLabel = num < 10 ? `Pod 0${num}` : `Pod ${num}`;
           targetPods.push({
             name: podLabel,
@@ -499,6 +768,13 @@ export default function TitaniumOnboardingPage() {
         }
 
         setPods(targetPods);
+        persistDraft({
+          lastActiveStep: 3,
+          maxUnlockedStep: 3,
+          typedMembers,
+          pods: targetPods,
+          availableServices: services,
+        });
       } else {
         // Fallback generator
         buildFallbackPods(services, calculatedPodCount);
@@ -512,8 +788,11 @@ export default function TitaniumOnboardingPage() {
 
   const buildFallbackPods = (servicesList: string[], count: number) => {
     const list: PodDraft[] = [];
+    const usedServices = new Set<string>();
     for (let i = 1; i <= count; i++) {
-      const defaultSvc = servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
+      const unused = servicesList.find((s) => !usedServices.has(s));
+      const defaultSvc = unused || servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
+      usedServices.add(defaultSvc);
       const podLabel = i < 10 ? `Pod 0${i}` : `Pod ${i}`;
       list.push({
         name: podLabel,
@@ -523,6 +802,13 @@ export default function TitaniumOnboardingPage() {
       });
     }
     setPods(list);
+    persistDraft({
+      lastActiveStep: 3,
+      maxUnlockedStep: 3,
+      typedMembers,
+      pods: list,
+      availableServices: servicesList,
+    });
   };
 
   const handleNextToStep2 = () => {
@@ -539,6 +825,13 @@ export default function TitaniumOnboardingPage() {
     setErrorMessage(null);
     setMaxUnlockedStep((prev) => Math.max(prev, 2));
     setCurrentStep(2);
+    persistDraft({
+      lastActiveStep: 2,
+      maxUnlockedStep: 2,
+      organizationName: cleanName,
+      selectedIndustry,
+      customIndustryText,
+    });
   };
 
   const handleNextToStep3 = async () => {
@@ -549,23 +842,47 @@ export default function TitaniumOnboardingPage() {
     setErrorMessage(null);
     setMaxUnlockedStep((prev) => Math.max(prev, 3));
     setCurrentStep(3);
-    // If pods already exist and match calculatedPodCount, preserve them! Otherwise prepare fresh pods
-    if (pods.length === 0 || pods.length !== calculatedPodCount) {
+    // If no pods exist yet, generate fresh pods. If count mismatch, dynamically sync without losing customizations!
+    if (pods.length === 0) {
       await prepareStep3Pods();
+    } else if (pods.length !== calculatedPodCount) {
+      syncPodsWithCapacity(calculatedPodCount);
+    } else {
+      persistDraft({
+        lastActiveStep: 3,
+        maxUnlockedStep: 3,
+        typedMembers,
+        pods,
+        availableServices,
+      });
     }
   };
 
   const handleToggleServiceForPod = (podIndex: number, serviceName: string) => {
-    setPods((prev) =>
-      prev.map((pod, idx) => {
+    // Check if this category is already claimed by another pod
+    const claimingPod = pods.find((p, idx) => idx !== podIndex && p.services.includes(serviceName));
+    if (claimingPod) {
+      setErrorMessage(
+        `"${serviceName}" is already assigned to ${claimingPod.name}. Uncheck it from ${claimingPod.name} first to reassign.`
+      );
+      return;
+    }
+
+    if (errorMessage) setErrorMessage(null);
+
+    let nextPods: PodDraft[] = [];
+    setPods((prev) => {
+      nextPods = prev.map((pod, idx) => {
         if (idx !== podIndex) return pod;
         const exists = pod.services.includes(serviceName);
         const updated = exists
           ? pod.services.filter((s) => s !== serviceName)
           : [...pod.services, serviceName];
         return { ...pod, services: updated };
-      }),
-    );
+      });
+      return nextPods;
+    });
+    persistDraft({ pods: nextPods, lastActiveStep: 3, maxUnlockedStep: 3 });
   };
 
   const handleAddGlobalService = () => {
@@ -575,7 +892,9 @@ export default function TitaniumOnboardingPage() {
       (s) => s.toLowerCase() === clean.toLowerCase(),
     );
     if (!alreadyExists) {
-      setAvailableServices((prev) => [...prev, clean]);
+      const updatedServices = [...availableServices, clean];
+      setAvailableServices(updatedServices);
+      persistDraft({ availableServices: updatedServices, lastActiveStep: 3, maxUnlockedStep: 3 });
     }
     setNewServiceInput('');
   };
@@ -583,11 +902,14 @@ export default function TitaniumOnboardingPage() {
   const handleSavePodName = (index: number) => {
     if (!newPodName.trim()) return;
     const cleanName = newPodName.replace(/\s+Pod$/i, '').trim();
-    setPods((prev) =>
-      prev.map((p, idx) => (idx === index ? { ...p, name: cleanName } : p)),
-    );
+    let updatedPods: PodDraft[] = [];
+    setPods((prev) => {
+      updatedPods = prev.map((p, idx) => (idx === index ? { ...p, name: cleanName } : p));
+      return updatedPods;
+    });
     setEditingPodIndex(null);
     setNewPodName('');
+    persistDraft({ pods: updatedPods, lastActiveStep: 3, maxUnlockedStep: 3 });
   };
 
   const handleStartEditService = (index: number, currentText: string) => {
@@ -632,17 +954,20 @@ export default function TitaniumOnboardingPage() {
       }
     }
 
-    setAvailableServices((prev) =>
-      prev.map((s, idx) => (idx === index ? newText : s)),
-    );
+    const updatedServices = availableServices.map((s, idx) => (idx === index ? newText : s));
+    const updatedPods = pods.map((pod) => ({
+      ...pod,
+      services: pod.services.map((s) => (s === oldText ? newText : s)),
+    }));
 
-    // Synchronize renamed service across all pods
-    setPods((prev) =>
-      prev.map((pod) => ({
-        ...pod,
-        services: pod.services.map((s) => (s === oldText ? newText : s)),
-      })),
-    );
+    setAvailableServices(updatedServices);
+    setPods(updatedPods);
+    persistDraft({
+      availableServices: updatedServices,
+      pods: updatedPods,
+      lastActiveStep: 3,
+      maxUnlockedStep: 3,
+    });
 
     setEditingServiceIndex(null);
     setEditingServiceText('');
@@ -652,12 +977,15 @@ export default function TitaniumOnboardingPage() {
   const handleAddDivergentAsNewCategory = (proposedName: string) => {
     const clean = proposedName.trim();
     if (clean) {
-      setAvailableServices((prev) => {
-        if (!prev.some((s) => s.toLowerCase() === clean.toLowerCase())) {
-          return [...prev, clean];
-        }
-        return prev;
-      });
+      if (!availableServices.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+        const updatedServices = [...availableServices, clean];
+        setAvailableServices(updatedServices);
+        persistDraft({
+          availableServices: updatedServices,
+          lastActiveStep: 3,
+          maxUnlockedStep: 3,
+        });
+      }
     }
     setEditingServiceIndex(null);
     setEditingServiceText('');
@@ -668,14 +996,21 @@ export default function TitaniumOnboardingPage() {
     // Safety guard: Protect default industry baseline categories (0-5)
     if (index < 6) return;
 
-    setAvailableServices((prev) => prev.filter((_, idx) => idx !== index));
-    // Remove deleted service from all pods
-    setPods((prev) =>
-      prev.map((pod) => ({
-        ...pod,
-        services: pod.services.filter((s) => s !== serviceName),
-      })),
-    );
+    const updatedServices = availableServices.filter((_, idx) => idx !== index);
+    const updatedPods = pods.map((pod) => ({
+      ...pod,
+      services: pod.services.filter((s) => s !== serviceName),
+    }));
+
+    setAvailableServices(updatedServices);
+    setPods(updatedPods);
+    persistDraft({
+      availableServices: updatedServices,
+      pods: updatedPods,
+      lastActiveStep: 3,
+      maxUnlockedStep: 3,
+    });
+
     if (editingServiceIndex === index) {
       setEditingServiceIndex(null);
       setEditingServiceText('');
@@ -690,13 +1025,41 @@ export default function TitaniumOnboardingPage() {
 
     // Restore standard 6 baseline names while preserving user's custom additions (indices 6+)
     const customServices = availableServices.slice(6);
-    setAvailableServices([...defaults, ...customServices]);
+    const updatedServices = [...defaults, ...customServices];
+    setAvailableServices(updatedServices);
     setEditingServiceIndex(null);
     setEditingServiceText('');
+
+    // Re-seed pods with mutually exclusive unique default categories
+    const used = new Set<string>();
+    const updatedPods = pods.map((pod, idx) => {
+      const unused = updatedServices.find((s) => !used.has(s));
+      const chosen = unused || updatedServices[idx % updatedServices.length] || `Core Service #${idx + 1}`;
+      used.add(chosen);
+      return {
+        ...pod,
+        services: [chosen],
+      };
+    });
+    setPods(updatedPods);
+
+    persistDraft({
+      availableServices: updatedServices,
+      pods: updatedPods,
+      lastActiveStep: 3,
+      maxUnlockedStep: 3,
+    });
   };
 
   const handleFinalSubmit = async () => {
     if (!session?.username) return;
+
+    // Safety validation: Ensure every pod has at least 1 ticket category assigned
+    const emptyPod = pods.find((p) => p.services.length === 0);
+    if (emptyPod) {
+      setErrorMessage(`Each pod must have at least 1 ticket category assigned (${emptyPod.name} is currently empty).`);
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -744,6 +1107,8 @@ export default function TitaniumOnboardingPage() {
       } catch {}
 
       setCurrentStep(4);
+      setMaxUnlockedStep((prev) => Math.max(prev, 4));
+      persistDraft({ lastActiveStep: 4, maxUnlockedStep: 4 });
     } catch {
       setErrorMessage('A network error occurred while connecting to the server.');
     } finally {
@@ -829,6 +1194,13 @@ export default function TitaniumOnboardingPage() {
       try {
         await completeOnboarding(active.username);
       } catch {}
+      try {
+        await deleteOnboardingDraft(active.username);
+      } catch {}
+      try {
+        const uName = active.username.toLowerCase();
+        localStorage.removeItem(`sentirix_onboarding_draft_${uName}`);
+      } catch {}
     }
     try {
       localStorage.removeItem('sentirix_onboarding_step');
@@ -859,9 +1231,9 @@ export default function TitaniumOnboardingPage() {
 
       {/* Main Card Container */}
       <div className="w-full max-w-4xl relative z-10">
-        {/* Header Breadcrumbs */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-3">
+        {/* Top Header Bar: Logo & Branding */}
+        <div className="flex items-center mb-4 px-1">
+          <div className="inline-flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-700 bg-white p-0.5 flex items-center justify-center shadow-md">
               <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
             </div>
@@ -870,6 +1242,10 @@ export default function TitaniumOnboardingPage() {
               AI COPILOT
             </span>
           </div>
+        </div>
+
+        {/* Header Breadcrumbs */}
+        <div className="text-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
             {currentStep === 4 ? 'Leader Activation & Token Distribution' : 'Multi-Pod Architecture Setup'}
           </h1>
@@ -878,7 +1254,7 @@ export default function TitaniumOnboardingPage() {
               ? 'Distribute single-use activation tokens to each Pod Leader before proceeding to the Executive Cockpit.'
               : (
                 <>
-                  Build a focused, agile customer support governance free of inter-departmental friction <span className="whitespace-nowrap">across all teams.</span>
+                  Build an agile, high-velocity customer support structure without inter-departmental friction <span className="whitespace-nowrap">across all teams.</span>
                 </>
               )}
           </p>
@@ -893,19 +1269,44 @@ export default function TitaniumOnboardingPage() {
             ].map((step) => {
               const isActive = currentStep === step.num;
               const isPast = currentStep > step.num;
-              const isUnlocked = step.num <= maxUnlockedStep || generatedLeaderTokens.length > 0;
+
+              // Strict validation chain: Step 1 name is a mandatory prerequisite for ALL subsequent steps!
+              const isStep1Valid = organizationName.trim().length > 0 && (selectedIndustry !== 'OTHER' || customIndustryText.trim().length > 0);
+              const isStep2Valid = isStep1Valid && Number(typedMembers) >= 1;
+              const isStep3Valid = isStep2Valid && pods.length > 0;
+
+              let isUnlocked = false;
+              if (step.num === 1) {
+                isUnlocked = true;
+              } else if (step.num === 2) {
+                isUnlocked = isStep1Valid && maxUnlockedStep >= 2;
+              } else if (step.num === 3) {
+                isUnlocked = isStep1Valid && isStep2Valid && maxUnlockedStep >= 3;
+              } else if (step.num === 4) {
+                isUnlocked = isStep1Valid && isStep2Valid && isStep3Valid && (maxUnlockedStep >= 4 || generatedLeaderTokens.length > 0);
+              }
+
+              const handleStepClick = () => {
+                if (!isUnlocked) {
+                  if (!isStep1Valid) {
+                    setErrorMessage('Organization / company name is required before proceeding to further steps.');
+                  }
+                  return;
+                }
+                setErrorMessage(null);
+                if (step.num === 3 && pods.length !== calculatedPodCount) {
+                  syncPodsWithCapacity(calculatedPodCount);
+                }
+                setCurrentStep(step.num);
+                persistDraft({ lastActiveStep: step.num });
+              };
 
               return (
                 <div key={step.num} className="flex items-center gap-2">
                   <button
                     type="button"
                     disabled={!isUnlocked}
-                    onClick={() => {
-                      if (isUnlocked) {
-                        setErrorMessage(null);
-                        setCurrentStep(step.num);
-                      }
-                    }}
+                    onClick={handleStepClick}
                     className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       isActive
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/40 ring-2 ring-blue-400'
@@ -918,6 +1319,8 @@ export default function TitaniumOnboardingPage() {
                     title={
                       isUnlocked
                         ? `Navigate directly to Step ${step.num}: ${step.label}`
+                        : !isStep1Valid && step.num > 1
+                        ? `Step ${step.num} is locked until organization name is entered`
                         : `Step ${step.num} is locked until previous steps are completed`
                     }
                   >
@@ -926,12 +1329,7 @@ export default function TitaniumOnboardingPage() {
                   <button
                     type="button"
                     disabled={!isUnlocked}
-                    onClick={() => {
-                      if (isUnlocked) {
-                        setErrorMessage(null);
-                        setCurrentStep(step.num);
-                      }
-                    }}
+                    onClick={handleStepClick}
                     className={`text-xs hidden sm:inline font-medium transition-colors ${
                       isActive
                         ? 'text-white font-bold'
@@ -987,19 +1385,19 @@ export default function TitaniumOnboardingPage() {
                   onChange={(e) => {
                     const formatted = toCorporateTitleCase(e.target.value);
                     setOrganizationName(formatted);
-                    if (errorMessage) setErrorMessage(null);
+                    if (errorMessage && formatted.trim()) setErrorMessage(null);
+                    persistDraft({ organizationName: formatted, lastActiveStep: 1 });
                   }}
                   onBlur={() => {
-                    setOrganizationName((prev) => toCorporateTitleCase(prev.trim().replace(/\s+/g, ' ')));
+                    const formatted = toCorporateTitleCase(organizationName.trim().replace(/\s+/g, ' '));
+                    setOrganizationName(formatted);
+                    persistDraft({ organizationName: formatted, lastActiveStep: 1 });
                   }}
                   placeholder="e.g., Acme Global Enterprises"
                   className={`w-full bg-[#0B0F19] border ${
                     !organizationName.trim() && errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-800'
                   } rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium`}
                 />
-                <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1">
-                  <span>Auto-capitalized to Title Case (e.g., Acme Global Enterprises, PT Sumber Makmur).</span>
-                </p>
               </div>
 
               {/* 12 Industry Preset Cards (3 rows of 4) */}
@@ -1014,14 +1412,15 @@ export default function TitaniumOnboardingPage() {
                       onClick={() => {
                         setSelectedIndustry(ind.id);
                         if (errorMessage) setErrorMessage(null);
+                        persistDraft({ selectedIndustry: ind.id, lastActiveStep: 1 });
                       }}
-                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[120px] ${
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[96px] ${
                         isSelected
                           ? 'bg-[#1E293B] border-blue-500 shadow-lg shadow-blue-500/20 ring-1 ring-blue-500'
                           : 'bg-[#0B0F19] border-slate-800 hover:border-slate-700 hover:bg-[#151D2F]'
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between mb-3">
                         <div
                           className={`w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br ${ind.accentColor}`}
                         >
@@ -1031,67 +1430,74 @@ export default function TitaniumOnboardingPage() {
                       </div>
                       <div>
                         <h3 className="text-xs font-bold text-white tracking-tight">{ind.name}</h3>
-                        <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 leading-snug">
-                          {ind.tagline}
-                        </p>
                       </div>
                     </button>
                   );
                 })}
               </div>
 
-              {/* 13th Option: Custom Industry / AI Instant Architect Banner */}
+              {/* 13th Option: Custom Industry / AI Architect Unified Card */}
               <div
                 onClick={() => {
                   setSelectedIndustry('OTHER');
                   if (errorMessage) setErrorMessage(null);
+                  persistDraft({ selectedIndustry: 'OTHER', lastActiveStep: 1 });
+                  setTimeout(() => customInputRef.current?.focus(), 50);
                 }}
-                className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                className={`rounded-xl border text-left transition-all cursor-pointer p-4 ${
                   selectedIndustry === 'OTHER'
-                    ? 'bg-[#1E293B] border-fuchsia-500 shadow-lg shadow-fuchsia-500/20 ring-1 ring-fuchsia-500'
+                    ? 'bg-[#1E293B] border-indigo-500 shadow-lg shadow-indigo-500/20 ring-1 ring-indigo-500/50'
                     : 'bg-[#0B0F19] border-slate-800 hover:border-slate-700 hover:bg-[#151D2F]'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-fuchsia-500/20 to-purple-500/10 border border-fuchsia-500/40 text-fuchsia-400 shrink-0">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Other Sector</h3>
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800">
-                        AI INSTANT ARCHITECT
-                      </span>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-indigo-500/20 to-blue-500/10 border border-indigo-500/40 text-indigo-400 shrink-0">
+                      <SlidersHorizontal className="w-5 h-5" />
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Have a unique or niche business model? Enter your sector and our AI will automatically architect your operational pods.
-                    </p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Other Sector</h3>
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+                          CUSTOM SETUP
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {selectedIndustry === 'OTHER' && <CheckCircle2 className="w-4 h-4 text-indigo-400" />}
                   </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
-                  {selectedIndustry === 'OTHER' && <CheckCircle2 className="w-4 h-4 text-fuchsia-400" />}
-                </div>
-              </div>
 
-              {/* Custom Industry Text Input if OTHER selected */}
-              {selectedIndustry === 'OTHER' && (
-                <div className="p-4 rounded-xl bg-[#0B0F19] border border-fuchsia-500/30 animate-fadeIn">
-                  <label className="block text-xs font-bold text-fuchsia-300 mb-1.5 flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
-                    Describe Your Custom Business Sector
-                  </label>
-                  <input
-                    type="text"
-                    value={customIndustryText}
-                    onChange={(e) => setCustomIndustryText(e.target.value)}
-                    placeholder="e.g., Autonomous Agricultural Drones & Land Surveying"
-                    className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-fuchsia-500 transition-all font-medium"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-2">
-                    AI Architect will design tailored specialized pods based on your business description.
-                  </p>
-                </div>
-              )}
+                {/* Inline Input automatically revealed inside the card when active */}
+                {selectedIndustry === 'OTHER' && (
+                  <div
+                    className="mt-3.5 pt-3.5 border-t border-slate-700/60 animate-fadeIn"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <label className="block text-[11px] font-semibold text-indigo-300 mb-1.5 flex items-center gap-1.5">
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Specify Your Unique Business Domain</span>
+                    </label>
+                    <input
+                      ref={customInputRef}
+                      type="text"
+                      value={customIndustryText}
+                      onChange={(e) => setCustomIndustryText(e.target.value)}
+                      onBlur={() => {
+                        persistDraft({ customIndustryText, lastActiveStep: 1 });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleNextToStep2();
+                        }
+                      }}
+                      placeholder="e.g., Autonomous Agricultural Drones, Renewable Energy Logistics..."
+                      className="w-full bg-[#0B0F19] border border-slate-700 focus:border-indigo-500 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500/40 transition-all font-medium"
+                    />
+                  </div>
+                )}
+              </div>
 
               {/* Action Buttons */}
               <div className="flex items-center justify-end pt-4 border-t border-slate-800">
@@ -1132,9 +1538,12 @@ export default function TitaniumOnboardingPage() {
                       min="1"
                       max="500"
                       value={typedMembers}
+                      onWheel={(e) => e.currentTarget.blur()}
                       onChange={(e) => {
                         const val = parseInt(e.target.value, 10);
-                        setTypedMembers(isNaN(val) ? 1 : Math.max(1, val));
+                        const nextVal = isNaN(val) ? 1 : Math.max(1, val);
+                        setTypedMembers(nextVal);
+                        persistDraft({ typedMembers: nextVal, lastActiveStep: 2 });
                       }}
                       className="w-full bg-[#111827] border-2 border-blue-500/60 focus:border-blue-400 text-white text-2xl font-black rounded-xl px-4 py-3 text-center tracking-wide focus:outline-hidden focus:ring-4 focus:ring-blue-500/20 transition-all font-mono"
                     />
@@ -1144,7 +1553,7 @@ export default function TitaniumOnboardingPage() {
 
                 {/* Professional Operational Rationale Text */}
                 <p className="text-xs text-slate-300 leading-relaxed pt-2">
-                  With a total of <span className="font-bold text-white">{typedMembers} members</span>, your operational setup will comprise <span className="font-bold text-emerald-400">{calculatedPodCount} pods</span> to maintain an optimal span of control and ensure highly responsive issue resolution.
+                  With <span className="font-bold text-white">{typedMembers} total members</span>, your team will be structured into <span className="font-bold text-emerald-400">{calculatedPodCount} pods</span> to maintain an optimal span of control and ensure high-velocity issue resolution.
                 </p>
               </div>
 
@@ -1152,7 +1561,11 @@ export default function TitaniumOnboardingPage() {
               <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(1)}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setCurrentStep(1);
+                    persistDraft({ lastActiveStep: 1 });
+                  }}
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
@@ -1185,14 +1598,25 @@ export default function TitaniumOnboardingPage() {
 
               {/* Quick Add Custom Service Tag - American Corporate Style */}
               <div className="p-5 rounded-2xl bg-[#0B0F19] border border-slate-800/90 shadow-lg space-y-3">
-                <div>
-                  <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 font-mono">
-                    <Plus className="w-4 h-4 text-blue-400" />
-                    Add Custom Ticket Category
-                  </h3>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    Enter a new service specialization or customer complaint category. It will appear at the bottom of the list for all pods.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 font-mono">
+                      <Plus className="w-4 h-4 text-blue-400" />
+                      Add Custom Ticket Category
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Enter a new service specialization or customer complaint category. It will appear for all pods below.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleResetServicesToDefault}
+                    title="Reset all categories back to standard industry presets"
+                    className="text-[11px] font-mono text-slate-400 hover:text-blue-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Reset Defaults</span>
+                  </button>
                 </div>
                 <div className="flex items-center gap-3">
                   <input
@@ -1247,43 +1671,23 @@ export default function TitaniumOnboardingPage() {
                           </div>
 
                           <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-1 rounded-full font-semibold">
+                              {pod.services.length} Categories Selected
+                            </span>
                             <span className="text-[11px] font-semibold uppercase tracking-wider bg-slate-800/80 border border-slate-700/50 text-slate-300 px-3 py-1 rounded-full font-mono">
                               Max 8 Members
                             </span>
                           </div>
                         </div>
 
-                        {/* Category Assignment Section */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider font-mono">
-                                Ticket Issue Categories Handled by This Pod (AI Routing Scope)
-                              </h4>
-                              <p className="text-[11px] text-slate-400 mt-0.5">
-                                Select the issue types handled by this pod. Inbound tickets matching these topics will route directly here.
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={handleResetServicesToDefault}
-                                title="Reset all categories back to standard industry presets"
-                                className="text-[11px] font-mono text-slate-400 hover:text-blue-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-md transition-all flex items-center gap-1.5 cursor-pointer"
-                              >
-                                <RefreshCw className="w-3 h-3" />
-                                <span>Reset Defaults</span>
-                              </button>
-                              <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-0.5 rounded-md font-semibold">
-                                {pod.services.length} Selected
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Vertical Stack: Numbered 1 to 6, then 7+ from top to bottom */}
-                          <div className="space-y-2">
+                        {/* Vertical Stack: Numbered 1 to 6, then 7+ from top to bottom */}
+                        <div className="space-y-2">
                             {availableServices.map((svc, sIdx) => {
                               const isChecked = pod.services.includes(svc);
+                              const claimingPod = !isChecked
+                                ? pods.find((p, idx) => idx !== pIdx && p.services.includes(svc))
+                                : null;
+                              const isClaimedByOther = !!claimingPod;
                               const indexNumber = sIdx + 1 < 10 ? `0${sIdx + 1}` : `${sIdx + 1}`;
                               const isEditingThis = editingServiceIndex === sIdx;
 
@@ -1395,17 +1799,28 @@ export default function TitaniumOnboardingPage() {
                                 <div
                                   key={`${svc}-${sIdx}`}
                                   onClick={() => handleToggleServiceForPod(pIdx, svc)}
-                                  className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer flex items-center justify-between gap-3 border group ${
+                                  className={`w-full p-3 rounded-xl text-left transition-all flex items-center justify-between gap-3 border group ${
                                     isChecked
-                                      ? 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30'
-                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827]'
+                                      ? 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30 cursor-pointer'
+                                      : isClaimedByOther
+                                      ? 'bg-[#0A0D14]/70 border-slate-900/80 text-slate-500 opacity-60 cursor-not-allowed'
+                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827] cursor-pointer'
                                   }`}
+                                  title={
+                                    isClaimedByOther
+                                      ? `Assigned to ${claimingPod?.name}. Uncheck from ${claimingPod?.name} to assign here.`
+                                      : isChecked
+                                      ? 'Click to remove from this pod'
+                                      : 'Click to assign to this pod'
+                                  }
                                 >
                                   {/* Left: Index Number */}
                                   <span
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 transition-colors ${
                                       isChecked
                                         ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
+                                        : isClaimedByOther
+                                        ? 'bg-slate-900/70 text-slate-600 border border-slate-800/60'
                                         : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 group-hover:text-slate-300'
                                     }`}
                                   >
@@ -1413,7 +1828,7 @@ export default function TitaniumOnboardingPage() {
                                   </span>
 
                                   {/* Middle: Service Name */}
-                                  <span className="flex-1 text-xs font-semibold tracking-wide truncate">
+                                  <span className={`flex-1 text-xs font-semibold tracking-wide truncate ${isClaimedByOther ? 'text-slate-500' : ''}`}>
                                     {svc}
                                   </span>
 
@@ -1446,21 +1861,27 @@ export default function TitaniumOnboardingPage() {
                                     )}
                                   </div>
 
-                                  {/* Right: Checklist Checkbox */}
-                                  <div
-                                    className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
-                                      isChecked
-                                        ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
-                                        : 'border-slate-700 bg-slate-800/40 group-hover:border-slate-600'
-                                    }`}
-                                  >
-                                    {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                  </div>
+                                  {/* Right: Checklist Checkbox or Claimed Lock Badge */}
+                                  {isClaimedByOther ? (
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900/90 border border-slate-800 text-[10px] font-mono font-medium text-slate-400 shrink-0 shadow-xs">
+                                      <Lock className="w-3 h-3 text-slate-500" />
+                                      <span>Assigned to {claimingPod?.name}</span>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
+                                        isChecked
+                                          ? 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
+                                          : 'border-slate-700 bg-slate-800/40 group-hover:border-slate-600'
+                                      }`}
+                                    >
+                                      {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
                           </div>
-                        </div>
                       </div>
                     );
                   })}
@@ -1471,7 +1892,11 @@ export default function TitaniumOnboardingPage() {
               <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(2)}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setCurrentStep(2);
+                    persistDraft({ lastActiveStep: 2 });
+                  }}
                   title="Back to Member Capacity Selection (Step 2)"
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >
@@ -1481,7 +1906,14 @@ export default function TitaniumOnboardingPage() {
                 <button
                   type="button"
                   disabled={isSubmitting}
-                  onClick={generatedLeaderTokens.length > 0 ? () => setCurrentStep(4) : handleFinalSubmit}
+                  onClick={
+                    generatedLeaderTokens.length > 0
+                      ? () => {
+                          setCurrentStep(4);
+                          persistDraft({ lastActiveStep: 4 });
+                        }
+                      : handleFinalSubmit
+                  }
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
                 >
                   {isSubmitting ? (
@@ -1641,7 +2073,11 @@ export default function TitaniumOnboardingPage() {
               <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setCurrentStep(3)}
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setCurrentStep(3);
+                    persistDraft({ lastActiveStep: 3 });
+                  }}
                   title="Back to Pod Architecture Setup (Step 3)"
                   className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
                 >

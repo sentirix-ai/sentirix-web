@@ -47,6 +47,8 @@ import {
   swapPersonnel,
   createSpecializedPod,
   addSeatToPod,
+  checkMemberStatus,
+  adminForceLogoutUser,
 } from '../../../lib/api';
 
 const cleanPodName = (name?: string) => {
@@ -86,6 +88,14 @@ export default function SuperAdminCockpitPage() {
   const [isCleaningDemo, setIsCleaningDemo] = useState(false);
   const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
+  const [forcingLogoutUser, setForcingLogoutUser] = useState<string | null>(null);
+  const [confirmForceLogoutTarget, setConfirmForceLogoutTarget] = useState<{
+    name: string;
+    role: string;
+    token?: string;
+    userId?: string;
+    username?: string;
+  } | null>(null);
   const [activeTab, setActiveTab] = useState<
     'OVERVIEW' | 'PRESENCE' | 'PERSONNEL' | 'TOKENS' | 'CRISIS' | 'CHANNELS'
   >('OVERVIEW');
@@ -453,11 +463,14 @@ export default function SuperAdminCockpitPage() {
     if (showSpinner) setIsLoading(true);
     setErrorMessage(null);
     try {
-      const data = await fetchSuperAdminCockpit(activeUser.username);
+      const targetIdentifier = activeUser.username || activeUser.email || (activeUser.id as string);
+      const data = await fetchSuperAdminCockpit(targetIdentifier);
       if (!data) {
-        if (showSpinner) {
-          setErrorMessage('Failed to load organization cockpit data. Please ensure setup is completed.');
-        }
+        // If user or organization does not exist in the database (or service frozen/deleted),
+        // immediately purge session and redirect to pre-login page
+        await logoutUser();
+        window.location.href = '/';
+        return;
       } else {
         if (data?.organization?.onboardingCompleted === false) {
           router.push('/onboarding?step=4');
@@ -466,6 +479,12 @@ export default function SuperAdminCockpitPage() {
         setCockpitData(data);
       }
     } catch {
+      const statusActive = await checkMemberStatus(activeUser.id || activeUser.username || activeUser.email);
+      if (!statusActive) {
+        await logoutUser();
+        window.location.href = '/';
+        return;
+      }
       if (showSpinner) {
         setErrorMessage('An error occurred while loading data from the server.');
       }
@@ -477,7 +496,7 @@ export default function SuperAdminCockpitPage() {
   useEffect(() => {
     const active = getSession();
     if (!active) {
-      router.push('/');
+      window.location.href = '/';
       return;
     }
     if (active.onboardingCompleted === false) {
@@ -540,20 +559,50 @@ export default function SuperAdminCockpitPage() {
     }
   };
 
+  const handleForceLogout = async (target: {
+    name: string;
+    role: string;
+    token?: string;
+    userId?: string;
+    username?: string;
+  }) => {
+    const key = target.token || target.userId || target.name;
+    try {
+      setForcingLogoutUser(key);
+      const activeSession = session || getSession();
+      const res = await adminForceLogoutUser(
+        target.userId,
+        target.username || target.name,
+        target.token,
+        activeSession?.username,
+      );
+      if (res.success && activeSession) {
+        setConfirmForceLogoutTarget(null);
+        await loadData(activeSession, false);
+      } else {
+        setErrorMessage(res.error || 'Failed to force logout user.');
+      }
+    } catch {
+      setErrorMessage('Network connection error while executing force logout.');
+    } finally {
+      setForcingLogoutUser(null);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       sessionStorage.setItem('is_manual_logout', 'true');
     } catch {}
     await logoutUser();
-    router.push('/');
+    window.location.href = '/';
   };
 
-  if (isLoading) {
+  if (isLoading || !cockpitData) {
     return (
       <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-xs text-slate-400">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span>Loading Sentirix Executive Cockpit...</span>
+          <span>Verifying Sentirix Executive Privileges...</span>
         </div>
       </div>
     );
@@ -1626,6 +1675,33 @@ export default function SuperAdminCockpitPage() {
                                           <ArrowRightLeft className="w-3.5 h-3.5 text-purple-400" />
                                           <span>Swap Pod</span>
                                         </button>
+                                        {user.isOnline && (
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              forcingLogoutUser === (user.userId || user.id) ||
+                                              forcingLogoutUser === user.username
+                                            }
+                                            onClick={() =>
+                                              setConfirmForceLogoutTarget({
+                                                name: user.fullName || user.username,
+                                                role: isLeader ? 'Leader' : 'Agent',
+                                                userId: user.userId || user.id,
+                                                username: user.username,
+                                              })
+                                            }
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-rose-300 hover:text-white text-xs font-bold transition-all shadow-sm hover:shadow-rose-500/20 cursor-pointer disabled:opacity-50"
+                                            title="Force logout active session"
+                                          >
+                                            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                                            <span>
+                                              {forcingLogoutUser === (user.userId || user.id) ||
+                                              forcingLogoutUser === user.username
+                                                ? 'Revoking...'
+                                                : 'Force Logout'}
+                                            </span>
+                                          </button>
+                                        )}
                                       </div>
                                     </td>
                                   </tr>
@@ -1851,7 +1927,12 @@ export default function SuperAdminCockpitPage() {
                                           </div>
                                           {!tok.isUserOnline && (
                                             <div className="flex items-center gap-1 text-[10px] font-medium">
-                                              {tok.hadManualLogout ? (
+                                              {tok.hadForceLogout ? (
+                                                <div className="flex items-center gap-1 text-rose-400 font-semibold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                  <span>&bull; (Force Logged Out)</span>
+                                                </div>
+                                              ) : tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                                                   <span className="font-semibold">&bull; (Logged Out)</span>
@@ -1876,6 +1957,34 @@ export default function SuperAdminCockpitPage() {
                                     </td>
                                     <td className="py-3 px-4 text-right">
                                       <div className="flex items-center justify-end gap-1.5">
+                                        {tok.isUserOnline && (
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              forcingLogoutUser === tok.token ||
+                                              forcingLogoutUser === (tok.userId || tok.usedBy)
+                                            }
+                                            onClick={() =>
+                                              setConfirmForceLogoutTarget({
+                                                name: tok.usedBy || ws.leaderName || 'Leader',
+                                                role: 'Leader',
+                                                token: tok.token,
+                                                userId: tok.userId,
+                                                username: tok.username || tok.usedBy,
+                                              })
+                                            }
+                                            className="px-2.5 py-1 rounded text-[11px] font-bold border border-rose-500/50 bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                            title="Force logout Leader session immediately"
+                                          >
+                                            <LogOut className="w-3 h-3 text-rose-400" />
+                                            <span>
+                                              {forcingLogoutUser === tok.token ||
+                                              forcingLogoutUser === (tok.userId || tok.usedBy)
+                                                ? 'Revoking...'
+                                                : 'Force Logout'}
+                                            </span>
+                                          </button>
+                                        )}
                                         <button
                                           type="button"
                                           onClick={() => handleCopyLink(tok.token)}
@@ -1994,7 +2103,12 @@ export default function SuperAdminCockpitPage() {
                                           </div>
                                           {!tok.isUserOnline && (
                                             <div className="flex items-center gap-1 text-[10px] font-medium">
-                                              {tok.hadManualLogout ? (
+                                              {tok.hadForceLogout ? (
+                                                <div className="flex items-center gap-1 text-rose-400 font-semibold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                  <span>&bull; (Force Logged Out)</span>
+                                                </div>
+                                              ) : tok.hadManualLogout ? (
                                                 <div className="flex items-center gap-1 text-slate-400">
                                                   <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                                                   <span className="font-semibold">&bull; (Logged Out)</span>
@@ -2019,6 +2133,34 @@ export default function SuperAdminCockpitPage() {
                                     </td>
                                     <td className="py-3 px-4 text-right">
                                       <div className="flex items-center justify-end gap-1.5">
+                                        {tok.isUserOnline && (
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              forcingLogoutUser === tok.token ||
+                                              forcingLogoutUser === (tok.userId || tok.usedBy)
+                                            }
+                                            onClick={() =>
+                                              setConfirmForceLogoutTarget({
+                                                name: tok.usedBy || 'Agent',
+                                                role: 'Agent',
+                                                token: tok.token,
+                                                userId: tok.userId,
+                                                username: tok.username || tok.usedBy,
+                                              })
+                                            }
+                                            className="px-2.5 py-1 rounded text-[11px] font-bold border border-rose-500/50 bg-rose-950/70 hover:bg-rose-900 text-rose-300 hover:text-white transition-all cursor-pointer flex items-center gap-1 shadow-sm disabled:opacity-50"
+                                            title="Force logout Agent session immediately"
+                                          >
+                                            <LogOut className="w-3 h-3 text-rose-400" />
+                                            <span>
+                                              {forcingLogoutUser === tok.token ||
+                                              forcingLogoutUser === (tok.userId || tok.usedBy)
+                                                ? 'Revoking...'
+                                                : 'Force Logout'}
+                                            </span>
+                                          </button>
+                                        )}
                                         <button
                                           type="button"
                                           onClick={() => handleCopyLink(tok.token)}
@@ -2449,6 +2591,89 @@ export default function SuperAdminCockpitPage() {
         )}
 
         {/* MODAL: EDIT PERSONNEL IDENTITY (SUPER ADMIN SOVEREIGN OVERRIDE) */}
+        {/* MODAL: FORCE LOGOUT CONFIRMATION (SUPER ADMIN SOVEREIGN REVOCATION) */}
+        {confirmForceLogoutTarget && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#111827] border border-rose-500/40 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-rose-600/20 border border-rose-500/40 text-rose-400 flex items-center justify-center">
+                    <LogOut className="w-4 h-4 text-rose-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Sovereign Session Revocation</h3>
+                    <p className="text-[11px] text-rose-400/90 font-medium">Force Logout Personnel</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!forcingLogoutUser) setConfirmForceLogoutTarget(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div className="p-3.5 rounded-xl bg-[#0B0F19] border border-slate-800/80 space-y-1.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Personnel</span>
+                    <span className="font-bold text-white text-xs">
+                      {confirmForceLogoutTarget.name}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                    <span>Tier / Role</span>
+                    <span className="font-bold text-rose-300 uppercase px-2 py-0.5 rounded bg-rose-950/80 border border-rose-800/60 text-[10px]">
+                      {confirmForceLogoutTarget.role}
+                    </span>
+                  </div>
+                  {confirmForceLogoutTarget.token && (
+                    <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                      <span>Associated Token</span>
+                      <span className="font-mono text-slate-300 text-[10px] font-semibold">
+                        {confirmForceLogoutTarget.token}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-rose-300">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                    Tindakan Keamanan Langsung (Instant Effect)
+                  </p>
+                  <p className="text-[11px] text-rose-200/80 leading-relaxed">
+                    Sesi pengguna akan langsung diputus dan browser mereka akan diarahkan keluar ke halaman utama. Akses token mereka akan kedaluwarsa dan memerlukan <strong>Regenerate</strong> oleh Admin jika ingin login kembali.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={!!forcingLogoutUser}
+                    onClick={() => setConfirmForceLogoutTarget(null)}
+                    className="px-4 py-2 rounded-xl bg-[#0B0F19] hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!!forcingLogoutUser}
+                    onClick={() => handleForceLogout(confirmForceLogoutTarget)}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/30 border border-rose-400/40 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{forcingLogoutUser ? 'Memproses Logout...' : 'Ya, Putus Sesi Sekarang'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {editingUser && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">

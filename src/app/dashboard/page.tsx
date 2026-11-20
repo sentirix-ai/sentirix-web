@@ -112,6 +112,14 @@ export default function DashboardPage() {
       return;
     }
 
+    // Verify user account is still active in database (not wiped or frozen)
+    checkMemberStatus(session.id || session.username || session.email).then((isActive) => {
+      if (!isActive) {
+        logoutUser();
+        window.location.href = '/';
+      }
+    });
+
     // If this is an invited guest agent member, verify that their session hasn't been purged
     const guestUser = session as any;
     if (guestUser.workspaceId && guestUser.id && isGuest) {

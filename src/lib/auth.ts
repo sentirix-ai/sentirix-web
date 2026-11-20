@@ -15,6 +15,7 @@ export interface UserSession {
   avatarUrl?: string | null;
   token?: string;
   onboardingCompleted?: boolean;
+  onboardingDraft?: any;
 }
 
 export interface StoredUser extends UserSession {
@@ -40,17 +41,20 @@ export function validateUsername(username: string): { isValid: boolean; error?: 
     return { isValid: false, error: 'Username is required.' };
   }
   const clean = username.toLowerCase().trim();
-  if (!/^[a-z]+$/.test(clean)) {
-    return {
-      isValid: false,
-      error: 'Username must contain lowercase letters only (a-z) without numbers, spaces, or symbols.',
-    };
-  }
   if (clean.length < 3) {
-    return { isValid: false, error: 'Username must be at least 3 letters long.' };
+    return { isValid: false, error: 'Username must be at least 3 characters long.' };
   }
   if (clean.length > 20) {
-    return { isValid: false, error: 'Username must not exceed 20 letters.' };
+    return { isValid: false, error: 'Username must not exceed 20 characters.' };
+  }
+  if (!/^[a-z0-9]/.test(clean)) {
+    return { isValid: false, error: 'Username must start with a letter or number.' };
+  }
+  if (!/^[a-z0-9._]+$/.test(clean)) {
+    return {
+      isValid: false,
+      error: 'Username can only contain lowercase letters (a-z), numbers (0-9), dots (.), and underscores (_).',
+    };
   }
   return { isValid: true };
 }
@@ -116,7 +120,7 @@ export async function registerUser(params: {
   verificationMethod: 'EMAIL' | 'PHONE';
   password: string;
 }): Promise<{ success: boolean; user?: UserSession; error?: string }> {
-  const cleanUsername = params.username.toLowerCase().trim().replace(/[^a-z]/g, '');
+  const cleanUsername = params.username.toLowerCase().trim().replace(/[^a-z0-9._]/g, '');
   const cleanEmail = params.email.toLowerCase().trim();
   const cleanPhone = params.phone.trim();
 
@@ -169,6 +173,17 @@ export async function registerUser(params: {
         onboardingCompleted: data.onboardingCompleted ?? false,
       };
 
+      // Clean slate guarantee for newly registered user: wipe any old residual drafts
+      try {
+        localStorage.removeItem(`sentirix_onboarding_draft_${cleanUsername}`);
+        localStorage.removeItem(`sentirix_onboarding_draft_${cleanEmail}`);
+        localStorage.removeItem('sentirix_onboarding_step');
+        localStorage.removeItem('sentirix_pending_tokens');
+        localStorage.removeItem('sentirix_dispatched_tokens');
+        localStorage.removeItem('sentirix_regenerated_tokens');
+        localStorage.removeItem('sentirix_planned_capacity');
+      } catch {}
+
       // Also sync to local registry
       const localUsers = getRegisteredUsers();
       localUsers.push({
@@ -220,6 +235,16 @@ export async function registerUser(params: {
 
     existingUsers.push(newUser);
     saveRegisteredUsers(existingUsers);
+
+    try {
+      localStorage.removeItem(`sentirix_onboarding_draft_${lowerUsername}`);
+      localStorage.removeItem(`sentirix_onboarding_draft_${lowerEmail}`);
+      localStorage.removeItem('sentirix_onboarding_step');
+      localStorage.removeItem('sentirix_pending_tokens');
+      localStorage.removeItem('sentirix_dispatched_tokens');
+      localStorage.removeItem('sentirix_regenerated_tokens');
+      localStorage.removeItem('sentirix_planned_capacity');
+    } catch {}
 
     const fallbackSession: UserSession = {
       username: newUser.username,
@@ -274,6 +299,7 @@ export async function loginUser(
         avatarUrl: data.avatarUrl ?? null,
         token: data.token,
         onboardingCompleted: data.onboardingCompleted ?? false,
+        onboardingDraft: data.onboardingDraft || null,
       };
       setSession(session);
       return { success: true, user: session };
@@ -406,12 +432,12 @@ export async function updateUserAvatar(
 export function getSession(): UserSession | null {
   if (typeof window === 'undefined') return null;
   try {
+    // Active authenticated session is strictly scoped to sessionStorage.
+    // When the browser or all tabs are closed, sessionStorage is automatically cleared,
+    // ensuring the next visitor lands cleanly on the public landing page before login.
     const raw =
       sessionStorage.getItem(STORAGE_SESSION_KEY) ||
-      sessionStorage.getItem('sentirix_active_session_v1') ||
-      localStorage.getItem(STORAGE_SESSION_KEY) ||
-      localStorage.getItem('sentirix_active_session_v1') ||
-      localStorage.getItem('omniflow_active_session_v1');
+      sessionStorage.getItem('sentirix_active_session_v1');
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -420,9 +446,27 @@ export function getSession(): UserSession | null {
 
 export function setSession(session: UserSession): void {
   if (typeof window === 'undefined') return;
-  // Save primarily to sessionStorage for browser-session isolation and auto-logout on browser close
+  // Save to sessionStorage for browser-session isolation (auto-clears on browser close)
   sessionStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(session));
   sessionStorage.setItem('sentirix_active_session_v1', JSON.stringify(session));
+
+  // Clean any active session key from localStorage so browser restart never auto-logs in
+  try {
+    localStorage.removeItem(STORAGE_SESSION_KEY);
+    localStorage.removeItem('sentirix_active_session_v1');
+    localStorage.removeItem('sentrix_active_session_v1');
+    localStorage.removeItem('omniflow_active_session_v1');
+
+    // Retain persistent onboarding draft per specific user identifier for seamless resume on login
+    if (session.onboardingDraft) {
+      if (session.username) {
+        localStorage.setItem(`sentirix_onboarding_draft_${session.username.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
+      }
+      if (session.email) {
+        localStorage.setItem(`sentirix_onboarding_draft_${session.email.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
+      }
+    }
+  } catch {}
 
   // If user has an ID, register session start in backend
   if (session.id) {
@@ -441,7 +485,7 @@ export function setSession(session: UserSession): void {
 export async function logoutUser(userId?: string): Promise<void> {
   if (typeof window === 'undefined') return;
   const current = getSession();
-  const targetId = userId || current?.id;
+  const targetId = userId || current?.id || current?.username;
 
   if (targetId) {
     const payload = JSON.stringify({ userId: targetId, reason: 'MANUAL_LOGOUT' });
@@ -468,21 +512,49 @@ export async function logoutUser(userId?: string): Promise<void> {
     }
   }
 
-  // Clear this tab's session
-  sessionStorage.removeItem(STORAGE_SESSION_KEY);
-  sessionStorage.removeItem('sentirix_active_session_v1');
-  localStorage.removeItem(STORAGE_SESSION_KEY);
-  localStorage.removeItem('sentirix_active_session_v1');
-  localStorage.removeItem('omniflow_active_session_v1');
+  // Clear this tab's session and all related persistent storage
+  try {
+    sessionStorage.clear();
+  } catch {}
+
+  try {
+    localStorage.removeItem(STORAGE_SESSION_KEY);
+    localStorage.removeItem('sentirix_active_session_v1');
+    localStorage.removeItem('sentrix_active_session_v1');
+    localStorage.removeItem('omniflow_active_session_v1');
+    localStorage.removeItem('sentirix_onboarding_step');
+    localStorage.removeItem('sentirix_pending_tokens');
+    localStorage.removeItem('sentirix_dispatched_tokens');
+    localStorage.removeItem('sentirix_regenerated_tokens');
+    localStorage.removeItem(STORAGE_USERS_KEY);
+    localStorage.removeItem('sentirix_registered_users_v1');
+    localStorage.removeItem('sentrix_registered_users_v1');
+    localStorage.removeItem('sentirix_planned_capacity');
+  } catch {}
 }
 
-export function sendHeartbeat(userId: string): void {
-  if (typeof window === 'undefined' || !userId) return;
-  fetch(`${API_BASE_URL}/auth/heartbeat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId }),
-  }).catch(() => {});
+export async function sendHeartbeat(userId: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (data.active === false) {
+      // User or database wiped or account suspended -> purge session immediately & redirect
+      await logoutUser(userId);
+      if (typeof window !== 'undefined' && window.location.pathname !== '/' && !window.location.pathname.startsWith('/join')) {
+        window.location.href = '/';
+      }
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function sendBeaconLogout(userId: string): void {

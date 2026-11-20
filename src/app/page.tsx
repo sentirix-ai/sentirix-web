@@ -52,6 +52,7 @@ import {
   getSession,
   UserSession,
 } from '../lib/auth';
+import { fetchOnboardingDraft } from '../lib/api';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -359,6 +360,42 @@ export default function LandingPage() {
   useEffect(() => {
     const session = getSession();
     if (session) {
+      if (!session.onboardingCompleted && session.role !== 'ADMIN') {
+        const uName = (session.username || '').toLowerCase();
+        let targetStep = 1;
+
+        if (session.onboardingDraft?.lastActiveStep && session.onboardingDraft.lastActiveStep >= 1 && session.onboardingDraft.lastActiveStep <= 4) {
+          targetStep = session.onboardingDraft.lastActiveStep;
+        } else {
+          try {
+            const cached = localStorage.getItem(`sentirix_onboarding_draft_${uName}`);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (parsed.lastActiveStep && parsed.lastActiveStep >= 1 && parsed.lastActiveStep <= 4) {
+                targetStep = parsed.lastActiveStep;
+              }
+            }
+          } catch {}
+        }
+
+        if (targetStep > 1) {
+          router.push(`/onboarding?step=${targetStep}`);
+        } else if (session.username) {
+          fetchOnboardingDraft(session.username).then((draft) => {
+            if (draft?.lastActiveStep && draft.lastActiveStep >= 1 && draft.lastActiveStep <= 4) {
+              router.push(`/onboarding?step=${draft.lastActiveStep}`);
+            } else {
+              router.push('/onboarding?step=1');
+            }
+          }).catch(() => {
+            router.push('/onboarding?step=1');
+          });
+        } else {
+          router.push(`/onboarding?step=${targetStep}`);
+        }
+        return;
+      }
+
       // 1. Check if user has an unfinished Step 4 Token Distribution session (Resilient restore on browser reopen/crash)
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
       if (pendingStep === '4' || (!session.onboardingCompleted && session.role === 'ADMIN')) {
@@ -408,6 +445,43 @@ export default function LandingPage() {
       }
 
       // Check onboarding & role status:
+      if (!res.user?.onboardingCompleted && res.user?.role !== 'ADMIN') {
+        const uName = (res.user?.username || '').toLowerCase();
+        const uEmail = (res.user?.email || '').toLowerCase();
+        let targetStep = 1;
+
+        // 1. Instant check from server-delivered draft in login response
+        if (res.user?.onboardingDraft?.lastActiveStep && res.user.onboardingDraft.lastActiveStep >= 1 && res.user.onboardingDraft.lastActiveStep <= 4) {
+          targetStep = res.user.onboardingDraft.lastActiveStep;
+        }
+
+        // 2. Cross-check cached localStorage draft if targetStep is still 1
+        if (targetStep <= 1) {
+          try {
+            const cached = localStorage.getItem(`sentirix_onboarding_draft_${uName}`) || (uEmail ? localStorage.getItem(`sentirix_onboarding_draft_${uEmail}`) : null);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (parsed.lastActiveStep && parsed.lastActiveStep >= 1 && parsed.lastActiveStep <= 4) {
+                targetStep = parsed.lastActiveStep;
+              }
+            }
+          } catch {}
+        }
+
+        // 3. Fallback to API draft fetch
+        if (targetStep <= 1 && res.user?.username) {
+          try {
+            const serverDraft = await fetchOnboardingDraft(res.user.username);
+            if (serverDraft?.lastActiveStep && serverDraft.lastActiveStep >= 1 && serverDraft.lastActiveStep <= 4) {
+              targetStep = serverDraft.lastActiveStep;
+            }
+          } catch {}
+        }
+
+        router.push(`/onboarding?step=${targetStep}`);
+        return;
+      }
+
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
       if (pendingStep === '4' || (!res.user?.onboardingCompleted && res.user?.role === 'ADMIN')) {
         router.push('/onboarding?step=4');
@@ -428,7 +502,7 @@ export default function LandingPage() {
     e.preventDefault();
     setSignupError(null);
 
-    const cleanUsername = signupUsername.toLowerCase().trim().replace(/[^a-z]/g, '');
+    const cleanUsername = signupUsername.toLowerCase().trim().replace(/[^a-z0-9._]/g, '');
     const cleanEmail = signupEmail.toLowerCase().trim();
 
     if (!cleanUsername) {
@@ -436,18 +510,23 @@ export default function LandingPage() {
       return;
     }
 
-    if (!/^[a-z]+$/.test(cleanUsername)) {
-      setSignupError('Username must contain lowercase letters only (a-z). Numbers, spaces, and symbols are not allowed.');
-      return;
-    }
-
     if (cleanUsername.length < 3) {
-      setSignupError('Username must be at least 3 letters.');
+      setSignupError('Username must be at least 3 characters.');
       return;
     }
 
     if (cleanUsername.length > 20) {
-      setSignupError('Username cannot exceed 20 letters.');
+      setSignupError('Username cannot exceed 20 characters.');
+      return;
+    }
+
+    if (!/^[a-z0-9]/.test(cleanUsername)) {
+      setSignupError('Username must start with a letter or number.');
+      return;
+    }
+
+    if (!/^[a-z0-9._]+$/.test(cleanUsername)) {
+      setSignupError('Username can only contain lowercase letters (a-z), numbers (0-9), dots (.), and underscores (_).');
       return;
     }
 
@@ -491,8 +570,19 @@ export default function LandingPage() {
         return;
       }
 
-      // Direct user immediately to team capacity setup interface (1 - 8 members)
-      router.push('/onboarding');
+      // Clean slate guarantee: wipe any local residual drafts for this username/email
+      try {
+        localStorage.removeItem(`sentirix_onboarding_draft_${cleanUsername}`);
+        localStorage.removeItem(`sentirix_onboarding_draft_${cleanEmail}`);
+        localStorage.removeItem('sentirix_onboarding_step');
+        localStorage.removeItem('sentirix_pending_tokens');
+        localStorage.removeItem('sentirix_dispatched_tokens');
+        localStorage.removeItem('sentirix_regenerated_tokens');
+        localStorage.removeItem('sentirix_planned_capacity');
+      } catch {}
+
+      // Direct new user immediately to team capacity setup interface starting from clean Step 1
+      router.push('/onboarding?step=1&fresh=true');
     } finally {
       setIsSigningUp(false);
     }
@@ -1603,7 +1693,7 @@ export default function LandingPage() {
                         required
                         value={loginIdentifier}
                         onChange={(e) => setLoginIdentifier(e.target.value.toLowerCase().trim())}
-                        placeholder="e.g. alexander or alexander@acmeglobal.com"
+                        placeholder="sarah.ops or sarah@company.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] focus:border-transparent transition-all"
                       />
                     </div>
@@ -1691,7 +1781,7 @@ export default function LandingPage() {
                             : 'text-[#64748B]'
                         }`}
                       >
-                        {signupUsername.length}/20 letters
+                        {signupUsername.length}/20 chars
                       </span>
                     </div>
                     <div className="relative">
@@ -1701,18 +1791,18 @@ export default function LandingPage() {
                         required
                         maxLength={20}
                         value={signupUsername}
-                        onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z]/g, ''))}
-                        placeholder="e.g., alexander, david (letters only)"
+                        onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, ''))}
+                        placeholder="sarah.ops"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all font-mono"
                       />
                     </div>
                     <p className="text-[10px] text-[#64748B] mt-1">
-                      Letters only (a-z). Numbers, spaces, and special symbols are strictly blocked.
+                      Letters (a-z), numbers (0-9), dots (.), and underscores (_) allowed. Must start with a letter or number.
                     </p>
                     {signupUsername.length >= 20 && (
                       <p className="text-[10px] text-amber-400 mt-1 flex items-center gap-1 font-semibold">
                         <AlertCircle className="w-3 h-3" />
-                        Maximum limit of 20 letters reached.
+                        Maximum limit of 20 characters reached.
                       </p>
                     )}
                   </div>
@@ -1729,13 +1819,10 @@ export default function LandingPage() {
                         required
                         value={signupEmail}
                         onChange={(e) => setSignupEmail(e.target.value.toLowerCase().trim())}
-                        placeholder="alexander@acmeglobal.com"
+                        placeholder="sarah@company.com"
                         className="w-full bg-[#0D0F12] border border-[#262A30] rounded-xl pl-10 pr-3 py-2.5 text-xs text-[#F8FAFC] placeholder:text-[#64748B] focus:outline-hidden focus:ring-2 focus:ring-[#94A3B8] transition-all"
                       />
                     </div>
-                    <p className="text-[10px] text-[#64748B] mt-1">
-                      Stored in standard lowercase format for verified workspace notifications.
-                    </p>
                   </div>
 
                   {/* Field c: Active Phone Number */}
@@ -1869,9 +1956,6 @@ export default function LandingPage() {
                         {showSignupConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#64748B] mt-1">
-                      Must match the password entered above exactly to prevent login lockout.
-                    </p>
                   </div>
 
                   {/* Signup Error Banner */}

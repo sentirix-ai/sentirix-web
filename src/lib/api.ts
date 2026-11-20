@@ -418,16 +418,17 @@ export async function purgeWorkspaceOnLogout(identifier: string): Promise<void> 
 }
 
 export async function checkMemberStatus(userId: string): Promise<boolean> {
+  if (!userId) return false;
   try {
     const res = await fetch(
       `${API_BASE_URL}/workspace/member-status?userId=${encodeURIComponent(userId)}`,
       { cache: 'no-store' },
     );
-    if (!res.ok) return true;
+    if (!res.ok) return false;
     const data = await res.json();
     return !!data.active;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -653,6 +654,34 @@ export async function fetchLeaderTokenStatus(token: string, sessionId?: string):
   }
 }
 
+export async function togglePodQuotaLock(payload: {
+  token: string;
+  chosenSubordinates: number;
+  lock: boolean;
+  sessionId?: string;
+}): Promise<{
+  valid?: boolean;
+  success?: boolean;
+  error?: string;
+  quotaStats?: any;
+  workspace?: any;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/toggle-pod-quota-lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.message || 'Failed to toggle quota lock.' };
+    }
+    return { success: true, ...data };
+  } catch {
+    return { success: false, error: 'Network error.' };
+  }
+}
+
 export async function lockLeaderQuota(payload: {
   token: string;
   fullName: string;
@@ -791,6 +820,45 @@ export async function completeOnboarding(identifier: string): Promise<{ success:
   }
 }
 
+export async function saveOnboardingDraft(identifier: string, draft: any): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/onboarding-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, draft }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchOnboardingDraft(identifier: string): Promise<any> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/onboarding-draft?identifier=${encodeURIComponent(identifier)}`,
+      { cache: 'no-store' },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.draft || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteOnboardingDraft(identifier: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/workspace/onboarding-draft?identifier=${encodeURIComponent(identifier)}`,
+      { method: 'DELETE' },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function validateServiceSemantic(payload: {
   originalService: string;
   newServiceName: string;
@@ -856,8 +924,31 @@ export async function regenerateToken(
   }
 }
 
-
-
+export async function adminForceLogoutUser(
+  userId?: string,
+  username?: string,
+  token?: string,
+  requesterIdentifier?: string,
+): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/workspace/force-logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, username, token, requesterIdentifier }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err.message || 'Failed to force logout user.' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, error: 'Network error connecting to backend.' };
+  }
+}
 
 export async function cleanupDemoTickets(): Promise<{ count: number }> {
   try {
