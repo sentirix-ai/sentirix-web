@@ -387,14 +387,6 @@ export default function TitaniumOnboardingPage() {
       return;
     }
 
-    // Verify user account still exists in database (not wiped or frozen)
-    checkMemberStatus(active.id || active.username || active.email).then((isActive) => {
-      if (!isActive) {
-        logoutUser();
-        window.location.href = '/';
-      }
-    });
-
     setLocalSession(active);
     setIsVerifying(false);
 

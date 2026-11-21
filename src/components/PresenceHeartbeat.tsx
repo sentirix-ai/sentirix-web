@@ -79,42 +79,8 @@ export default function PresenceHeartbeat() {
       );
     } catch {}
 
-    // 5. Handle browser or tab close (Close Browser detection)
-    const handleBrowserClose = () => {
-      // If manual logout button was pressed, do not overwrite MANUAL_LOGOUT
-      if (sessionStorage.getItem('is_manual_logout') === 'true') {
-        return;
-      }
-
-      const current = getSession();
-      if (!current?.id) return;
-
-      const payload = JSON.stringify({ userId: current.id, reason: 'BROWSER_CLOSED' });
-
-      // Reliable browser-close delivery via keepalive fetch
-      try {
-        fetch(`${API_BASE_URL}/auth/logout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: payload,
-          keepalive: true,
-        });
-      } catch {}
-
-      // Fallback via sendBeacon
-      try {
-        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-          const blob = new Blob([payload], { type: 'application/json' });
-          navigator.sendBeacon(`${API_BASE_URL}/auth/logout`, blob);
-          navigator.sendBeacon(`${API_BASE_URL}/auth/beacon-logout?userId=${encodeURIComponent(current.id)}`, new Blob([payload], { type: 'text/plain' }));
-        }
-      } catch {}
-    };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
-    window.addEventListener('pagehide', handleBrowserClose);
-    window.addEventListener('beforeunload', handleBrowserClose);
 
     return () => {
       clearInterval(interval);
@@ -123,8 +89,6 @@ export default function PresenceHeartbeat() {
       } catch {}
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
-      window.removeEventListener('pagehide', handleBrowserClose);
-      window.removeEventListener('beforeunload', handleBrowserClose);
     };
   }, []);
 

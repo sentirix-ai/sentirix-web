@@ -418,17 +418,21 @@ export async function purgeWorkspaceOnLogout(identifier: string): Promise<void> 
 }
 
 export async function checkMemberStatus(userId: string): Promise<boolean> {
-  if (!userId) return false;
+  if (!userId) return true;
   try {
     const res = await fetch(
       `${API_BASE_URL}/workspace/member-status?userId=${encodeURIComponent(userId)}`,
       { cache: 'no-store' },
     );
-    if (!res.ok) return false;
+    if (!res.ok) {
+      // If server is momentarily busy or network is reloading, do not falsely log out user
+      return true;
+    }
     const data = await res.json();
-    return !!data.active;
+    return data.active !== false;
   } catch {
-    return false;
+    // Network error or aborted fetch during F5 refresh -> do NOT log out user
+    return true;
   }
 }
 
@@ -1078,6 +1082,7 @@ export async function createSpecializedPod(payload: {
   services?: string[];
   quota?: number;
   organizationId?: string;
+  requesterIdentifier?: string;
 }): Promise<{
   success: boolean;
   message?: string;

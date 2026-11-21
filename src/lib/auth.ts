@@ -202,65 +202,10 @@ export async function registerUser(params: {
         : errData.message || 'Registration failed.';
       return { success: false, error: message };
     }
-  } catch {
-    // 2. Resilient Offline Local Fallback
-    const existingUsers = getRegisteredUsers();
-    const lowerUsername = cleanUsername;
-    const lowerEmail = cleanEmail;
-
-    if (
-      lowerUsername === 'pungkyrama' ||
-      existingUsers.some((u) => u.username.toLowerCase() === lowerUsername)
-    ) {
-      return { success: false, error: `Username "@${lowerUsername}" is already registered. Please choose another username or log in.` };
-    }
-
-    if (existingUsers.some((u) => u.email.toLowerCase() === lowerEmail)) {
-      return { success: false, error: `An account with email "${lowerEmail}" is already registered. Please log in.` };
-    }
-
-    const passwordHash = await hashPassword(params.password);
-    const newUser: StoredUser = {
-      username: lowerUsername,
-      email: lowerEmail,
-      phone: cleanPhone,
-      role: 'USER',
-      verificationMethod: params.verificationMethod,
-      isVerified: true,
-      avatarText: lowerUsername.slice(0, 2).toUpperCase(),
-      passwordHash,
-      createdAt: new Date().toISOString(),
-      onboardingCompleted: false,
-    };
-
-    existingUsers.push(newUser);
-    saveRegisteredUsers(existingUsers);
-
-    try {
-      localStorage.removeItem(`sentirix_onboarding_draft_${lowerUsername}`);
-      localStorage.removeItem(`sentirix_onboarding_draft_${lowerEmail}`);
-      localStorage.removeItem('sentirix_onboarding_step');
-      localStorage.removeItem('sentirix_pending_tokens');
-      localStorage.removeItem('sentirix_dispatched_tokens');
-      localStorage.removeItem('sentirix_regenerated_tokens');
-      localStorage.removeItem('sentirix_planned_capacity');
-    } catch {}
-
-    const fallbackSession: UserSession = {
-      username: newUser.username,
-      email: newUser.email,
-      phone: newUser.phone,
-      role: newUser.role,
-      verificationMethod: newUser.verificationMethod,
-      isVerified: newUser.isVerified,
-      avatarText: newUser.avatarText,
-      onboardingCompleted: false,
-    };
-    setSession(fallbackSession);
-
+  } catch (err) {
     return {
-      success: true,
-      user: fallbackSession,
+      success: false,
+      error: 'Unable to connect to Sentirix server. Please make sure the backend server is running.',
     };
   }
 }
@@ -543,8 +488,8 @@ export async function sendHeartbeat(userId: string): Promise<boolean> {
     });
     if (!res.ok) return false;
     const data = await res.json();
-    if (data.active === false) {
-      // User or database wiped or account suspended -> purge session immediately & redirect
+    if (data.active === false && (data.reason === 'ADMIN_FORCE_LOGOUT' || data.reason === 'USER_NOT_FOUND')) {
+      // User wiped from database or session revoked by Super Admin -> purge session immediately & redirect
       await logoutUser(userId);
       if (typeof window !== 'undefined' && window.location.pathname !== '/' && !window.location.pathname.startsWith('/join')) {
         window.location.href = '/';

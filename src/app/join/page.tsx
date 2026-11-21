@@ -161,14 +161,6 @@ function JoinWorkspaceContent() {
                       setLeaderLockedResult(parsed);
                     }
                   } catch {}
-                } else if (res.workspace?.isQuotaLocked && res.agentTokens && res.agentTokens.length > 0) {
-                  const autoRestored = {
-                    workspaceName: res.workspace.name,
-                    assignedQuota: res.workspace.assignedQuota || res.agentTokens.length + 1,
-                    agentTokens: res.agentTokens,
-                  };
-                  sessionStorage.setItem(`sentirix_leader_locked_${token}`, JSON.stringify(autoRestored));
-                  setLeaderLockedResult(autoRestored);
                 }
 
                 // Restore persistent copiedTokens
@@ -750,16 +742,16 @@ function JoinWorkspaceContent() {
                     
                     const sessionData = {
                       ...(cur || {}),
-                      id: leaderUser?.id || cur?.id || `leader_${token}`,
-                      username: leaderUser?.username || cur?.username || `leader_${token.slice(0, 8)}`,
-                      fullName: leaderName,
-                      email: leaderUser?.email || cur?.email || `leader@sentrix.local`,
+                      id: cur?.id || leaderUser?.id || tokenData?.existingLeaderId || `leader_${token}`,
+                      username: cur?.username || leaderUser?.username || tokenData?.existingLeaderUsername || `leader_${token.slice(0, 8)}`,
+                      fullName: cur?.fullName || leaderName,
+                      email: cur?.email || leaderUser?.email || `leader@sentrix.local`,
                       role: 'LEADER' as const,
                       workspaceRole: 'LEADER',
                       isVerified: true,
-                      avatarText: leaderName.slice(0, 2).toUpperCase(),
+                      avatarText: (cur?.fullName || leaderName).slice(0, 2).toUpperCase(),
                       onboardingCompleted: true,
-                      workspaceId: tokenData?.workspace?.id || cur?.workspaceId,
+                      workspaceId: cur?.workspaceId || tokenData?.workspace?.id,
                     };
                     setSession(sessionData);
                   } catch {}
