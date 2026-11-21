@@ -360,7 +360,7 @@ export default function LandingPage() {
   useEffect(() => {
     const session = getSession();
     if (session) {
-      if (!session.onboardingCompleted && session.role !== 'ADMIN') {
+      if (!session.onboardingCompleted && session.role !== 'SUPER_ADMIN' && session.role !== 'ADMIN') {
         const uName = (session.username || '').toLowerCase();
         let targetStep = 1;
 
@@ -398,12 +398,12 @@ export default function LandingPage() {
 
       // 1. Check if user has an unfinished Step 4 Token Distribution session (Resilient restore on browser reopen/crash)
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
-      if (pendingStep === '4' || (!session.onboardingCompleted && session.role === 'ADMIN')) {
+      if (pendingStep === '4' || (!session.onboardingCompleted && (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN'))) {
         router.push('/onboarding?step=4');
         return;
       }
 
-      if (session.role === 'ADMIN') {
+      if (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') {
         router.push('/admin/cockpit');
       } else if (session.isGuestMember || session.onboardingCompleted) {
         router.push('/dashboard');
@@ -483,9 +483,9 @@ export default function LandingPage() {
       }
 
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
-      if (pendingStep === '4' || (!res.user?.onboardingCompleted && res.user?.role === 'ADMIN')) {
+      if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN'))) {
         router.push('/onboarding?step=4');
-      } else if (res.user?.role === 'ADMIN') {
+      } else if (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') {
         router.push('/admin/cockpit');
       } else if (res.user?.isGuestMember || res.user?.onboardingCompleted) {
         router.push('/dashboard');

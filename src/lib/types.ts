@@ -64,6 +64,13 @@ export interface WorkspaceMember {
   freshTokenReady?: boolean;
 }
 
+export interface PendingInviteToken {
+  id: string;
+  token: string;
+  role: string;
+  createdAt?: string | Date;
+}
+
 export interface WorkspaceData {
   workspaceId: string;
   name: string;
@@ -77,6 +84,7 @@ export interface WorkspaceData {
   isLeader?: boolean;
   isQuotaLocked?: boolean;
   assignedQuota?: number;
+  pendingTokens?: PendingInviteToken[];
 }
 
 export interface ValidateInviteResult {

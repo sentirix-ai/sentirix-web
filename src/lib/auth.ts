@@ -4,7 +4,7 @@ export interface UserSession {
   fullName?: string;
   email: string;
   phone?: string;
-  role: 'ADMIN' | 'USER' | 'LEADER';
+  role: 'SUPER_ADMIN' | 'POD_LEADER' | 'AGENT' | 'CUSTOMER' | 'ADMIN' | 'USER' | 'LEADER';
   workspaceRole?: string;
   isGuestMember?: boolean;
   workspaceId?: string;
@@ -475,7 +475,7 @@ export function setSession(session: UserSession): void {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: session.id,
-        role: session.role === 'ADMIN' ? 'SUPER_ADMIN' : 'AGENT',
+        role: session.role === 'SUPER_ADMIN' || session.role === 'ADMIN' ? 'SUPER_ADMIN' : session.role === 'POD_LEADER' || session.role === 'LEADER' ? 'POD_LEADER' : 'AGENT',
         workspaceId: session.workspaceId,
       }),
     }).catch(() => {});

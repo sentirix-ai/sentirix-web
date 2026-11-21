@@ -271,7 +271,7 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
             </div>
 
             {(!workspace.members || workspace.members.length === 0) ? (
-              <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+              <div className="text-center py-6 px-4 border border-dashed border-slate-200 rounded-xl bg-slate-50/50 mb-3">
                 <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                 <p className="text-xs font-semibold text-slate-700">No frontline agents have joined this pod yet</p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
@@ -279,7 +279,7 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="space-y-2 border border-slate-200 rounded-xl divide-y divide-slate-100">
+              <div className="space-y-2 border border-slate-200 rounded-xl divide-y divide-slate-100 mb-3">
                 {workspace.members.map((member: WorkspaceMember) => {
                   const isMemberLoggedOut = !member.isOnline;
                   const memberNeedsRegen = isMemberLoggedOut && (member.needsRegeneration ?? true);
@@ -430,48 +430,118 @@ export const TeamInviteModal: React.FC<TeamInviteModalProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
 
-                {/* Empty Seat Slot if pod is not full */}
-                {workspace.remainingSeats > 0 && (
-                  <div className="p-3.5 flex items-center justify-between bg-slate-50 border-t border-dashed border-slate-300 rounded-b-xl gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-slate-200 border-2 border-dashed border-slate-300 text-slate-400 flex items-center justify-center shrink-0">
-                        <UserPlus className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                          <span>Unclaimed Seat ({workspace.remainingSeats} Seat{workspace.remainingSeats > 1 ? 's' : ''} Available)</span>
-                          {workspace.inviteToken && (
-                            <span className="font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
-                              {workspace.inviteToken}
-                            </span>
+            {/* Pre-Allocated Pending Activation Tokens for Frontline Agents */}
+            {workspace.pendingTokens && workspace.pendingTokens.length > 0 && (
+              <div className="border border-indigo-200/80 rounded-xl bg-white shadow-xs overflow-hidden mt-3">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100 flex items-center justify-between text-xs font-bold text-indigo-950">
+                  <span className="flex items-center gap-2">
+                    <UserPlus className="w-4 h-4 text-indigo-600" />
+                    <span>Pending Activation Frontline Tokens ({workspace.pendingTokens.length})</span>
+                  </span>
+                  <span className="text-[11px] text-indigo-600 font-medium hidden sm:inline">
+                    Single-Use Agent Onboarding Links
+                  </span>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {workspace.pendingTokens.map((tok, idx) => {
+                    const isTokCopied = copiedMemberToken === tok.token;
+                    return (
+                      <div
+                        key={tok.id || tok.token}
+                        className="p-3.5 flex items-center justify-between hover:bg-slate-50/80 transition-colors gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
+                            #{idx + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                                {tok.token}
+                              </span>
+                              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.2 rounded">
+                                Pending Activation
+                              </span>
+                              <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.2 rounded border border-blue-200">
+                                Frontline Agent
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-1">
+                              Pre-allocated single-use token ready for frontline agent #{idx + 1}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMemberLink(tok.token, `Agent #${idx + 1}`)}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 ${
+                            isTokCopied
+                              ? 'bg-emerald-600 border-emerald-600 text-white'
+                              : 'bg-blue-600 hover:bg-blue-700 border-blue-600 text-white shadow-xs'
+                          }`}
+                        >
+                          {isTokCopied ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-white" />
+                              <span>Link Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Link</span>
+                            </>
                           )}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          Pre-allocated single-use token ready for frontline agent onboarding
-                        </div>
+                        </button>
                       </div>
-                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-                    <button
-                      type="button"
-                      onClick={handleCopyGeneralLink}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
-                    >
-                      {copiedGeneralToken ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-white" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <LinkIcon className="w-3.5 h-3.5" />
-                          <span>Copy Invite Link</span>
-                        </>
-                      )}
-                    </button>
+            {/* Fallback Unclaimed Seat Slot if seats remain and no pending tokens list */}
+            {workspace.remainingSeats > (workspace.pendingTokens?.length || 0) && (
+              <div className="p-3.5 flex items-center justify-between bg-slate-50 border border-dashed border-slate-300 rounded-xl gap-3 mt-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-slate-200 border-2 border-dashed border-slate-300 text-slate-400 flex items-center justify-center shrink-0">
+                    <UserPlus className="w-4 h-4 text-slate-500" />
                   </div>
-                )}
+                  <div>
+                    <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                      <span>Unclaimed Seat ({workspace.remainingSeats} Seat{workspace.remainingSeats > 1 ? 's' : ''} Available)</span>
+                      {workspace.inviteToken && (
+                        <span className="font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200">
+                          {workspace.inviteToken}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Pre-allocated single-use token ready for frontline agent onboarding
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyGeneralLink}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                >
+                  {copiedGeneralToken ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-white" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="w-3.5 h-3.5" />
+                      <span>Copy Invite Link</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>

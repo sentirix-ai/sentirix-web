@@ -53,10 +53,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   organizationName,
   industry,
 }) => {
-  const isSuperAdmin = user?.username?.toLowerCase() === 'pungkyrama' || (user?.role === 'ADMIN' && !(user as any)?.workspaceId);
+  const isSuperAdmin = user?.username?.toLowerCase() === 'pungkyrama' || user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && !(user as any)?.workspaceId);
   const isLeader =
     !isSuperAdmin &&
-    (user?.role === 'LEADER' ||
+    (user?.role === 'POD_LEADER' ||
+      user?.role === 'LEADER' ||
       (user as any)?.workspaceRole === 'LEADER' ||
       workspace?.isLeader === true);
   const isAgent = !isSuperAdmin && !isLeader;

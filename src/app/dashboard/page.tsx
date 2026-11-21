@@ -89,7 +89,7 @@ export default function DashboardPage() {
     }
 
     // Strictly route Super Admins / Org Owners out of frontline helpdesk
-    if (session.role === 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+    if ((session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') && session.username.toLowerCase() !== 'pungkyrama') {
       if (!session.onboardingCompleted) {
         router.push('/onboarding?step=4');
       } else {
@@ -98,10 +98,11 @@ export default function DashboardPage() {
       return;
     }
 
-    const isSuperAdmin = session.username.toLowerCase() === 'pungkyrama' || (session.role === 'ADMIN' && !(session as any).workspaceId);
+    const isSuperAdmin = session.username.toLowerCase() === 'pungkyrama' || session.role === 'SUPER_ADMIN' || (session.role === 'ADMIN' && !(session as any).workspaceId);
     const isLeader =
       !isSuperAdmin &&
-      (session.role === 'LEADER' ||
+      (session.role === 'POD_LEADER' ||
+        session.role === 'LEADER' ||
         (session as any).workspaceRole === 'LEADER' ||
         (!session.isGuestMember && !!(session as any).workspaceId));
     const isGuest = !!session.isGuestMember && !isLeader;

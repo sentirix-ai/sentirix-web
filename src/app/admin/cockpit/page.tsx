@@ -3262,7 +3262,7 @@ export default function SuperAdminCockpitPage() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">Pod Capacity Requirement</h3>
-                    <p className="text-[11px] text-slate-400">Frontline Density &amp; Expansion Policy</p>
+                    <p className="text-[11px] text-slate-400">Pod Capacity Policy</p>
                   </div>
                 </div>
                 <button
@@ -3278,15 +3278,15 @@ export default function SuperAdminCockpitPage() {
               <div className="p-6 space-y-4">
                 <div className="bg-amber-950/30 border border-amber-700/40 rounded-xl p-3.5 text-xs text-amber-300/90 leading-relaxed">
                   <div className="font-semibold text-amber-200 mb-1 flex items-center gap-1.5">
-                    <span>Cannot Deploy Additional Pod</span>
+                    <span>Additional Pod Locked</span>
                   </div>
-                  All existing pods must reach full capacity (8 members per pod: 1 Leader + 7 Agents) before unlocking an additional operational pod.
+                  All current pods must reach full capacity (8 members: 1 Leader + 7 Agents) before you can deploy a new pod.
                 </div>
 
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active Roster</div>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Active Members</div>
                     <div className="text-sm font-bold text-white mt-1">
                       {totalActiveMembersAcrossPods} <span className="text-[11px] font-normal text-slate-400">Members</span>
                     </div>
@@ -3294,7 +3294,7 @@ export default function SuperAdminCockpitPage() {
                   <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
                     <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Required</div>
                     <div className="text-sm font-bold text-emerald-400 mt-1">
-                      {requiredCapacityToUnlockNextPod} <span className="text-[11px] font-normal text-slate-400">({currentPodsCount}×8)</span>
+                      {requiredCapacityToUnlockNextPod} <span className="text-[11px] font-normal text-slate-400">Active Members</span>
                     </div>
                   </div>
                   <div className="bg-[#0B0F19] border border-slate-800 rounded-xl p-3 text-center">
@@ -3307,10 +3307,10 @@ export default function SuperAdminCockpitPage() {
 
                 <div className="text-xs text-slate-400 leading-relaxed bg-[#0B0F19] border border-slate-800 rounded-xl p-3.5 space-y-2">
                   <p>
-                    Your organization currently operates <span className="font-semibold text-slate-200">{currentPodsCount} {currentPodsCount === 1 ? 'pod' : 'pods'}</span> with a combined roster of <span className="font-semibold text-slate-200">{totalActiveMembersAcrossPods} active members</span>.
+                    You currently have <span className="font-semibold text-slate-200">{totalActiveMembersAcrossPods} active members</span> across <span className="font-semibold text-slate-200">{currentPodsCount} {currentPodsCount === 1 ? 'pod' : 'pods'}</span>.
                   </p>
                   <p>
-                    To unlock <span className="font-semibold text-blue-400">Pod #{nextPodSequenceNumber}</span>, you must recruit or assign <span className="font-semibold text-amber-300">{podMembersDeficit} more member{podMembersDeficit > 1 ? 's' : ''}</span> until all existing {currentPodsCount === 1 ? 'pod is' : 'pods are'} filled to maximum capacity ({requiredCapacityToUnlockNextPod} members total).
+                    To unlock <span className="font-semibold text-blue-400">Pod #{nextPodSequenceNumber}</span>, please invite <span className="font-semibold text-amber-300">{podMembersDeficit} more member{podMembersDeficit > 1 ? 's' : ''}</span> so all existing pods reach full capacity ({requiredCapacityToUnlockNextPod} active members total).
                   </p>
                 </div>
               </div>
