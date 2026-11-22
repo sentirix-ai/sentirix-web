@@ -10,6 +10,7 @@ import {
   WorkspaceData,
   OwnerAnalyticsData,
   PodInfo,
+  AttachmentPayload,
 } from '../../lib/types';
 import {
   fetchTickets,
@@ -491,13 +492,52 @@ export default function DashboardPage() {
     }
   };
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSendMessage = async (
     content: string,
     type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
+    attachedFile?: File | null,
   ) => {
     if (!selectedTicket) return;
     const senderName = user?.username || 'Marcus Vance';
-    const newMsg = await createMessage(selectedTicket.id, content, type);
+
+    let attachments: AttachmentPayload[] | undefined = undefined;
+    let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } | undefined = undefined;
+
+    if (attachedFile) {
+      try {
+        const base64Data = await fileToBase64(attachedFile);
+        attachments = [{
+          fileName: attachedFile.name,
+          mimeType: attachedFile.type || 'image/png',
+          data: base64Data,
+        }];
+        attachmentMeta = {
+          attachmentName: attachedFile.name,
+          attachmentType: attachedFile.type || 'image/png',
+          attachmentData: base64Data,
+        };
+      } catch (e) {
+        console.warn('Failed to parse attached file', e);
+      }
+    }
+
+    const newMsg = await createMessage(
+      selectedTicket.id,
+      content,
+      type,
+      false,
+      attachments,
+      attachmentMeta,
+    );
     newMsg.senderName = type === 'INTERNAL_NOTE' ? `${senderName} (Internal)` : senderName;
     setMessages((prev) => [...prev, newMsg]);
     // Clear draft for this ticket upon successful send
@@ -522,7 +562,16 @@ export default function DashboardPage() {
       ? `Email: ${payload.customerEmail.trim()} | Phone: ${payload.customerPhone.trim()}`
       : `Email: ${payload.customerEmail.trim()}`;
     const refInfo = payload.referenceId?.trim() ? ` | Order/TRX: ${payload.referenceId.trim()}` : '';
-    const fullDescription = `${payload.description.trim()}\n\n[Customer Contact: ${contactInfo}${refInfo}]`;
+    const fileInfo = payload.attachedFile
+      ? ` | Attachment: ${payload.attachedFile.name} (${
+          payload.attachedFile.size < 1024
+            ? payload.attachedFile.size + ' B'
+            : payload.attachedFile.size < 1024 * 1024
+            ? (payload.attachedFile.size / 1024).toFixed(1) + ' KB'
+            : (payload.attachedFile.size / (1024 * 1024)).toFixed(1) + ' MB'
+        })`
+      : '';
+    const fullDescription = `${payload.description.trim()}\n\n[Customer Contact: ${contactInfo}${refInfo}${fileInfo}]`;
     const tags = ['agent-inbound', 'customer-care'];
     if (payload.referenceId?.trim()) {
       tags.push(`ref:${payload.referenceId.trim().replace(/\s+/g, '_')}`);
@@ -533,6 +582,27 @@ export default function DashboardPage() {
         ? selectedPodId
         : (user as any)?.workspaceId || undefined;
 
+    let attachments: AttachmentPayload[] | undefined = undefined;
+    let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } = {};
+
+    if (payload.attachedFile) {
+      try {
+        const base64Data = await fileToBase64(payload.attachedFile);
+        attachments = [{
+          fileName: payload.attachedFile.name,
+          mimeType: payload.attachedFile.type || 'image/png',
+          data: base64Data,
+        }];
+        attachmentMeta = {
+          attachmentName: payload.attachedFile.name,
+          attachmentType: payload.attachedFile.type || 'image/png',
+          attachmentData: base64Data,
+        };
+      } catch (err) {
+        console.warn('Failed to read file as base64', err);
+      }
+    }
+
     const created = await createTicket({
       title: payload.title,
       description: fullDescription,
@@ -540,6 +610,8 @@ export default function DashboardPage() {
       tags,
       customerId: `cust-${Date.now().toString(36)}`,
       workspaceId: targetWorkspaceId,
+      attachments,
+      ...attachmentMeta,
     });
     setTickets((prev) => [created, ...prev]);
     setSelectedTicket(created);

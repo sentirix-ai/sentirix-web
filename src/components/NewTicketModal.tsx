@@ -12,6 +12,8 @@ import {
   Ticket as TicketIcon,
   Sparkles,
   Hash,
+  Paperclip,
+  UploadCloud,
 } from 'lucide-react';
 
 export interface NewTicketPayload {
@@ -21,6 +23,7 @@ export interface NewTicketPayload {
   customerEmail: string;
   customerPhone?: string;
   referenceId?: string;
+  attachedFile?: File | null;
 }
 
 interface NewTicketModalProps {
@@ -37,9 +40,35 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({ isOpen, onClose,
   const [referenceId, setReferenceId] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('File size exceeds 10MB limit. Please choose a smaller image or PDF document.');
+      return;
+    }
+    setAttachedFile(file);
+    setErrorMessage(null);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFileSelect(e.dataTransfer.files);
+  };
 
   // Silicon Valley Keyboard Shortcuts: Esc to close, ⌘/Ctrl + Enter to submit
   useEffect(() => {
@@ -91,6 +120,7 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({ isOpen, onClose,
         customerEmail: customerEmail.trim(),
         customerPhone: customerPhone.trim() || undefined,
         referenceId: referenceId.trim() || undefined,
+        attachedFile: attachedFile || undefined,
       });
 
       // Reset form on success
@@ -100,6 +130,7 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({ isOpen, onClose,
       setReferenceId('');
       setTitle('');
       setDescription('');
+      setAttachedFile(null);
       onClose();
     } catch {
       setErrorMessage('Failed to create ticket. Please verify system connection.');
@@ -272,6 +303,73 @@ export const NewTicketModal: React.FC<NewTicketModalProps> = ({ isOpen, onClose,
                 placeholder="Describe the customer issue, chronology of events, and initial agent troubleshooting observations..."
                 className="w-full text-xs p-3 bg-white border border-slate-200 rounded-lg text-slate-900 placeholder:text-slate-400 leading-relaxed font-sans shadow-2xs focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 resize-none transition-all"
               />
+            </div>
+
+            {/* Row 2.4: Attach Screenshot or Proof Document (Optional) */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Attach Screenshot or Proof Document{' '}
+                <span className="text-[10px] text-slate-400 font-normal ml-0.5">(Optional)</span>
+              </label>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={(e) => handleFileSelect(e.target.files)}
+              />
+
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`p-3 rounded-xl border-2 border-dashed transition-all cursor-pointer text-center ${
+                  isDragging
+                    ? 'border-[#2563EB] bg-blue-50/80 scale-[1.01]'
+                    : attachedFile
+                    ? 'border-emerald-300 bg-emerald-50/50'
+                    : 'border-slate-200 hover:border-[#2563EB] bg-white hover:bg-blue-50/30'
+                }`}
+              >
+                {attachedFile ? (
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-white rounded-lg border border-emerald-200 shadow-2xs">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-emerald-800 truncate">
+                      <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span className="truncate">{attachedFile.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono font-normal">
+                        ({formatFileSize(attachedFile.size)})
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAttachedFile(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="p-1 hover:bg-rose-100 rounded-md text-rose-600 transition-colors ml-2 cursor-pointer"
+                      title="Remove file"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 text-slate-500 py-1">
+                    <UploadCloud className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-xs font-medium text-slate-600">
+                      Drop screenshot or receipt PDF here, or <span className="text-blue-600 font-semibold underline">browse</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      (PNG, JPG, PDF up to 10MB)
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

@@ -106,12 +106,40 @@ export default function CustomerSupportPortalPage() {
 
       const fullDescription = `${description.trim()}\n\n[Contact: ${contactInfo}${refInfo}${fileInfo}]`;
 
+      let attachments: Array<{ fileName: string; mimeType: string; data: string }> | undefined = undefined;
+      let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } = {};
+
+      if (attachedFile) {
+        try {
+          const reader = new FileReader();
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(attachedFile);
+          });
+          attachments = [{
+            fileName: attachedFile.name,
+            mimeType: attachedFile.type || 'image/png',
+            data: base64Data,
+          }];
+          attachmentMeta = {
+            attachmentName: attachedFile.name,
+            attachmentType: attachedFile.type || 'image/png',
+            attachmentData: base64Data,
+          };
+        } catch (err) {
+          console.warn('Failed to encode attached file', err);
+        }
+      }
+
       const ticket = await createTicket({
         title: title.trim(),
         description: fullDescription,
         customerId: `cust-${Date.now().toString(36)}`,
         customerName: customerName.trim(),
         tags,
+        attachments,
+        ...attachmentMeta,
       });
 
       const now = new Date();

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Ticket, Message } from '../lib/types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Ticket, Message, AttachmentPayload } from '../lib/types';
 import { generateAiReply, summarizeThread } from '../lib/api';
 import {
   Sparkles,
@@ -13,6 +13,7 @@ import {
   Clock,
   ShieldCheck,
   User,
+  Eye,
 } from 'lucide-react';
 
 interface AiCopilotSidebarProps {
@@ -58,12 +59,33 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
     setSummaryPoints(cachedSummary || null);
   }, [ticket?.id]);
 
+  const activeAttachments = useMemo<AttachmentPayload[]>(() => {
+    const list: AttachmentPayload[] = [];
+    if (ticket?.attachmentData) {
+      list.push({
+        fileName: ticket.attachmentName || 'ticket-attachment',
+        mimeType: ticket.attachmentType || 'image/png',
+        data: ticket.attachmentData,
+      });
+    }
+    for (const msg of messages) {
+      if (msg.attachmentData) {
+        list.push({
+          fileName: msg.attachmentName || 'thread-attachment',
+          mimeType: msg.attachmentType || 'image/png',
+          data: msg.attachmentData,
+        });
+      }
+    }
+    return list;
+  }, [ticket, messages]);
+
   const handleGenerateDraft = async () => {
     if (!ticket) return;
     try {
       setIsDrafting(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
-      const result = await generateAiReply(ticket.title, ticket.description, history, tone);
+      const result = await generateAiReply(ticket.title, ticket.description, history, tone, activeAttachments);
       setAiDraft(result.draft);
       setGroundedSources(result.groundedSources);
       // Cache draft per ticket
@@ -81,7 +103,7 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
     try {
       setIsSummarizing(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
-      const result = await summarizeThread(ticket.title, history);
+      const result = await summarizeThread(ticket.title, history, activeAttachments);
       setSummaryPoints(result.bulletPoints);
       // Cache summary per ticket
       setSummariesByTicket((prev) => ({
@@ -119,6 +141,19 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
           RAG Ready
         </span>
       </div>
+
+      {/* Multimodal Document Detection Banner */}
+      {ticket && activeAttachments.length > 0 && (
+        <div className="mx-4 mt-3 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs shadow-2xs animate-fadeIn">
+          <div className="flex items-center gap-2 text-blue-900 font-semibold text-[11px]">
+            <Eye className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span>Multimodal Vision Active</span>
+          </div>
+          <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-white text-blue-700 rounded-md border border-blue-200 shadow-2xs">
+            {activeAttachments.length} {activeAttachments.length === 1 ? 'file' : 'files'}
+          </span>
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
         {/* SECTION 1: AI Reply Drafter matching dashboard.jpg */}
@@ -160,7 +195,13 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
             className="w-full flex items-center justify-center gap-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{isDrafting ? 'Generating Draft...' : 'Draft Response with AI'}</span>
+            <span>
+              {isDrafting
+                ? 'Generating Draft...'
+                : activeAttachments.length > 0
+                ? 'Draft with Visual AI'
+                : 'Draft Response with AI'}
+            </span>
           </button>
 
           {!ticket && (
@@ -223,7 +264,13 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
             className="w-full flex items-center justify-center gap-2 bg-[#F8FAFC] hover:bg-slate-100 text-slate-800 text-xs font-bold py-2.5 rounded-xl border border-slate-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <FileText className="w-3.5 h-3.5 text-slate-500" />
-            <span>{isSummarizing ? 'Summarizing Thread...' : 'Summarize Thread (3 Bullets)'}</span>
+            <span>
+              {isSummarizing
+                ? 'Synthesizing Visuals...'
+                : activeAttachments.length > 0
+                ? 'Summarize Thread & Docs'
+                : 'Summarize Thread (3 Bullets)'}
+            </span>
           </button>
 
           {!ticket && (

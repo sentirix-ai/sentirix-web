@@ -19,12 +19,18 @@ import {
   Layers,
   X,
   AlertCircle,
+  Paperclip,
+  Check,
 } from 'lucide-react';
 
 interface TicketDetailProps {
   ticket: Ticket | null;
   messages: Message[];
-  onSendMessage: (content: string, type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE') => Promise<void>;
+  onSendMessage: (
+    content: string,
+    type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
+    attachedFile?: File | null,
+  ) => Promise<void>;
   onStatusChange: (status: TicketStatus) => Promise<void>;
   collisionAgent: string | null;
   composerText: string;
@@ -55,6 +61,44 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
   const [activeTab, setActiveTab] = useState<'PUBLIC_REPLY' | 'INTERNAL_NOTE'>('PUBLIC_REPLY');
   const [isSending, setIsSending] = useState(false);
   const [ticketToConfirmClose, setTicketToConfirmClose] = useState<Ticket | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const handleFileSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size exceeds 10MB limit. Please choose a smaller image or PDF document.');
+      return;
+    }
+    setAttachedFile(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!ticket) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const file = new File([blob], `pasted_screenshot_${Date.now()}.png`, { type: blob.type });
+          if (file.size > 10 * 1024 * 1024) {
+            alert('Pasted screenshot exceeds 10MB limit.');
+            return;
+          }
+          setAttachedFile(file);
+          break;
+        }
+      }
+    }
+  };
 
   const handleAttemptCloseTab = (tabTicket: Ticket) => {
     // If ticket is already resolved or pending, close immediately without prompting
@@ -133,12 +177,19 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticket || !composerText.trim() || isSending) return;
+    if (!ticket || (!composerText.trim() && !attachedFile) || isSending) return;
 
     try {
       setIsSending(true);
-      await onSendMessage(composerText, activeTab);
+      let messageContent = composerText.trim();
+      if (attachedFile) {
+        const fileTag = `[Attachment: ${attachedFile.name} (${formatFileSize(attachedFile.size)})]`;
+        messageContent = messageContent ? `${messageContent}\n\n${fileTag}` : fileTag;
+      }
+      await onSendMessage(messageContent, activeTab, attachedFile);
       onComposerTextChange('');
+      setAttachedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } finally {
       setIsSending(false);
     }
@@ -341,8 +392,73 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
       {/* Messages Timeline matching dashboard.jpg */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white relative">
         {ticket ? (
-          messages.length > 0 ? (
-            messages.map((msg) => {
+          <>
+            {/* Root Inbound Ticket Request Card */}
+            <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
+                    {ticket.customerName ? ticket.customerName.charAt(0).toUpperCase() : 'C'}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900">
+                      {ticket.customerName || 'Inbound Requester'}
+                    </span>
+                    <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200/70 font-semibold px-2 py-0.5 rounded-md ml-2">
+                      Original Request
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[11px] text-slate-400 font-medium">
+                  {new Date(ticket.createdAt).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
+
+              <div className="text-xs leading-relaxed whitespace-pre-wrap pl-9 text-slate-800 font-medium">
+                {ticket.description}
+              </div>
+
+              {ticket.attachmentData && (
+                <div className="mt-3 ml-9 flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl max-w-md shadow-2xs">
+                  {ticket.attachmentType?.startsWith('image/') ? (
+                    <img
+                      src={ticket.attachmentData}
+                      alt={ticket.attachmentName || 'Visual proof'}
+                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[10px] shrink-0">
+                      <FileText className="w-4 h-4 text-rose-600" />
+                      <span>PDF</span>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-900 truncate">
+                      {ticket.attachmentName || 'Attached Proof Document'}
+                    </p>
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      Attached by Requester
+                    </span>
+                  </div>
+                  <a
+                    href={ticket.attachmentData}
+                    download={ticket.attachmentName || 'ticket-proof'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
+                  >
+                    View
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Subsequent Conversation Messages */}
+            {messages.map((msg) => {
               const isInternal = msg.type === 'INTERNAL_NOTE';
               return (
                 <div
@@ -385,20 +501,44 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                   <div className="text-xs leading-relaxed whitespace-pre-wrap pl-9 text-slate-800 font-medium">
                     {msg.content}
                   </div>
+
+                  {msg.attachmentData && (
+                    <div className="mt-3 ml-9 flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-w-md shadow-2xs">
+                      {msg.attachmentType?.startsWith('image/') ? (
+                        <img
+                          src={msg.attachmentData}
+                          alt={msg.attachmentName || 'Attachment preview'}
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[10px] shrink-0">
+                          <FileText className="w-4 h-4 text-rose-600" />
+                          <span>PDF</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 truncate">
+                          {msg.attachmentName || 'Attached Document'}
+                        </p>
+                        <span className="text-[10px] text-slate-400">
+                          {isInternal ? 'Internal team attachment' : 'Shared with customer'}
+                        </span>
+                      </div>
+                      <a
+                        href={msg.attachmentData}
+                        download={msg.attachmentName || 'document'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
+                      >
+                        View
+                      </a>
+                    </div>
+                  )}
                 </div>
               );
-            })
-          ) : (
-            <div className="h-full min-h-[250px] flex flex-col items-center justify-center text-center p-8 select-none">
-              <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 mb-2.5 shadow-2xs">
-                <TicketIcon className="w-5 h-5 text-slate-400" />
-              </div>
-              <h3 className="text-xs font-bold text-slate-700 mb-1">No Messages in Thread</h3>
-              <p className="text-[11px] text-slate-400 max-w-xs">
-                Type your first response in the composer below to begin customer engagement.
-              </p>
-            </div>
-          )
+            })}
+          </>
         ) : (
           <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center p-8 select-none">
             <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200/90 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
@@ -448,16 +588,25 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={(e) => handleFileSelect(e.target.files)}
+          />
+
           <textarea
             rows={3}
             value={ticket ? composerText : ''}
             onChange={(e) => onComposerTextChange(e.target.value)}
+            onPaste={handlePaste}
             disabled={!ticket}
             placeholder={
               !ticket
                 ? 'Select a ticket from the queue to compose a reply or add an internal note...'
                 : activeTab === 'PUBLIC_REPLY'
-                ? 'Type your official reply...'
+                ? 'Type your official reply (you can paste screenshots with Ctrl+V)...'
                 : 'Write an internal note for your team (customer will not see this)...'
             }
             className={`w-full text-xs p-3.5 rounded-xl border focus:outline-hidden focus:ring-2 resize-none transition-colors ${
@@ -469,18 +618,65 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
             }`}
           />
 
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-400 font-medium">
-              {!ticket
-                ? 'Composer standby — select a ticket to start messaging'
-                : activeTab === 'PUBLIC_REPLY'
-                ? 'Public reply will be emailed to customer'
-                : 'Private internal note for support & engineering team only'}
-            </span>
+          {attachedFile && (
+            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 animate-fadeIn">
+              <div className="flex items-center gap-2 truncate">
+                <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="font-semibold text-slate-900 truncate">{attachedFile.name}</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  ({formatFileSize(attachedFile.size)})
+                </span>
+                {activeTab === 'INTERNAL_NOTE' ? (
+                  <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
+                    Internal Only
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                    Public
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachedFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-slate-600 transition-colors ml-2 cursor-pointer"
+                title="Remove attachment"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!ticket}
+                className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 active:scale-95 rounded-lg transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 shadow-2xs shrink-0"
+                title={
+                  !ticket
+                    ? 'Select a ticket to attach file'
+                    : 'Attach screenshot or receipt document (or paste screenshot directly with Ctrl+V)'
+                }
+              >
+                <Paperclip className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] text-slate-400 font-medium">
+                {!ticket
+                  ? 'Composer standby — select a ticket to start messaging'
+                  : activeTab === 'PUBLIC_REPLY'
+                  ? 'Public reply will be emailed to customer'
+                  : 'Private internal note for support & engineering team only'}
+              </span>
+            </div>
             <button
               type="submit"
-              disabled={!ticket || isSending || !composerText.trim()}
-              className="flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-[#2563EB] hover:bg-[#1D4ED8]"
+              disabled={!ticket || isSending || (!composerText.trim() && !attachedFile)}
+              className="flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-[#2563EB] hover:bg-[#1D4ED8] shrink-0"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{isSending ? 'Sending...' : 'Send Reply'}</span>

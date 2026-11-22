@@ -3,6 +3,12 @@ export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type Sentiment = 'POSITIVE' | 'NEUTRAL' | 'FRUSTRATED' | 'URGENT';
 export type MessageType = 'PUBLIC_REPLY' | 'INTERNAL_NOTE' | 'SYSTEM_EVENT';
 
+export interface AttachmentPayload {
+  fileName: string;
+  mimeType: string;
+  data: string; // Base64 or Data URL
+}
+
 export interface Ticket {
   id: string;
   ticketNumber: number;
@@ -18,6 +24,9 @@ export interface Ticket {
   assignedAgentName?: string | null;
   workspaceId?: string | null;
   workspaceName?: string | null;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  attachmentData?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +39,9 @@ export interface Message {
   type: MessageType;
   content: string;
   aiGenerated: boolean;
+  attachmentName?: string | null;
+  attachmentType?: string | null;
+  attachmentData?: string | null;
   createdAt: string;
 }
 

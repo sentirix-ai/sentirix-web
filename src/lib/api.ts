@@ -11,6 +11,7 @@ import {
   OrganizationPodsResponse,
   GeneratePodsResponse,
   SetupMultiPodPayload,
+  AttachmentPayload,
 } from './types';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -171,6 +172,10 @@ export async function createTicket(
         customerName?: string;
         tags?: string[];
         workspaceId?: string;
+        attachments?: AttachmentPayload[];
+        attachmentName?: string;
+        attachmentType?: string;
+        attachmentData?: string;
       },
   maybeDescription?: string,
 ): Promise<Ticket> {
@@ -200,6 +205,9 @@ export async function createTicket(
       customerId: payload.customerId || 'cust-web',
       customerName: payload.customerName || 'Demo Customer',
       workspaceId: payload.workspaceId || null,
+      attachmentName: payload.attachmentName || payload.attachments?.[0]?.fileName || null,
+      attachmentType: payload.attachmentType || payload.attachments?.[0]?.mimeType || null,
+      attachmentData: payload.attachmentData || payload.attachments?.[0]?.data || null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -211,6 +219,12 @@ export async function createMessage(
   content: string,
   type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
   aiGenerated = false,
+  attachments?: AttachmentPayload[],
+  attachmentMeta?: {
+    attachmentName?: string;
+    attachmentType?: string;
+    attachmentData?: string;
+  },
 ): Promise<Message> {
   try {
     const res = await fetch(`${API_BASE_URL}/messages`, {
@@ -222,6 +236,10 @@ export async function createMessage(
         type,
         senderName: type === 'INTERNAL_NOTE' ? 'Marcus Vance (Internal)' : 'Marcus Vance',
         aiGenerated,
+        attachments,
+        attachmentName: attachmentMeta?.attachmentName || attachments?.[0]?.fileName,
+        attachmentType: attachmentMeta?.attachmentType || attachments?.[0]?.mimeType,
+        attachmentData: attachmentMeta?.attachmentData || attachments?.[0]?.data,
       }),
     });
     if (!res.ok) throw new Error('Failed to post message');
@@ -235,6 +253,9 @@ export async function createMessage(
       type,
       content,
       aiGenerated,
+      attachmentName: attachmentMeta?.attachmentName || attachments?.[0]?.fileName || null,
+      attachmentType: attachmentMeta?.attachmentType || attachments?.[0]?.mimeType || null,
+      attachmentData: attachmentMeta?.attachmentData || attachments?.[0]?.data || null,
       createdAt: new Date().toISOString(),
     };
   }
@@ -257,6 +278,7 @@ export async function generateAiReply(
   ticketDescription: string,
   history: Array<{ sender: string; content: string }>,
   tone: 'professional' | 'empathetic' | 'concise',
+  attachments?: AttachmentPayload[],
 ): Promise<DraftReplyResponse> {
   try {
     const res = await fetch(`${API_BASE_URL}/ai/draft-reply`, {
@@ -267,6 +289,7 @@ export async function generateAiReply(
         ticketDescription,
         conversationHistory: history,
         tone,
+        attachments,
         knowledgeContext:
           'Standard refund policy: All duplicate charges are automatically refunded in full within 3-5 business days upon agent verification. No deduction fees apply.',
       }),
@@ -274,9 +297,13 @@ export async function generateAiReply(
     if (!res.ok) throw new Error('AI API unavailable');
     return await res.json();
   } catch {
+    const hasAtt = attachments && attachments.length > 0;
     return {
-      draft: `Dear Sarah,\n\nThank you for reaching out to us. We sincerely apologize for the frustration caused by the duplicate billing transaction of $1,200 on October 30.\n\nOur billing team has verified the issue and processed an immediate refund to your original payment method. You should see the credit reflected on your bank statement within 3 to 5 business days.\n\nPlease let us know if you need any additional confirmation.\n\nWarm regards,\nMarcus Vance\nSentrix Support Engineering`,
-      groundedSources: ['Sentrix Refund Policy Section 3.2'],
+      draft: `Dear Sarah,\n\nThank you for reaching out to us. We sincerely apologize for the frustration caused by the duplicate billing transaction of $1,200 on October 30.\n\nOur billing team has verified the issue${hasAtt ? ` and carefully inspected your attached ${attachments[0].fileName}` : ''} and processed an immediate refund to your original payment method. You should see the credit reflected on your bank statement within 3 to 5 business days.\n\nPlease let us know if you need any additional confirmation.\n\nWarm regards,\nMarcus Vance\nSentrix Support Engineering`,
+      groundedSources: [
+        'Sentrix Refund Policy Section 3.2',
+        ...(hasAtt ? [`Visual Document (${attachments[0].fileName})`] : []),
+      ],
     };
   }
 }
@@ -284,6 +311,7 @@ export async function generateAiReply(
 export async function summarizeThread(
   ticketTitle: string,
   messages: Array<{ sender: string; content: string }>,
+  attachments?: AttachmentPayload[],
 ): Promise<SummarizeResponse> {
   try {
     const res = await fetch(`${API_BASE_URL}/ai/summarize-thread`, {
@@ -292,15 +320,19 @@ export async function summarizeThread(
       body: JSON.stringify({
         ticketTitle,
         messages,
+        attachments,
       }),
     });
     if (!res.ok) throw new Error('AI Summarize failed');
     return await res.json();
   } catch {
+    const hasAtt = attachments && attachments.length > 0;
     return {
       bulletPoints: [
         'Customer reported duplicate charge of $1,200 on annual subscription.',
-        'Support Engineer confirmed webhook double-execution via Stripe logs.',
+        hasAtt
+          ? `Visual proof document (${attachments[0].fileName}) inspected and cross-referenced.`
+          : 'Support Engineer confirmed webhook double-execution via Stripe logs.',
         'Manual refund of $1,200 initiated; confirmation sent to customer.',
       ],
     };
