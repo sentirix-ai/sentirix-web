@@ -12,6 +12,7 @@ import {
   BookOpen,
   Clock,
   ShieldCheck,
+  User,
 } from 'lucide-react';
 
 interface AiCopilotSidebarProps {
@@ -57,15 +58,8 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
     setSummaryPoints(cachedSummary || null);
   }, [ticket?.id]);
 
-  if (!ticket) {
-    return (
-      <aside className="w-88 border-l border-slate-200 bg-white p-6 flex items-center justify-center text-xs text-slate-400 shrink-0">
-        AI Copilot will activate once a ticket is selected.
-      </aside>
-    );
-  }
-
   const handleGenerateDraft = async () => {
+    if (!ticket) return;
     try {
       setIsDrafting(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
@@ -83,6 +77,7 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
   };
 
   const handleSummarize = async () => {
+    if (!ticket) return;
     try {
       setIsSummarizing(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
@@ -161,14 +156,20 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
           <button
             type="button"
             onClick={handleGenerateDraft}
-            disabled={isDrafting}
-            className="w-full flex items-center justify-center gap-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+            disabled={!ticket || isDrafting}
+            className="w-full flex items-center justify-center gap-2 bg-[#4F46E5] hover:bg-[#4338CA] text-white text-xs font-bold py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>{isDrafting ? 'Generating Draft...' : 'Draft Response with AI'}</span>
           </button>
 
-          {aiDraft && (
+          {!ticket && (
+            <p className="text-[10px] text-slate-400 text-center font-medium pt-1">
+              Select an active ticket to generate AI drafts
+            </p>
+          )}
+
+          {ticket && aiDraft && (
             <div className="mt-3 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-2 animate-fadeIn">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider">
@@ -218,14 +219,20 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
           <button
             type="button"
             onClick={handleSummarize}
-            disabled={isSummarizing}
-            className="w-full flex items-center justify-center gap-2 bg-[#F8FAFC] hover:bg-slate-100 text-slate-800 text-xs font-bold py-2.5 rounded-xl border border-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+            disabled={!ticket || isSummarizing}
+            className="w-full flex items-center justify-center gap-2 bg-[#F8FAFC] hover:bg-slate-100 text-slate-800 text-xs font-bold py-2.5 rounded-xl border border-slate-200 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <FileText className="w-3.5 h-3.5 text-slate-500" />
             <span>{isSummarizing ? 'Summarizing Thread...' : 'Summarize Thread (3 Bullets)'}</span>
           </button>
 
-          {summaryPoints && (
+          {!ticket && (
+            <p className="text-[10px] text-slate-400 text-center font-medium pt-1">
+              Select an active ticket to synthesize thread
+            </p>
+          )}
+
+          {ticket && summaryPoints && (
             <div className="mt-3 p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 animate-fadeIn">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                 Key Points
@@ -246,17 +253,38 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
             CUSTOMER PROFILE
           </span>
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-[#0F172A]">{ticket.customerName}</div>
-            <div className="text-[11px] text-slate-500 font-medium">Enterprise Plan - SLA: 2 Hours</div>
-          </div>
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500 font-medium flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              SLA Target
-            </span>
-            <span className="font-bold text-[#059669]">On Track (34m remaining)</span>
-          </div>
+          {ticket ? (
+            <>
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-[#0F172A]">{ticket.customerName}</div>
+                <div className="text-[11px] text-slate-500 font-medium">Enterprise Plan - SLA: 2 Hours</div>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                <span className="text-slate-500 font-medium flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  SLA Target
+                </span>
+                <span className="font-bold text-[#059669]">On Track (34m remaining)</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>No Active Customer Profile</span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-medium">SLA Monitor: Idle</div>
+              </div>
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                <span className="text-slate-400 font-medium flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  SLA Target
+                </span>
+                <span className="font-semibold text-slate-400">-- (Awaiting Ticket)</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </aside>

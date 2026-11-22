@@ -34,6 +34,7 @@ interface TicketDetailProps {
   onSelectTicketTab?: (ticket: Ticket) => void;
   onCloseTicketTab?: (ticketId: string) => void;
   onAddTicketTab?: () => void;
+  hasAvailableTickets?: boolean;
 }
 
 export const TicketDetail: React.FC<TicketDetailProps> = ({
@@ -49,6 +50,7 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
   onSelectTicketTab,
   onCloseTicketTab,
   onAddTicketTab,
+  hasAvailableTickets,
 }) => {
   const [activeTab, setActiveTab] = useState<'PUBLIC_REPLY' | 'INTERNAL_NOTE'>('PUBLIC_REPLY');
   const [isSending, setIsSending] = useState(false);
@@ -129,17 +131,9 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
     );
   };
 
-  if (!ticket) {
-    return (
-      <main className="flex-1 flex items-center justify-center bg-white text-slate-400 text-xs">
-        Select a ticket from the queue to view details and start resolving.
-      </main>
-    );
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!composerText.trim() || isSending) return;
+    if (!ticket || !composerText.trim() || isSending) return;
 
     try {
       setIsSending(true);
@@ -158,7 +152,7 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
           {openTicketTabs && openTicketTabs.length > 0 ? (
             openTicketTabs.map((tabTicket) => {
-              const isActive = tabTicket.id === ticket.id;
+              const isActive = ticket && tabTicket.id === ticket.id;
               return (
                 <div
                   key={tabTicket.id}
@@ -202,17 +196,24 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                 </div>
               );
             })
-          ) : null}
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 bg-slate-200/40 border border-slate-200/60">
+              <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0" />
+              <span>Standby — No Active Terminal</span>
+            </div>
+          )}
 
           {/* [+] Button to Add / Claim Next Ticket Terminal */}
           <button
             type="button"
             onClick={onAddTicketTab}
-            disabled={openTicketTabs && openTicketTabs.length >= 5}
+            disabled={(openTicketTabs && openTicketTabs.length >= 5) || hasAvailableTickets === false}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0"
             title={
               openTicketTabs && openTicketTabs.length >= 5
                 ? 'Maximum workload capacity reached (5/5 Terminals)'
+                : hasAvailableTickets === false
+                ? 'No queued tickets available to claim'
                 : 'Click to add another terminal and claim the next queued ticket'
             }
           >
@@ -228,13 +229,13 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
           <Layers className="w-3.5 h-3.5 text-blue-600" />
           <span>Workload:</span>
           <div className="flex items-center gap-1 font-mono font-bold text-slate-700">
-            <span>{openTicketTabs ? openTicketTabs.length : 1}/5</span>
+            <span>{openTicketTabs ? openTicketTabs.length : 0}/5</span>
             <div className="flex items-center gap-0.5 ml-1">
               {[1, 2, 3, 4, 5].map((slot) => (
                 <div
                   key={slot}
                   className={`w-1.5 h-3 rounded-xs ${
-                    slot <= (openTicketTabs ? openTicketTabs.length : 1)
+                    slot <= (openTicketTabs ? openTicketTabs.length : 0)
                       ? 'bg-blue-600'
                       : 'bg-slate-200'
                   }`}
@@ -245,7 +246,7 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
         </div>
       </div>
       {/* Collision Alert Banner */}
-      {collisionAgent && (
+      {collisionAgent && ticket && (
         <div className="bg-amber-500 text-slate-900 px-4 py-2 text-xs font-semibold flex items-center justify-between border-b border-amber-600 animate-pulse">
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-slate-950" />
@@ -261,26 +262,48 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 
       {/* Ticket Header matching dashboard.jpg */}
       <div className="p-5 border-b border-slate-200 bg-white flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <h1 className="text-base font-extrabold text-[#0F172A] tracking-tight">
-              #{ticket.ticketNumber} {ticket.title}
-            </h1>
+        {ticket ? (
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <h1 className="text-base font-extrabold text-[#0F172A] tracking-tight">
+                #{ticket.ticketNumber} {ticket.title}
+              </h1>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-500">
+              <span className="flex items-center gap-1.5 font-semibold text-slate-800">
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                {ticket.customerName}
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                Created {new Date(ticket.createdAt).toLocaleDateString()}
+              </span>
+              <span>•</span>
+              {getChannelBadge(ticket.tags)}
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5 font-semibold text-slate-800">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              {ticket.customerName}
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-              Created {new Date(ticket.createdAt).toLocaleDateString()}
-            </span>
-            <span>•</span>
-            {getChannelBadge(ticket.tags)}
+        ) : (
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <h1 className="text-base font-extrabold text-slate-400 tracking-tight flex items-center gap-2">
+                <TicketIcon className="w-4 h-4 text-slate-400" />
+                <span>Service Console (Standby)</span>
+              </h1>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-slate-400 font-medium">
+              <span className="flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-slate-400" />
+                No Active Ticket Selected
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                Workspace Idle & Ready
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Status & Pod Actions */}
         <div className="flex items-center gap-2.5">
@@ -288,20 +311,22 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
             <button
               type="button"
               onClick={onOpenTransferModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-indigo-600 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+              disabled={!ticket}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-indigo-600 text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-700"
               title="Transfer ticket to another operational pod"
             >
               <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{ticket.workspaceName || 'Transfer Pod'}</span>
+              <span>{ticket?.workspaceName || 'Transfer Pod'}</span>
             </button>
           )}
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 font-medium">Status:</span>
             <select
-              value={ticket.status}
+              value={ticket?.status || 'OPEN'}
               onChange={(e) => onStatusChange(e.target.value as TicketStatus)}
-              className="text-xs font-bold bg-white hover:bg-slate-50 text-[#0F172A] border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[#2563EB] cursor-pointer shadow-2xs"
+              disabled={!ticket}
+              className="text-xs font-bold bg-white hover:bg-slate-50 text-[#0F172A] border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[#2563EB] cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <option value="NEW">NEW</option>
               <option value="OPEN">OPEN</option>
@@ -314,53 +339,83 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
       </div>
 
       {/* Messages Timeline matching dashboard.jpg */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white">
-        {messages.map((msg) => {
-          const isInternal = msg.type === 'INTERNAL_NOTE';
-          return (
-            <div
-              key={msg.id}
-              className={`rounded-2xl border p-5 transition-all shadow-xs ${
-                isInternal
-                  ? 'bg-[#FFFBEB] border-[#FDE68A] text-slate-900'
-                  : 'bg-white border-slate-200 text-slate-900'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black ${
-                      isInternal
-                        ? 'bg-[#FEF3C7] text-[#92400E]'
-                        : 'bg-[#EEF2FF] text-[#4F46E5]'
-                    }`}
-                  >
-                    {msg.senderName.slice(0, 2).toUpperCase()}
-                  </div>
-                  <span className="text-xs font-bold text-[#0F172A]">
-                    {msg.senderName}
-                  </span>
-                  {isInternal && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] px-2 py-0.5 rounded-md">
-                      <Lock className="w-2.5 h-2.5" />
-                      Internal Note (Private)
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white relative">
+        {ticket ? (
+          messages.length > 0 ? (
+            messages.map((msg) => {
+              const isInternal = msg.type === 'INTERNAL_NOTE';
+              return (
+                <div
+                  key={msg.id}
+                  className={`rounded-2xl border p-5 transition-all shadow-xs ${
+                    isInternal
+                      ? 'bg-[#FFFBEB] border-[#FDE68A] text-slate-900'
+                      : 'bg-white border-slate-200 text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          isInternal
+                            ? 'bg-[#FEF3C7] text-[#92400E]'
+                            : 'bg-[#EEF2FF] text-[#4F46E5]'
+                        }`}
+                      >
+                        {msg.senderName.slice(0, 2).toUpperCase()}
+                      </div>
+                      <span className="text-xs font-bold text-[#0F172A]">
+                        {msg.senderName}
+                      </span>
+                      {isInternal && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] px-2 py-0.5 rounded-md">
+                          <Lock className="w-2.5 h-2.5" />
+                          Internal Note (Private)
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      {new Date(msg.createdAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </span>
-                  )}
-                </div>
-                <span className="text-[11px] text-slate-400 font-medium">
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
-              </div>
+                  </div>
 
-              <div className="text-xs leading-relaxed whitespace-pre-wrap pl-9 text-slate-800 font-medium">
-                {msg.content}
+                  <div className="text-xs leading-relaxed whitespace-pre-wrap pl-9 text-slate-800 font-medium">
+                    {msg.content}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="h-full min-h-[250px] flex flex-col items-center justify-center text-center p-8 select-none">
+              <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 mb-2.5 shadow-2xs">
+                <TicketIcon className="w-5 h-5 text-slate-400" />
               </div>
+              <h3 className="text-xs font-bold text-slate-700 mb-1">No Messages in Thread</h3>
+              <p className="text-[11px] text-slate-400 max-w-xs">
+                Type your first response in the composer below to begin customer engagement.
+              </p>
             </div>
-          );
-        })}
+          )
+        ) : (
+          <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center p-8 select-none">
+            <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-200/90 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
+              <TicketIcon className="w-7 h-7 text-slate-400" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-700 mb-1">
+              Customer Resolution Hub
+            </h3>
+            <p className="text-xs text-slate-400 max-w-sm leading-relaxed mb-4">
+              Select a ticket from the queue to review customer history, collaborate via internal notes, or draft a resolution.
+            </p>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-semibold text-slate-500">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Agent Workspace Ready</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Message Composer matching dashboard.jpg */}
@@ -395,30 +450,37 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
         <form onSubmit={handleSubmit} className="space-y-3">
           <textarea
             rows={3}
-            value={composerText}
+            value={ticket ? composerText : ''}
             onChange={(e) => onComposerTextChange(e.target.value)}
+            disabled={!ticket}
             placeholder={
-              activeTab === 'PUBLIC_REPLY'
+              !ticket
+                ? 'Select a ticket from the queue to compose a reply or add an internal note...'
+                : activeTab === 'PUBLIC_REPLY'
                 ? 'Type your official reply...'
                 : 'Write an internal note for your team (customer will not see this)...'
             }
             className={`w-full text-xs p-3.5 rounded-xl border focus:outline-hidden focus:ring-2 resize-none transition-colors ${
-              activeTab === 'INTERNAL_NOTE'
+              !ticket
+                ? 'bg-slate-50/70 border-slate-200 text-slate-400 placeholder:text-slate-400 cursor-not-allowed font-medium'
+                : activeTab === 'INTERNAL_NOTE'
                 ? 'bg-[#FFFBEB] border-amber-300 focus:ring-amber-500 text-slate-900 placeholder:text-amber-800/50 font-medium'
                 : 'bg-white border-slate-200 focus:ring-[#2563EB] text-[#0F172A] placeholder:text-slate-400 font-medium'
             }`}
           />
 
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-slate-500">
-              {activeTab === 'PUBLIC_REPLY'
+            <span className="text-[11px] text-slate-400 font-medium">
+              {!ticket
+                ? 'Composer standby — select a ticket to start messaging'
+                : activeTab === 'PUBLIC_REPLY'
                 ? 'Public reply will be emailed to customer'
                 : 'Private internal note for support & engineering team only'}
             </span>
             <button
               type="submit"
-              disabled={isSending || !composerText.trim()}
-              className="flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-[#2563EB] hover:bg-[#1D4ED8]"
+              disabled={!ticket || isSending || !composerText.trim()}
+              className="flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-[#2563EB] hover:bg-[#1D4ED8]"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{isSending ? 'Sending...' : 'Send Reply'}</span>

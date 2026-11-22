@@ -2,7 +2,22 @@
 
 import React from 'react';
 import { Ticket, Sentiment, Priority } from '../lib/types';
-import { Search, Flame, AlertCircle, Smile, Minus, Tag, Globe, Smartphone, Mail, Sparkles, Ticket as TicketIcon } from 'lucide-react';
+import {
+  Search,
+  Flame,
+  AlertCircle,
+  Smile,
+  Minus,
+  Tag,
+  Globe,
+  Smartphone,
+  Mail,
+  Sparkles,
+  Ticket as TicketIcon,
+  Inbox,
+  X,
+  RotateCcw,
+} from 'lucide-react';
 
 interface TicketQueueProps {
   tickets: Ticket[];
@@ -122,6 +137,7 @@ export const TicketQueue: React.FC<TicketQueueProps> = ({
   };
 
   const filterTabs = ['ALL', 'NEW', 'OPEN', 'PENDING', 'RESOLVED'];
+  const isFiltered = Boolean(searchQuery.trim() || statusFilter !== 'ALL');
 
   return (
     <aside className="w-96 border-r border-slate-200 bg-white flex flex-col h-[calc(100vh-4rem)] shrink-0">
@@ -131,11 +147,21 @@ export const TicketQueue: React.FC<TicketQueueProps> = ({
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
           <input
             type="text"
-            placeholder="Search tickets, tags, customer..."
+            placeholder="Search tickets, customers, or tags..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#2563EB] focus:border-transparent text-[#0F172A] placeholder:text-slate-400 shadow-2xs"
+            className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#2563EB] focus:border-transparent text-[#0F172A] placeholder:text-slate-400 shadow-2xs"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange('')}
+              className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Status Filters matching dashboard.jpg: ALL solid blue */}
@@ -159,9 +185,38 @@ export const TicketQueue: React.FC<TicketQueueProps> = ({
       {/* Ticket List matching dashboard.jpg */}
       <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
         {tickets.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-500">
-            No tickets found matching your query.
-          </div>
+          isFiltered ? (
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 select-none">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200/90 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
+                <Search className="w-5 h-5 text-slate-400" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-700 mb-1">No matching tickets</h3>
+              <p className="text-xs text-slate-400 max-w-[220px] leading-relaxed mb-4">
+                No tickets match your search or filter criteria.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onSearchChange('');
+                  onStatusFilterChange('ALL');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-500" />
+                <span>Clear filters</span>
+              </button>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center p-8 select-none">
+              <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200/90 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
+                <Inbox className="w-5 h-5 text-slate-400" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-700 mb-1">Queue is empty</h3>
+              <p className="text-xs text-slate-400 max-w-[220px] leading-relaxed">
+                No incoming tickets pending review.
+              </p>
+            </div>
+          )
         ) : (
           tickets.map((t) => {
             const isSelected = t.id === selectedTicketId;

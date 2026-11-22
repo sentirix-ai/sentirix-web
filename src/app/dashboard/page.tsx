@@ -462,88 +462,23 @@ export default function DashboardPage() {
 
   const handleAddTicketTab = async () => {
     if (openTicketTabs.length >= 5) return;
-    // 1. First look for an existing unclaimed ticket in the queue
-    let nextTicket = tickets.find((t) => !openTicketTabs.some((tab) => tab.id === t.id));
+    // 1. Look for an existing unclaimed ticket in the queue
+    const nextTicket = tickets.find((t) => !openTicketTabs.some((tab) => tab.id === t.id));
 
-    // 2. If all existing tickets are already active in tabs, pull/create the next customer case
+    // If no more tickets exist in the queue, do NOT inject fake demo tickets
     if (!nextTicket) {
-      const demoPool = [
-        {
-          title: 'Order delivery delayed past estimated arrival time',
-          description:
-            'Package ORD-98214 is 2 days overdue. Customer inquired via portal regarding tracking status and requested expedited dispatch.',
-          customerName: 'Marcus Bennett',
-          tags: ['agent-inbound', 'customer-care', 'logistics'],
-        },
-        {
-          title: 'Unable to receive two-factor SMS authentication code',
-          description:
-            'Customer reports OTP text message is not arriving on phone +1 (555) 019-4821 during portal sign-in. Account verification required.',
-          customerName: 'Elena Rostova',
-          tags: ['agent-inbound', 'customer-care', 'auth'],
-        },
-        {
-          title: 'Subscription billed twice on corporate credit card',
-          description:
-            'Monthly invoice was charged twice ($45.00 x 2) on Nov 7. Customer requested refund for duplicate transaction.',
-          customerName: 'David Chen',
-          tags: ['agent-inbound', 'customer-care', 'billing'],
-        },
-        {
-          title: 'Damaged item received inside sealed shipping box',
-          description:
-            'Customer opened package and found item screen cracked. Photos attached. Requested replacement or return label.',
-          customerName: 'Sophia Taylor',
-          tags: ['agent-inbound', 'customer-care', 'claims'],
-        },
-      ];
-
-      const candidate =
-        demoPool.find((p) => !openTicketTabs.some((t) => t.customerName === p.customerName)) ||
-        demoPool[0];
-
-      try {
-        const created = await createTicket({
-          title: candidate.title,
-          description: candidate.description,
-          customerName: candidate.customerName,
-          tags: candidate.tags,
-          customerId: `cust-${Date.now().toString(36)}`,
-          workspaceId: selectedPodId !== 'ALL' ? selectedPodId : undefined,
-        });
-        nextTicket = created;
-        setTickets((prev) => [created, ...prev]);
-      } catch {
-        const fallbackTicket: Ticket = {
-          id: `tick-${Date.now()}`,
-          ticketNumber: Math.floor(Math.random() * 8000) + 1000,
-          title: candidate.title,
-          description: candidate.description,
-          customerName: candidate.customerName,
-          customerId: `cust-${Date.now().toString(36)}`,
-          status: 'NEW',
-          priority: 'HIGH',
-          sentiment: 'URGENT',
-          tags: candidate.tags,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        nextTicket = fallbackTicket;
-        setTickets((prev) => [fallbackTicket, ...prev]);
-      }
+      return;
     }
 
-    if (nextTicket) {
-      if (selectedTicket) {
-        setDraftsByTicket((prev) => ({
-          ...prev,
-          [selectedTicket.id]: composerText,
-        }));
-      }
-      setOpenTicketTabs((prev) => [...prev, nextTicket!]);
-      setSelectedTicket(nextTicket);
-      setComposerText(draftsByTicket[nextTicket.id] || '');
+    if (selectedTicket) {
+      setDraftsByTicket((prev) => ({
+        ...prev,
+        [selectedTicket.id]: composerText,
+      }));
     }
+    setOpenTicketTabs((prev) => [...prev, nextTicket]);
+    setSelectedTicket(nextTicket);
+    setComposerText(draftsByTicket[nextTicket.id] || '');
   };
 
   const handleComposerChange = (text: string) => {
@@ -687,6 +622,7 @@ export default function DashboardPage() {
           onSelectTicketTab={handleSelectTicketTab}
           onCloseTicketTab={handleCloseTicketTab}
           onAddTicketTab={handleAddTicketTab}
+          hasAvailableTickets={tickets.some((t) => !openTicketTabs.some((tab) => tab.id === t.id))}
         />
 
         {/* Panel 3: Right AI Copilot Hub */}
