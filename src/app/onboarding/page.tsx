@@ -38,6 +38,7 @@ import {
   Lock,
   RotateCcw,
   GitFork,
+  ShieldCheck,
 } from 'lucide-react';
 import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
 import {
@@ -370,6 +371,8 @@ export default function TitaniumOnboardingPage() {
     services: string[];
     token: string;
     joinUrl: string;
+    isClaimed?: boolean;
+    leaderName?: string | null;
   }>>([]);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
@@ -1124,7 +1127,12 @@ export default function TitaniumOnboardingPage() {
         const freshToken = res.newToken;
         const freshJoinUrl = res.joinUrl!;
 
-        // 1. Update token in state & storage
+        // 1. Automatically copy to clipboard in 1-click
+        try {
+          await navigator.clipboard.writeText(freshJoinUrl);
+        } catch {}
+
+        // 2. Update token in state & storage
         setGeneratedLeaderTokens((prev) => {
           const updated = prev.map((t) =>
             t.token === oldToken || (workspaceId && t.workspaceId === workspaceId)
@@ -1137,18 +1145,22 @@ export default function TitaniumOnboardingPage() {
           return updated;
         });
 
-        // 2. Unlock this new token from dispatched/locked set (so it can be copied)
+        // 3. Mark as dispatched so it remains in smart regenerate & copy mode
         setDispatchedTokens((prev) => {
           const next = new Set(prev);
           next.delete(oldToken);
-          next.delete(freshToken);
+          next.add(freshToken);
           try {
             localStorage.setItem('sentirix_dispatched_tokens', JSON.stringify(Array.from(next)));
           } catch {}
           return next;
         });
 
-        // 3. Mark the fresh token as regenerated (to change button background)
+        // 4. Trigger green feedback for new token
+        setCopiedToken(freshToken);
+        setTimeout(() => setCopiedToken(null), 2500);
+
+        // 5. Mark the fresh token as regenerated
         setRegeneratedTokens((prev) => {
           const next = new Set(prev).add(freshToken);
           try {
@@ -1157,10 +1169,10 @@ export default function TitaniumOnboardingPage() {
           return next;
         });
       } else {
-        setErrorMessage(res.error || 'Failed to regenerate token.');
+        setErrorMessage(res.error || 'Failed to regenerate leader token.');
       }
     } catch {
-      setErrorMessage('A network error occurred.');
+      setErrorMessage('A network error occurred while regenerating token.');
     } finally {
       setRegeneratingToken(null);
     }
@@ -1235,7 +1247,7 @@ export default function TitaniumOnboardingPage() {
           </h1>
           <p className="text-sm text-slate-400 max-w-3xl mx-auto">
             {currentStep === 4
-              ? 'Distribute single-use activation tokens to each Pod Leader before proceeding to the Executive Cockpit.'
+              ? 'Distribute one-time activation links to designated Pod Leaders to initialize workspace governance.'
               : (
                 <>
                   Build an agile, high-velocity customer support structure without inter-departmental friction <span className="whitespace-nowrap">across all teams.</span>
@@ -1249,7 +1261,7 @@ export default function TitaniumOnboardingPage() {
               { num: 1, label: 'Industry' },
               { num: 2, label: 'Capacity' },
               { num: 3, label: 'Pods & Services' },
-              { num: 4, label: 'Leader Tokens' },
+              { num: 4, label: 'Leader Activation' },
             ].map((step) => {
               const isActive = currentStep === step.num;
               const isPast = currentStep > step.num;
@@ -1931,12 +1943,12 @@ export default function TitaniumOnboardingPage() {
                     </>
                   ) : generatedLeaderTokens.length > 0 ? (
                     <>
-                      <span>Continue to Leader Tokens (Step 4)</span>
+                      <span>Continue to Leader Activation (Step 4)</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   ) : (
                     <>
-                      <span>Create Organization &amp; Generate Leader Tokens</span>
+                      <span>Create Organization &amp; Generate Activation Tokens</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -1953,12 +1965,12 @@ export default function TitaniumOnboardingPage() {
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h2 className="text-lg font-extrabold text-white">
-                  Organization Successfully Created!
+                  Organization created
                 </h2>
                 <p className="text-xs text-slate-400 mt-1 max-w-lg mx-auto">
-                  Before proceeding to the Super Admin Executive Cockpit, please distribute the activation tokens below to each respective Pod Leader.
+                  Distribute the one-time activation links below to designated Pod Leaders to initialize workspace governance.
                   <br />
-                  <strong className="text-blue-400">Security Notice:</strong> Each token below is <strong>Single-Use (can only be claimed once)</strong>.
+                  <strong className="text-blue-400">Security Policy:</strong> Each link is <strong>single-use and invalidates immediately upon redemption</strong>.
                 </p>
               </div>
 
@@ -1980,7 +1992,12 @@ export default function TitaniumOnboardingPage() {
                             {idx + 1}
                           </span>
                           <h4 className="text-xs font-bold text-white">{item.workspaceName}</h4>
-                          {isDispatched ? (
+                          {item.isClaimed ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5 shadow-sm">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                              LEADER ASSIGNED • {item.leaderName || 'ACTIVE'}
+                            </span>
+                          ) : isDispatched ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950/70 border border-blue-500/40 text-blue-300 flex items-center gap-1">
                               <Lock className="w-3 h-3 text-blue-400" />
                               LINK DISPATCHED • LOCKED
@@ -2004,73 +2021,71 @@ export default function TitaniumOnboardingPage() {
                         </div>
                       </div>
 
-                      {/* Action Buttons: Copy Link & Regenerate (Side-by-side, no blinking) */}
+                      {/* Single Smart Action Button: Copy Link -> Morphs to Regenerate & Copy New Link */}
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          disabled={isDispatched}
-                          onClick={() => handleCopyLink(item.token, item.joinUrl)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border ${
-                            isDispatched
-                              ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed opacity-75'
-                              : isCopied
-                              ? 'bg-emerald-600 border-emerald-500 text-white cursor-pointer'
-                              : 'bg-[#111827] border-slate-800 text-slate-200 hover:border-slate-700 cursor-pointer'
-                          }`}
-                          title={
-                            isDispatched
-                              ? 'This single-use link has been copied & locked to prevent duplicate claims. Click Regenerate to issue a fresh link.'
-                              : 'Copy single-use invite link'
-                          }
-                        >
-                          {isDispatched ? (
-                            <>
-                              <Lock className="w-3.5 h-3.5 text-slate-400" />
-                              <span>Copied (Locked)</span>
-                            </>
-                          ) : isCopied ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy Link</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={regeneratingToken === item.token}
-                          onClick={() => handleRegenerateLeaderToken(item.token, item.workspaceId)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border disabled:opacity-50 ${
-                            regeneratingToken === item.token
-                              ? 'bg-slate-900 border-slate-800 text-slate-400'
-                              : isRegenerated
-                              ? 'bg-amber-500/20 border-amber-500/80 text-amber-300 hover:bg-amber-500/30 shadow-sm shadow-amber-500/20'
-                              : isDispatched
-                              ? 'bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-600/20'
-                              : 'bg-[#111827] border-blue-500/40 hover:border-blue-400 text-blue-300'
-                          }`}
-                          title="Invalidates previous link and generates a brand new single-use token"
-                        >
-                          <RefreshCw
-                            className={`w-3.5 h-3.5 ${
-                              regeneratingToken === item.token ? 'animate-spin text-blue-400' : ''
+                        {item.isClaimed ? (
+                          <div
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border bg-slate-900/90 border-slate-800 text-slate-300 cursor-default select-none shadow-sm"
+                            title={`Pod leadership is assigned to ${item.leaderName || 'its leader'}. Under organizational governance policy, each operational pod maintains exactly one Team Lead seat. To rotate leadership, manage members in the Admin Cockpit.`}
+                          >
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Seat Occupied</span>
+                          </div>
+                        ) : isDispatched ? (
+                          <button
+                            type="button"
+                            disabled={regeneratingToken === item.token}
+                            onClick={() => handleRegenerateLeaderToken(item.token, item.workspaceId)}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
+                              regeneratingToken === item.token
+                                ? 'bg-slate-900 border-slate-800 text-slate-400 cursor-wait'
+                                : isCopied
+                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/20 cursor-pointer'
+                                : 'bg-gradient-to-r from-amber-600/20 to-orange-600/20 hover:from-amber-600/30 hover:to-orange-600/30 border-amber-500/60 text-amber-300 hover:text-amber-200 cursor-pointer shadow-amber-500/10'
                             }`}
-                          />
-                          <span>
-                            {regeneratingToken === item.token
-                              ? 'Processing...'
-                              : isRegenerated
-                              ? 'Regenerated ✓'
-                              : isDispatched
-                              ? 'Regenerate New Link'
-                              : 'Regenerate'}
-                          </span>
-                        </button>
+                            title="Revokes active link, provisions a new single-use token, and automatically copies it to clipboard"
+                          >
+                            {regeneratingToken === item.token ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+                                <span>Generating &amp; Copying...</span>
+                              </>
+                            ) : isCopied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-white" />
+                                <span>New Link Copied! ✓</span>
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Regenerate &amp; Copy New Link</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(item.token, item.joinUrl)}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                              isCopied
+                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-md shadow-emerald-600/20'
+                                : 'bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-600/20'
+                            }`}
+                            title="Copy single-use activation link to clipboard"
+                          >
+                            {isCopied ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Link Copied! ✓</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy Link</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -2097,7 +2112,7 @@ export default function TitaniumOnboardingPage() {
                   onClick={handleDoneSharing}
                   className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-2 cursor-pointer"
                 >
-                  <span>Done Sharing ➔ Enter Super Admin Executive Cockpit</span>
+                  <span>Complete Setup &amp; Enter Executive Cockpit</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>

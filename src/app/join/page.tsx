@@ -36,16 +36,19 @@ const cleanPodName = (name?: string) => {
   return name.replace(/\s+Pod$/i, '').trim();
 };
 
+const sanitizeToken = (raw?: string | null) => (raw || '').trim().replace(/[.,;:!?/\\'"]+$/, '').trim();
+
 function JoinWorkspaceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const token = (searchParams.get('token') || '').trim();
+  const token = sanitizeToken(searchParams.get('token'));
 
   const [isLoading, setIsLoading] = useState(true);
   const [tokenType, setTokenType] = useState<'LEADER' | 'AGENT' | 'LEGACY'>('LEGACY');
   const [tokenData, setTokenData] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLockedToOtherSession, setIsLockedToOtherSession] = useState(false);
+  const [isClaimedSeat, setIsClaimedSeat] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form inputs
@@ -71,7 +74,7 @@ function JoinWorkspaceContent() {
     if (typeof window === 'undefined') return null;
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const currentToken = urlParams.get('token');
+      const currentToken = sanitizeToken(urlParams.get('token'));
       if (currentToken && currentToken.startsWith('STX-LDR-')) {
         const entered =
           sessionStorage.getItem(`sentirix_leader_entered_${currentToken}`) ||
@@ -90,7 +93,7 @@ function JoinWorkspaceContent() {
     if (typeof window === 'undefined') return [];
     try {
       const urlParams = new URLSearchParams(window.location.search);
-      const currentToken = urlParams.get('token');
+      const currentToken = sanitizeToken(urlParams.get('token'));
       if (currentToken) {
         const raw = sessionStorage.getItem(`sentirix_copied_tokens_${currentToken}`);
         if (raw) return JSON.parse(raw);
@@ -131,6 +134,7 @@ function JoinWorkspaceContent() {
           const res = await fetchLeaderTokenStatus(token, sid);
           if (!res.valid) {
             if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
+            if (res.isClaimed) setIsClaimedSeat(true);
             setErrorMessage(res.error || 'Leader token is invalid or has expired.');
           } else {
             setTokenData(res);
@@ -578,33 +582,45 @@ function JoinWorkspaceContent() {
         ) : errorMessage ? (
           <div
             className={`p-8 bg-[#111827] rounded-2xl text-center space-y-4 shadow-2xl border ${
-              isLockedToOtherSession
+              isClaimedSeat
+                ? 'border-slate-800 ring-1 ring-emerald-500/30'
+                : isLockedToOtherSession
                 ? 'border-amber-500/60 ring-1 ring-amber-500/20'
                 : 'border-red-800/80'
             }`}
           >
             <div
               className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto border shadow-lg ${
-                isLockedToOtherSession
+                isClaimedSeat
+                  ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/40 shadow-emerald-950/40'
+                  : isLockedToOtherSession
                   ? 'bg-amber-950/80 text-amber-400 border-amber-500/50 shadow-amber-950/40'
                   : 'bg-red-950 text-red-400 border-red-800 shadow-red-950/40'
               }`}
             >
-              {isLockedToOtherSession ? (
+              {isClaimedSeat ? (
+                <ShieldCheck className="w-7 h-7 text-emerald-400" />
+              ) : isLockedToOtherSession ? (
                 <Lock className="w-7 h-7 text-amber-400" />
               ) : (
                 <AlertCircle className="w-7 h-7" />
               )}
             </div>
 
-            {isLockedToOtherSession && (
+            {isClaimedSeat ? (
+              <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-emerald-950/90 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40 font-mono">
+                ORGANIZATIONAL POLICY • LEADERSHIP ACTIVE
+              </span>
+            ) : isLockedToOtherSession ? (
               <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider bg-amber-950/90 text-amber-300 px-3 py-1 rounded-full border border-amber-500/40 font-mono">
                 SECURITY NOTICE • SINGLE-USE BROWSER LOCKED
               </span>
-            )}
+            ) : null}
 
             <h2 className="text-lg font-bold text-white tracking-tight">
-              {isLockedToOtherSession
+              {isClaimedSeat
+                ? 'Leadership Seat Occupied'
+                : isLockedToOtherSession
                 ? 'Link Active in Another Browser Session'
                 : 'Token Access Denied'}
             </h2>
@@ -612,13 +628,31 @@ function JoinWorkspaceContent() {
               {errorMessage}
             </p>
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-              <a
-                href="/"
-                className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold"
-              >
-                <span>Return to Home</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </a>
+              {isClaimedSeat ? (
+                <>
+                  <a
+                    href="/"
+                    className="inline-flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-xl transition-all font-semibold shadow-lg shadow-blue-600/30 cursor-pointer"
+                  >
+                    <span>Sign In to Corporate Portal</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                  <a
+                    href="/"
+                    className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800/60 transition-all font-medium cursor-pointer"
+                  >
+                    <span>Return to Home</span>
+                  </a>
+                </>
+              ) : (
+                <a
+                  href="/"
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold"
+                >
+                  <span>Return to Home</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              )}
             </div>
           </div>
         ) : tokenType === 'LEADER' && leaderLockedResult ? (
