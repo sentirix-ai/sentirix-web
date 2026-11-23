@@ -38,8 +38,12 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { getSession, logoutUser, UserSession } from '../../../lib/auth';
+import { io, Socket } from 'socket.io-client';
+import { OwnerAnalyticsView } from '../../../components/OwnerAnalyticsView';
+import { OwnerAnalyticsData } from '../../../lib/types';
 import {
   fetchSuperAdminCockpit,
+  fetchOwnerAnalytics,
   regenerateToken,
   cleanupDemoTickets,
   renamePersonnel,
@@ -51,6 +55,8 @@ import {
   checkMemberStatus,
   adminForceLogoutUser,
 } from '../../../lib/api';
+
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 
 const cleanPodName = (name?: string) => {
   if (!name) return '';
@@ -221,8 +227,10 @@ export default function SuperAdminCockpitPage() {
     username?: string;
   } | null>(null);
   const [activeTab, setActiveTab] = useState<
-    'OVERVIEW' | 'PRESENCE' | 'PERSONNEL' | 'TOKENS' | 'CRISIS' | 'CHANNELS'
+    'PLATFORM' | 'OVERVIEW' | 'PRESENCE' | 'PERSONNEL' | 'TOKENS' | 'CRISIS' | 'CHANNELS'
   >('OVERVIEW');
+  const [platformAnalytics, setPlatformAnalytics] = useState<OwnerAnalyticsData | null>(null);
+  const [isRefreshingPlatform, setIsRefreshingPlatform] = useState(false);
   const [selectedUserHistory, setSelectedUserHistory] = useState<any | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
 
@@ -702,24 +710,75 @@ export default function SuperAdminCockpitPage() {
     }
   };
 
+  const loadPlatformAnalytics = async () => {
+    setIsRefreshingPlatform(true);
+    try {
+      const data = await fetchOwnerAnalytics('pungkyrama');
+      if (data) setPlatformAnalytics(data);
+    } catch {}
+    setIsRefreshingPlatform(false);
+  };
+
   useEffect(() => {
     const active = getSession();
     if (!active) {
       window.location.href = '/';
       return;
     }
-    if (active.onboardingCompleted === false) {
+    if (active.onboardingCompleted === false && active.username?.toLowerCase() !== 'pungkyrama') {
       router.push('/onboarding?step=4');
       return;
     }
     setLocalSession(active);
     loadData(active, true);
 
+    if (active.username?.toLowerCase() === 'pungkyrama') {
+      loadPlatformAnalytics();
+      if (typeof window !== 'undefined' && (window.location.search.includes('view=platform') || !window.location.search)) {
+        setActiveTab('PLATFORM');
+      }
+    }
+
+    // 1. Real-Time WebSocket Presence & Event Stream for instantaneous audit updates (0ms latency)
+    let socket: Socket | null = null;
+    try {
+      socket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: 5,
+      });
+
+      const handleLivePresence = () => {
+        loadData(active, false);
+        if (active.username?.toLowerCase() === 'pungkyrama') {
+          loadPlatformAnalytics();
+        }
+      };
+
+      socket.on('presence:changed', handleLivePresence);
+      socket.on('team:member_left', handleLivePresence);
+      socket.on('team:member_joined', handleLivePresence);
+      socket.on('team:workspace_updated', handleLivePresence);
+      socket.on('token:regenerated', handleLivePresence);
+      socket.on('leader:activated', handleLivePresence);
+      socket.on('agent:claimed-token', handleLivePresence);
+      socket.on('workspace:quota-locked', handleLivePresence);
+      socket.on('auth:force_logout', handleLivePresence);
+    } catch {}
+
+    // 2. High-frequency safety net polling fallback (every 2.5 seconds)
     const interval = setInterval(() => {
       loadData(active, false);
-    }, 3000);
+      if (active.username?.toLowerCase() === 'pungkyrama') {
+        loadPlatformAnalytics();
+      }
+    }, 2500);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      try {
+        socket?.disconnect();
+      } catch {}
+    };
   }, [router]);
 
   const handleCopyLink = (token: string) => {
@@ -905,10 +964,10 @@ export default function SuperAdminCockpitPage() {
         {/* Readiness & Workload */}
         <td className="py-3.5 px-4">
           <div className="space-y-1">
-            {user.role === 'SUPER_ADMIN' ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-500/50 text-purple-300 text-[11px] font-bold">
-                <Crown className="w-3 h-3 text-purple-400" />
-                <span>Executive Supervision</span>
+            {user.role === 'SUPER_ADMIN' || user.username?.toLowerCase() === 'pungkyrama' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-950/90 to-yellow-950/80 border border-amber-500/60 text-amber-300 text-[11px] font-bold shadow-xs shadow-amber-500/10">
+                <Crown className="w-3 h-3 text-amber-400 fill-amber-400 animate-pulse" />
+                <span>Platform Founder Sovereign</span>
               </span>
             ) : user.operationalState === 'SERVING' || (isOnline && (user.activeTicketsCount || 0) > 0) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 text-[11px] font-bold">
@@ -1154,6 +1213,16 @@ export default function SuperAdminCockpitPage() {
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
           {[
+            ...(session?.username?.toLowerCase() === 'pungkyrama'
+              ? [
+                  {
+                    id: 'PLATFORM',
+                    label: 'Platform Founder Overview',
+                    icon: Crown,
+                    isSpecial: true,
+                  },
+                ]
+              : []),
             { id: 'OVERVIEW', label: 'Pod Topology & Workload', icon: Layers },
             { id: 'PRESENCE', label: 'Staff Presence & SLA Monitoring', icon: Clock, count: stats.onlineCount || 0 },
             {
@@ -1177,6 +1246,7 @@ export default function SuperAdminCockpitPage() {
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const isPlatformTab = tab.id === 'PLATFORM';
             return (
               <button
                 key={tab.id}
@@ -1184,11 +1254,15 @@ export default function SuperAdminCockpitPage() {
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                   isActive
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                    : 'bg-[#111827] text-slate-400 hover:text-white hover:bg-slate-800'
+                    ? isPlatformTab
+                      ? 'bg-gradient-to-r from-amber-500 to-indigo-600 text-white shadow-lg shadow-amber-500/20'
+                      : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                    : isPlatformTab
+                      ? 'bg-amber-950/30 text-amber-300 border border-amber-500/30 hover:bg-amber-900/40'
+                      : 'bg-[#111827] text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className={`w-4 h-4 ${isPlatformTab ? 'text-amber-300' : ''}`} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span
@@ -1203,6 +1277,17 @@ export default function SuperAdminCockpitPage() {
             );
           })}
         </div>
+
+        {/* TAB 0: PLATFORM FOUNDER ANALYTICS */}
+        {activeTab === 'PLATFORM' && (
+          <section className="space-y-4">
+            <OwnerAnalyticsView
+              analyticsData={platformAnalytics}
+              onRefresh={loadPlatformAnalytics}
+              isRefreshing={isRefreshingPlatform}
+            />
+          </section>
+        )}
 
         {/* TAB 1: POD TOPOLOGY */}
         {activeTab === 'OVERVIEW' && (
@@ -2609,15 +2694,25 @@ export default function SuperAdminCockpitPage() {
                       {crisisTickets.map((t: any) => (
                         <div
                           key={t.id}
-                          className="p-4 rounded-xl bg-red-950/30 border border-red-800/80"
+                          className={`p-4 rounded-xl border ${
+                            t.isHanging
+                              ? 'bg-rose-950/40 border-rose-600/90 shadow-md shadow-rose-950/50'
+                              : 'bg-red-950/30 border-red-800/80'
+                          }`}
                         >
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-mono text-xs font-black text-red-400">
                               #{t.ticketNumber}
                             </span>
                             <span className="text-[10px] font-bold bg-red-900/60 text-red-200 px-2 py-0.5 rounded">
                               {t.priority}
                             </span>
+                            {t.isHanging && (
+                              <span className="text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                <span>TIKET MENGGANTUNG ({t.hangingReason || 'Staf Terputus'})</span>
+                              </span>
+                            )}
                             <span className="text-xs text-slate-400">in {t.podName}</span>
                           </div>
                           <h4 className="text-xs font-bold text-white">{t.title}</h4>

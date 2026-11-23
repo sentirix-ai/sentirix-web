@@ -21,6 +21,13 @@ import {
   AlertCircle,
   Paperclip,
   Check,
+  Volume2,
+  Eye,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  History,
+  Timer,
 } from 'lucide-react';
 
 interface TicketDetailProps {
@@ -29,9 +36,9 @@ interface TicketDetailProps {
   onSendMessage: (
     content: string,
     type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
-    attachedFile?: File | null,
+    attachedFiles?: File[] | File | null,
   ) => Promise<void>;
-  onStatusChange: (status: TicketStatus) => Promise<void>;
+  onStatusChange: (status: TicketStatus, resolutionNotes?: string) => Promise<void>;
   collisionAgent: string | null;
   composerText: string;
   onComposerTextChange: (text: string) => void;
@@ -61,8 +68,21 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
   const [activeTab, setActiveTab] = useState<'PUBLIC_REPLY' | 'INTERNAL_NOTE'>('PUBLIC_REPLY');
   const [isSending, setIsSending] = useState(false);
   const [ticketToConfirmClose, setTicketToConfirmClose] = useState<Ticket | null>(null);
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [resolveNotesInput, setResolveNotesInput] = useState('');
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B';
@@ -72,12 +92,16 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 
   const handleFileSelect = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const file = files[0];
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size exceeds 10MB limit. Please choose a smaller image or PDF document.');
-      return;
+    const newFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.size > 15 * 1024 * 1024) {
+        alert(`File "${f.name}" melebihi batas 15MB.`);
+        continue;
+      }
+      newFiles.push(f);
     }
-    setAttachedFile(file);
+    setAttachedFiles((prev) => [...prev, ...newFiles].slice(0, 5));
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -89,11 +113,11 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
         const blob = items[i].getAsFile();
         if (blob) {
           const file = new File([blob], `pasted_screenshot_${Date.now()}.png`, { type: blob.type });
-          if (file.size > 10 * 1024 * 1024) {
-            alert('Pasted screenshot exceeds 10MB limit.');
+          if (file.size > 15 * 1024 * 1024) {
+            alert('Pasted screenshot melebihi batas 15MB.');
             return;
           }
-          setAttachedFile(file);
+          setAttachedFiles((prev) => [...prev, file].slice(0, 5));
           break;
         }
       }
@@ -177,18 +201,20 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticket || (!composerText.trim() && !attachedFile) || isSending) return;
+    if (!ticket || (!composerText.trim() && attachedFiles.length === 0) || isSending) return;
 
     try {
       setIsSending(true);
       let messageContent = composerText.trim();
-      if (attachedFile) {
-        const fileTag = `[Attachment: ${attachedFile.name} (${formatFileSize(attachedFile.size)})]`;
-        messageContent = messageContent ? `${messageContent}\n\n${fileTag}` : fileTag;
+      if (attachedFiles.length > 0) {
+        const fileTags = attachedFiles
+          .map((f) => `[Attachment: ${f.name} (${formatFileSize(f.size)})]`)
+          .join('\n');
+        messageContent = messageContent ? `${messageContent}\n\n${fileTags}` : fileTags;
       }
-      await onSendMessage(messageContent, activeTab, attachedFile);
+      await onSendMessage(messageContent, activeTab, attachedFiles);
       onComposerTextChange('');
-      setAttachedFile(null);
+      setAttachedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } finally {
       setIsSending(false);
@@ -375,7 +401,15 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
             <span className="text-xs text-slate-500 font-medium">Status:</span>
             <select
               value={ticket?.status || 'OPEN'}
-              onChange={(e) => onStatusChange(e.target.value as TicketStatus)}
+              onChange={(e) => {
+                const nextStatus = e.target.value as TicketStatus;
+                if (nextStatus === 'RESOLVED') {
+                  setResolveNotesInput('');
+                  setIsResolveModalOpen(true);
+                } else {
+                  onStatusChange(nextStatus);
+                }
+              }}
               disabled={!ticket}
               className="text-xs font-bold bg-white hover:bg-slate-50 text-[#0F172A] border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-[#2563EB] cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -393,6 +427,123 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
       <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white relative">
         {ticket ? (
           <>
+            {/* Hanging Ticket Warning Banner */}
+            {ticket.isHanging && (
+              <div className="bg-gradient-to-r from-rose-50 via-amber-50 to-rose-50 border-2 border-rose-300 rounded-2xl p-4 shadow-sm animate-pulse flex items-start gap-3.5">
+                <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 shrink-0 shadow-2xs">
+                  <AlertTriangle className="w-5 h-5 text-rose-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-rose-900 tracking-wider uppercase">
+                      ⚠️ Tiket Menggantung (Hanging / Abandoned)
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-200 text-rose-800">
+                      Prioritas Pemulihan
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-700 mt-1 leading-relaxed">
+                    Tiket ini belum tuntas dan agen sebelumnya terputus/offline. Alasan:{' '}
+                    <strong className="text-rose-900 font-bold">{ticket.hangingReason || 'Koneksi Terputus / Agen Keluar'}</strong>.
+                    {ticket.hangingSince && (
+                      <span className="text-slate-500 font-medium ml-1">
+                        (Terbengkalai sejak {new Date(ticket.hangingSince).toLocaleTimeString()})
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Cross-Pod Transfer Audit Trail */}
+            {ticket.podTransfers && ticket.podTransfers.length > 0 && (
+              <div className="bg-slate-50/90 border border-slate-200 rounded-2xl p-3.5 shadow-2xs">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                    <History className="w-4 h-4 text-indigo-600" />
+                    <span>Jejak Transfer Antar-Pod ({ticket.podTransfers.length}x)</span>
+                  </div>
+                  <span className="text-[10px] text-indigo-700 font-semibold bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded-md">
+                    Handover Audit Trail
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {ticket.podTransfers.map((tf) => (
+                    <div
+                      key={tf.id}
+                      className="flex items-start justify-between bg-white p-2.5 rounded-xl border border-slate-200/80 text-xs gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-900 text-[11px]">
+                          <span className="text-slate-600">{tf.fromPod?.name || 'Pod Asal'}</span>
+                          <span className="text-indigo-600">→</span>
+                          <span className="text-indigo-700">{tf.toPod?.name || 'Pod Tujuan'}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-0.5 font-medium">
+                          Catatan: <span className="italic">{tf.reason}</span>
+                        </p>
+                        <span className="text-[10px] text-slate-400 mt-0.5 block">
+                          Oleh: {tf.transferredBy?.fullName || tf.transferredBy?.username || 'Staff Operasional'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                        {new Date(tf.transferredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SLA & Handling Activity Metric */}
+            {ticket.agentActivities && ticket.agentActivities.length > 0 && (
+              <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/70 text-xs text-slate-800 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <Timer className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="font-semibold text-slate-700">Waktu Penanganan (AHT):</span>
+                  <span className="font-bold text-slate-900 font-mono">
+                    {Math.round((ticket.agentActivities[0].durationSeconds || 0) / 60)} Menit
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-500">SLA:</span>
+                  <span
+                    className={`text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider ${
+                      ticket.agentActivities[0].slaStatus === 'BREACHED'
+                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                        : ticket.agentActivities[0].slaStatus === 'MET'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-blue-100 text-blue-800 border border-blue-300'
+                    }`}
+                  >
+                    {ticket.agentActivities[0].slaStatus || 'ON_TRACK'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Resolution Banner if Resolved or Closed */}
+            {(ticket.status === 'RESOLVED' || ticket.status === 'CLOSED') && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs shadow-2xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold text-emerald-900">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Masalah Telah Dinyatakan Selesai</span>
+                  </div>
+                  {ticket.resolvedAt && (
+                    <span className="text-[11px] text-emerald-700 font-mono">
+                      {new Date(ticket.resolvedAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                {ticket.resolutionNotes && (
+                  <p className="text-emerald-800 bg-white/70 p-2.5 rounded-xl border border-emerald-200/60 leading-relaxed">
+                    <strong>Catatan Solusi:</strong> {ticket.resolutionNotes}
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Root Inbound Ticket Request Card */}
             <div className="rounded-2xl border border-slate-200/90 bg-slate-50/70 p-5 shadow-xs space-y-3">
               <div className="flex items-center justify-between">
@@ -421,40 +572,153 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                 {ticket.description}
               </div>
 
-              {ticket.attachmentData && (
-                <div className="mt-3 ml-9 flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl max-w-md shadow-2xs">
-                  {ticket.attachmentType?.startsWith('image/') ? (
-                    <img
-                      src={ticket.attachmentData}
-                      alt={ticket.attachmentName || 'Visual proof'}
-                      className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[10px] shrink-0">
-                      <FileText className="w-4 h-4 text-rose-600" />
-                      <span>PDF</span>
+              {/* Multi-Media Hub: Evidence & Attachments */}
+              {(() => {
+                const ticketAttachments = (ticket.attachments && ticket.attachments.length > 0)
+                  ? ticket.attachments
+                  : (ticket.attachmentData ? [{
+                      id: 'legacy-proof',
+                      ticketId: ticket.id,
+                      uploadedById: ticket.customerId,
+                      fileName: ticket.attachmentName || 'Visual Proof',
+                      fileType: ticket.attachmentType || 'application/octet-stream',
+                      fileSizeByte: 0,
+                      fileUrl: ticket.attachmentData,
+                      fileData: ticket.attachmentData,
+                      fileCategory: 'EVIDENCE',
+                      caption: 'Attached by Requester',
+                      createdAt: ticket.createdAt,
+                    }] : []);
+
+                if (ticketAttachments.length === 0) return null;
+
+                const imageFiles = ticketAttachments.filter((a) =>
+                  a.fileType?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(a.fileName)
+                );
+                const audioFiles = ticketAttachments.filter((a) =>
+                  a.fileType?.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(a.fileName)
+                );
+                const documentFiles = ticketAttachments.filter((a) =>
+                  !a.fileType?.startsWith('image/') &&
+                  !a.fileType?.startsWith('audio/') &&
+                  !/\.(jpg|jpeg|png|webp|gif|svg|mp3|wav|ogg|m4a|aac)$/i.test(a.fileName)
+                );
+
+                return (
+                  <div className="mt-4 pl-9 space-y-3">
+                    <div className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                      <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Lampiran Berkas Bukti ({ticketAttachments.length} File)</span>
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 truncate">
-                      {ticket.attachmentName || 'Attached Proof Document'}
-                    </p>
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      Attached by Requester
-                    </span>
+
+                    {/* 1. Photo / Image Gallery Grid with Lightbox Zoom */}
+                    {imageFiles.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                          Galeri Foto Bukti (Klik untuk perbesar):
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-w-lg">
+                          {imageFiles.map((img) => (
+                            <div
+                              key={img.id}
+                              onClick={() => setLightboxImage({ url: img.fileData || img.fileUrl, title: img.fileName })}
+                              className="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xs hover:shadow-md transition-all aspect-video flex items-center justify-center"
+                            >
+                              <img
+                                src={img.fileData || img.fileUrl}
+                                alt={img.fileName}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              />
+                              <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white p-2 text-center">
+                                <Eye className="w-4 h-4" />
+                                <span className="text-[9px] font-bold truncate max-w-full">
+                                  {img.fileName}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 2. Audio Complaint / Voice Note Player */}
+                    {audioFiles.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                          Rekaman Suara / Audio Keluhan:
+                        </span>
+                        <div className="space-y-2 max-w-md">
+                          {audioFiles.map((aud) => (
+                            <div
+                              key={aud.id}
+                              className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-2 shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2 truncate">
+                                  <div className="p-1 rounded-md bg-blue-600 text-white shrink-0">
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                  </div>
+                                  <span className="font-bold text-slate-900 truncate">
+                                    {aud.fileName}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-blue-700 font-mono shrink-0">
+                                  {aud.fileSizeByte > 0 ? formatFileSize(aud.fileSizeByte) : 'Audio Clip'}
+                                </span>
+                              </div>
+                              <audio
+                                controls
+                                preload="metadata"
+                                src={aud.fileData || aud.fileUrl}
+                                className="w-full h-8"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. Document / PDF Invoice Cards */}
+                    {documentFiles.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                          Dokumen & Faktur:
+                        </span>
+                        <div className="space-y-2 max-w-md">
+                          {documentFiles.map((doc) => (
+                            <div
+                              key={doc.id}
+                              className="flex items-center gap-3 p-2.5 bg-white border border-slate-200 rounded-xl shadow-2xs hover:border-slate-300 transition-colors"
+                            >
+                              <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[9px] shrink-0">
+                                <FileText className="w-4 h-4 text-rose-600" />
+                                <span>DOC</span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-900 truncate">
+                                  {doc.fileName}
+                                </p>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {doc.fileSizeByte > 0 ? formatFileSize(doc.fileSizeByte) : 'Document'}
+                                </span>
+                              </div>
+                              <a
+                                href={doc.fileData || doc.fileUrl}
+                                download={doc.fileName}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3 py-1.5 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
+                              >
+                                Unduh
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <a
-                    href={ticket.attachmentData}
-                    download={ticket.attachmentName || 'ticket-proof'}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
-                  >
-                    View
-                  </a>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Subsequent Conversation Messages */}
@@ -503,36 +767,59 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                   </div>
 
                   {msg.attachmentData && (
-                    <div className="mt-3 ml-9 flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-w-md shadow-2xs">
-                      {msg.attachmentType?.startsWith('image/') ? (
-                        <img
-                          src={msg.attachmentData}
-                          alt={msg.attachmentName || 'Attachment preview'}
-                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
-                        />
+                    <div className="mt-3 ml-9">
+                      {msg.attachmentType?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(msg.attachmentName || '') ? (
+                        <div
+                          onClick={() => setLightboxImage({ url: msg.attachmentData!, title: msg.attachmentName || 'Attachment' })}
+                          className="flex items-center gap-3 p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl max-w-md shadow-2xs cursor-pointer transition-colors"
+                        >
+                          <img
+                            src={msg.attachmentData}
+                            alt={msg.attachmentName || 'Attachment preview'}
+                            className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-900 truncate">
+                              {msg.attachmentName || 'Image Attachment'}
+                            </p>
+                            <span className="text-[10px] text-blue-600 font-medium flex items-center gap-1">
+                              <Eye className="w-3 h-3" /> Klik untuk memperbesar
+                            </span>
+                          </div>
+                        </div>
+                      ) : msg.attachmentType?.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/i.test(msg.attachmentName || '') ? (
+                        <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl max-w-md space-y-1.5 shadow-2xs">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+                            <Volume2 className="w-3.5 h-3.5 text-blue-600" />
+                            <span className="truncate">{msg.attachmentName || 'Audio Recording'}</span>
+                          </div>
+                          <audio controls src={msg.attachmentData} className="w-full h-8" />
+                        </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[10px] shrink-0">
-                          <FileText className="w-4 h-4 text-rose-600" />
-                          <span>PDF</span>
+                        <div className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-w-md shadow-2xs">
+                          <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-600 font-bold text-[9px] shrink-0">
+                            <FileText className="w-4 h-4 text-rose-600" />
+                            <span>PDF</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-900 truncate">
+                              {msg.attachmentName || 'Attached Document'}
+                            </p>
+                            <span className="text-[10px] text-slate-400">
+                              {isInternal ? 'Internal team attachment' : 'Shared with customer'}
+                            </span>
+                          </div>
+                          <a
+                            href={msg.attachmentData}
+                            download={msg.attachmentName || 'document'}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
+                          >
+                            Unduh
+                          </a>
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 truncate">
-                          {msg.attachmentName || 'Attached Document'}
-                        </p>
-                        <span className="text-[10px] text-slate-400">
-                          {isInternal ? 'Internal team attachment' : 'Shared with customer'}
-                        </span>
-                      </div>
-                      <a
-                        href={msg.attachmentData}
-                        download={msg.attachmentName || 'document'}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors shrink-0"
-                      >
-                        View
-                      </a>
                     </div>
                   )}
                 </div>
@@ -591,7 +878,8 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,application/pdf"
+            multiple
+            accept="image/*,application/pdf,audio/*,.mp3,.wav,.ogg,.m4a"
             className="hidden"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
@@ -618,35 +906,38 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
             }`}
           />
 
-          {attachedFile && (
-            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 animate-fadeIn">
-              <div className="flex items-center gap-2 truncate">
-                <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span className="font-semibold text-slate-900 truncate">{attachedFile.name}</span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  ({formatFileSize(attachedFile.size)})
-                </span>
-                {activeTab === 'INTERNAL_NOTE' ? (
-                  <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
-                    Internal Only
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl animate-fadeIn">
+              {attachedFiles.map((file, idx) => (
+                <div
+                  key={`${file.name}-${idx}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 shadow-2xs"
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="font-semibold text-slate-900 truncate max-w-[130px]">{file.name}</span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ({formatFileSize(file.size)})
                   </span>
-                ) : (
-                  <span className="text-[9px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
-                    Public
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setAttachedFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
-                className="p-1 hover:bg-slate-200 rounded-md text-slate-400 hover:text-slate-600 transition-colors ml-2 cursor-pointer"
-                title="Remove attachment"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                    className="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors ml-1 cursor-pointer"
+                    title="Remove file"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {attachedFiles.length < 5 && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2 py-1 rounded-lg border border-dashed border-slate-300 hover:border-blue-400 text-slate-500 hover:text-blue-600 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Tambah (Maks 5)</span>
+                </button>
+              )}
             </div>
           )}
 
@@ -660,7 +951,7 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                 title={
                   !ticket
                     ? 'Select a ticket to attach file'
-                    : 'Attach screenshot or receipt document (or paste screenshot directly with Ctrl+V)'
+                    : 'Attach multiple screenshots, audio recordings, or invoices (up to 5 files)'
                 }
               >
                 <Paperclip className="w-3.5 h-3.5" />
@@ -675,7 +966,7 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
             </div>
             <button
               type="submit"
-              disabled={!ticket || isSending || (!composerText.trim() && !attachedFile)}
+              disabled={!ticket || isSending || (!composerText.trim() && attachedFiles.length === 0)}
               className="flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl text-white shadow-xs transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed bg-[#2563EB] hover:bg-[#1D4ED8] shrink-0"
             >
               <Send className="w-3.5 h-3.5" />
@@ -757,6 +1048,120 @@ export const TicketDetail: React.FC<TicketDetailProps> = ({
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors cursor-pointer shadow-xs"
               >
                 Close Terminal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* High-Resolution Media Lightbox Zoom */}
+      {lightboxImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] flex flex-col items-center bg-slate-900 rounded-2xl border border-slate-700 p-3 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between px-3 py-2 text-white border-b border-slate-800 mb-2">
+              <span className="text-xs font-bold truncate max-w-md">{lightboxImage.title}</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={lightboxImage.url}
+                  download={lightboxImage.title}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-colors"
+                  title="Download full size"
+                >
+                  <Download className="w-4 h-4" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLightboxImage(null)}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/60 text-slate-200 hover:text-rose-200 transition-colors cursor-pointer"
+                  title="Close (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center overflow-auto max-h-[75vh]">
+              <img
+                src={lightboxImage.url}
+                alt={lightboxImage.title}
+                className="max-h-[75vh] w-auto object-contain rounded-lg shadow-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Resolution Notes Modal */}
+      {isResolveModalOpen && ticket && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setIsResolveModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden p-6 relative animate-in zoom-in-95 duration-150 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0 shadow-2xs">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div className="flex-1 pr-6">
+                <h3 className="text-base font-bold text-slate-900">
+                  Selesaikan Tiket #{ticket.ticketNumber}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Masukkan catatan solusi teknis / tindakan perbaikan resmi untuk pelanggan.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResolveModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Ringkasan Solusi (Resolution Notes):
+              </label>
+              <textarea
+                rows={3}
+                value={resolveNotesInput}
+                onChange={(e) => setResolveNotesInput(e.target.value)}
+                placeholder="Contoh: Suku cadang radiator telah diganti dengan part orisinil nomor seri #884 dan kompresi mesin normal..."
+                className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-emerald-500 text-slate-900 leading-relaxed font-medium"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsResolveModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await onStatusChange('RESOLVED', resolveNotesInput.trim() || undefined);
+                  setIsResolveModalOpen(false);
+                }}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Konfirmasi Masalah Selesai</span>
               </button>
             </div>
           </div>

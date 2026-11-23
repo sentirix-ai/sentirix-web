@@ -9,6 +9,48 @@ export interface AttachmentPayload {
   data: string; // Base64 or Data URL
 }
 
+export interface TicketAttachment {
+  id: string;
+  ticketId: string;
+  messageId?: string | null;
+  uploadedById: string;
+  fileName: string;
+  fileType: string;
+  fileSizeByte: number;
+  fileUrl: string;
+  fileData?: string | null;
+  fileCategory?: string | null;
+  caption?: string | null;
+  createdAt: string;
+}
+
+export interface TicketPodTransfer {
+  id: string;
+  ticketId: string;
+  fromPodId: string;
+  toPodId: string;
+  transferredById: string;
+  reason: string;
+  durationInPreviousPodSec: number;
+  transferredAt: string;
+  fromPod?: { id: string; name: string };
+  toPod?: { id: string; name: string };
+  transferredBy?: { id: string; fullName: string; username: string };
+}
+
+export interface AgentTicketActivity {
+  id: string;
+  ticketId: string;
+  agentId: string;
+  startedAt: string;
+  firstResponseAt?: string | null;
+  resolvedAt?: string | null;
+  durationSeconds: number;
+  slaTargetSeconds: number;
+  slaStatus: string;
+  agent?: { id: string; fullName: string; username: string };
+}
+
 export interface Ticket {
   id: string;
   ticketNumber: number;
@@ -27,6 +69,14 @@ export interface Ticket {
   attachmentName?: string | null;
   attachmentType?: string | null;
   attachmentData?: string | null;
+  attachments?: TicketAttachment[];
+  podTransfers?: TicketPodTransfer[];
+  agentActivities?: AgentTicketActivity[];
+  isHanging?: boolean;
+  hangingReason?: string | null;
+  hangingSince?: string | null;
+  resolvedAt?: string | null;
+  resolutionNotes?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -33,7 +33,7 @@ export default function CustomerSupportPortalPage() {
 
   // Native Local Storage File State
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
   // Submission States
@@ -43,15 +43,19 @@ export default function CustomerSupportPortalPage() {
   const [copiedRef, setCopiedRef] = useState(false);
   const [submittedTimestamp, setSubmittedTimestamp] = useState<string>('');
 
-  // Handle Local Device File Selection & Drag-and-Drop
+  // Handle Local Device File Selection & Drag-and-Drop (Multi-File Evidence)
   const handleFileSelect = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const file = files[0];
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('File size exceeds the 10MB limit. Please choose a smaller image or PDF document.');
-      return;
+    const newFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.size > 15 * 1024 * 1024) {
+        setErrorMessage(`File "${f.name}" melebihi batas 15MB.`);
+        continue;
+      }
+      newFiles.push(f);
     }
-    setAttachedFile(file);
+    setAttachedFiles((prev) => [...prev, ...newFiles].slice(0, 5));
     setErrorMessage(null);
   };
 
@@ -100,8 +104,8 @@ export default function CustomerSupportPortalPage() {
         : `Email: ${customerEmail.trim()}`;
 
       const refInfo = referenceId.trim() ? ` | Order/TRX: ${referenceId.trim()}` : '';
-      const fileInfo = attachedFile
-        ? ` | Attachment: ${attachedFile.name} (${formatFileSize(attachedFile.size)})`
+      const fileInfo = attachedFiles.length > 0
+        ? ` | Attachments: ${attachedFiles.map((f) => `${f.name} (${formatFileSize(f.size)})`).join(', ')}`
         : '';
 
       const fullDescription = `${description.trim()}\n\n[Contact: ${contactInfo}${refInfo}${fileInfo}]`;
@@ -109,26 +113,30 @@ export default function CustomerSupportPortalPage() {
       let attachments: Array<{ fileName: string; mimeType: string; data: string }> | undefined = undefined;
       let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } = {};
 
-      if (attachedFile) {
+      if (attachedFiles.length > 0) {
         try {
-          const reader = new FileReader();
-          const base64Data = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(attachedFile);
-          });
-          attachments = [{
-            fileName: attachedFile.name,
-            mimeType: attachedFile.type || 'image/png',
-            data: base64Data,
-          }];
+          const list: Array<{ fileName: string; mimeType: string; data: string }> = [];
+          for (const file of attachedFiles) {
+            const reader = new FileReader();
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            list.push({
+              fileName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              data: base64Data,
+            });
+          }
+          attachments = list;
           attachmentMeta = {
-            attachmentName: attachedFile.name,
-            attachmentType: attachedFile.type || 'image/png',
-            attachmentData: base64Data,
+            attachmentName: attachedFiles[0].name,
+            attachmentType: attachedFiles[0].type || 'application/octet-stream',
+            attachmentData: list[0].data,
           };
         } catch (err) {
-          console.warn('Failed to encode attached file', err);
+          console.warn('Failed to encode attached files', err);
         }
       }
 
@@ -166,7 +174,7 @@ export default function CustomerSupportPortalPage() {
     setTitle('');
     setDescription('');
     setReferenceId('');
-    setAttachedFile(null);
+    setAttachedFiles([]);
     setCreatedTicket(null);
     setCopiedRef(false);
     setSubmittedTimestamp('');
@@ -485,7 +493,8 @@ export default function CustomerSupportPortalPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,application/pdf"
+                  multiple
+                  accept="image/*,application/pdf,audio/*,.mp3,.wav,.ogg,.m4a"
                   className="hidden"
                   onChange={(e) => handleFileSelect(e.target.files)}
                 />
@@ -501,42 +510,54 @@ export default function CustomerSupportPortalPage() {
                   className={`p-5 rounded-2xl border-2 border-dashed transition-all cursor-pointer text-center ${
                     isDragging
                       ? 'border-[#2563EB] bg-blue-50/80 scale-[1.01]'
-                      : attachedFile
+                      : attachedFiles.length > 0
                       ? 'border-emerald-300 bg-emerald-50/50'
                       : 'border-slate-300 hover:border-[#2563EB] bg-[#F8FAFC] hover:bg-blue-50/30'
                   }`}
                 >
-                  {attachedFile ? (
-                    <div className="flex items-center justify-between px-3.5 py-1.5 bg-white rounded-xl border border-emerald-200 shadow-2xs">
-                      <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 truncate">
-                        <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
-                        <span className="truncate">{attachedFile.name}</span>
-                        <span className="text-[10px] text-slate-400 font-mono font-normal">
-                          ({formatFileSize(attachedFile.size)})
-                        </span>
+                  {attachedFiles.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        {attachedFiles.map((file, idx) => (
+                          <div
+                            key={`${file.name}-${idx}`}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl border border-emerald-200 shadow-2xs text-xs font-semibold text-emerald-900"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span className="truncate max-w-[130px]">{file.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono font-normal">
+                              ({formatFileSize(file.size)})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="p-1 hover:bg-rose-100 rounded-md text-rose-600 transition-colors ml-1 cursor-pointer"
+                              title="Hapus file"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAttachedFile(null);
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                        }}
-                        className="p-1 hover:bg-rose-100 rounded-md text-rose-600 transition-colors ml-2"
-                        title="Remove file"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      {attachedFiles.length < 5 && (
+                        <p className="text-[11px] text-emerald-700 font-semibold pt-1">
+                          + Klik untuk menambah foto / dokumen / audio lagi (Maks 5 file)
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-1.5 text-slate-500">
                       <UploadCloud className="w-6 h-6 text-slate-400" />
                       <span className="text-xs font-semibold text-slate-700">
-                        <span className="sm:hidden">Tap to choose file or photo from your device</span>
-                        <span className="hidden sm:inline">Click to browse files from your device, or drag &amp; drop here</span>
+                        <span className="sm:hidden">Pilih foto kerusakan, audio keluhan, atau faktur</span>
+                        <span className="hidden sm:inline">Klik untuk telusuri file dari perangkat, atau seret &amp; lepas ke sini</span>
                       </span>
                       <span className="text-[11px] text-slate-400">
-                        Supports screenshot images (PNG, JPG) or PDF receipts (Max 10MB)
+                        Mendukung foto bukti (PNG, JPG), audio keluhan (MP3, WAV), atau dokumen faktur/PDF (Hingga 5 file)
                       </span>
                     </div>
                   )}

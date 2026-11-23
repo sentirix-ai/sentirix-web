@@ -504,7 +504,7 @@ export default function DashboardPage() {
   const handleSendMessage = async (
     content: string,
     type: 'PUBLIC_REPLY' | 'INTERNAL_NOTE',
-    attachedFile?: File | null,
+    attachedFiles?: File[] | File | null,
   ) => {
     if (!selectedTicket) return;
     const senderName = user?.username || 'Marcus Vance';
@@ -512,21 +512,31 @@ export default function DashboardPage() {
     let attachments: AttachmentPayload[] | undefined = undefined;
     let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } | undefined = undefined;
 
-    if (attachedFile) {
+    const fileList: File[] = Array.isArray(attachedFiles)
+      ? attachedFiles
+      : attachedFiles
+      ? [attachedFiles]
+      : [];
+
+    if (fileList.length > 0) {
       try {
-        const base64Data = await fileToBase64(attachedFile);
-        attachments = [{
-          fileName: attachedFile.name,
-          mimeType: attachedFile.type || 'image/png',
-          data: base64Data,
-        }];
+        const payloadList: AttachmentPayload[] = [];
+        for (const file of fileList) {
+          const base64Data = await fileToBase64(file);
+          payloadList.push({
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            data: base64Data,
+          });
+        }
+        attachments = payloadList;
         attachmentMeta = {
-          attachmentName: attachedFile.name,
-          attachmentType: attachedFile.type || 'image/png',
-          attachmentData: base64Data,
+          attachmentName: fileList[0].name,
+          attachmentType: fileList[0].type || 'application/octet-stream',
+          attachmentData: payloadList[0].data,
         };
       } catch (e) {
-        console.warn('Failed to parse attached file', e);
+        console.warn('Failed to parse attached files', e);
       }
     }
 
@@ -548,12 +558,16 @@ export default function DashboardPage() {
     });
   };
 
-  const handleStatusChange = async (status: TicketStatus) => {
+  const handleStatusChange = async (status: TicketStatus, resolutionNotes?: string) => {
     if (!selectedTicket) return;
-    await updateTicketStatus(selectedTicket.id, status);
-    setSelectedTicket((prev) => (prev ? { ...prev, status } : null));
+    await updateTicketStatus(selectedTicket.id, status, resolutionNotes);
+    const nowIso = new Date().toISOString();
+    const resolvedFields = (status === 'RESOLVED' || status === 'CLOSED')
+      ? { resolvedAt: nowIso, resolutionNotes: resolutionNotes || 'Problem successfully resolved' }
+      : {};
+    setSelectedTicket((prev) => (prev ? { ...prev, status, ...resolvedFields } : null));
     setTickets((prev) =>
-      prev.map((t) => (t.id === selectedTicket.id ? { ...t, status } : t)),
+      prev.map((t) => (t.id === selectedTicket.id ? { ...t, status, ...resolvedFields } : t)),
     );
   };
 
@@ -627,14 +641,15 @@ export default function DashboardPage() {
     } catch {}
     if (user) {
       const isMember = !!(user as any)?.isGuestMember || !!(user as any)?.workspaceId;
+      const targetMemberId = (user as any)?.id || (user as any)?.username || user?.username;
       if (isMember) {
         // Requirement 2: Member logout removes member from active count and releases seat
         try {
-          await memberLogout((user as any).id, (user as any).workspaceId);
+          await memberLogout(targetMemberId, (user as any)?.workspaceId);
         } catch {
           // Fail silently
         }
-      } else if (user.role !== 'ADMIN' && user.username.toLowerCase() !== 'pungkyrama') {
+      } else if (user.role !== 'ADMIN' && user.username?.toLowerCase() !== 'pungkyrama') {
         // Requirement 3: Workspace owner logout purges all members
         try {
           await purgeWorkspaceOnLogout(user.username);
@@ -642,8 +657,10 @@ export default function DashboardPage() {
           // Fail silently
         }
       }
+      await logoutUser(targetMemberId);
+    } else {
+      await logoutUser();
     }
-    await logoutUser(user?.id);
     window.location.href = '/';
   };
 

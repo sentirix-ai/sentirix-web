@@ -261,12 +261,16 @@ export async function createMessage(
   }
 }
 
-export async function updateTicketStatus(ticketId: string, status: TicketStatus): Promise<void> {
+export async function updateTicketStatus(
+  ticketId: string,
+  status: TicketStatus,
+  resolutionNotes?: string,
+): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, resolutionNotes }),
     });
   } catch {
     // Offline simulated

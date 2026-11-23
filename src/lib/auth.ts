@@ -503,9 +503,23 @@ export async function sendHeartbeat(userId: string): Promise<boolean> {
 }
 
 export function sendBeaconLogout(userId: string): void {
-  if (typeof window === 'undefined' || !userId || !navigator.sendBeacon) return;
-  const blob = new Blob([JSON.stringify({ userId })], {
-    type: 'application/json',
-  });
-  navigator.sendBeacon(`${API_BASE_URL}/auth/beacon-logout`, blob);
+  if (typeof window === 'undefined' || !userId) return;
+  const payload = JSON.stringify({ userId, reason: 'BROWSER_CLOSED' });
+  let sent = false;
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([payload], { type: 'application/json' });
+      sent = navigator.sendBeacon(`${API_BASE_URL}/auth/beacon-logout`, blob);
+    } catch {}
+  }
+  if (!sent) {
+    try {
+      fetch(`${API_BASE_URL}/auth/beacon-logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    } catch {}
+  }
 }

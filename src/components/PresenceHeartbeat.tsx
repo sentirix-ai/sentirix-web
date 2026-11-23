@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { getSession, logoutUser, sendHeartbeat } from '../lib/auth';
+import { getSession, logoutUser, sendHeartbeat, sendBeaconLogout } from '../lib/auth';
 import { API_BASE_URL } from '../lib/api';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
@@ -44,7 +44,20 @@ export default function PresenceHeartbeat() {
       }
     };
 
-    // 4. Instant force logout listener via WebSocket
+    // 4. Instant Beacon Logout when browser tab or window is closed
+    const handleUnload = () => {
+      // Don't send browser closed if a manual logout was already triggered
+      try {
+        if (sessionStorage.getItem('is_manual_logout') === 'true') return;
+      } catch {}
+      const current = getSession();
+      const currentId = current?.id || current?.username;
+      if (currentId) {
+        sendBeaconLogout(currentId);
+      }
+    };
+
+    // 5. Instant force logout listener via WebSocket
     let socket: Socket | null = null;
     try {
       socket = io(SOCKET_URL, {
@@ -81,6 +94,8 @@ export default function PresenceHeartbeat() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
 
     return () => {
       clearInterval(interval);
@@ -89,6 +104,8 @@ export default function PresenceHeartbeat() {
       } catch {}
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
     };
   }, []);
 

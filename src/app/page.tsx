@@ -483,11 +483,16 @@ export default function LandingPage() {
       }
 
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
-      if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN'))) {
+      if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') && res.user?.username?.toLowerCase() !== 'pungkyrama')) {
         router.push('/onboarding?step=4');
+      } else if (res.user?.username?.toLowerCase() === 'pungkyrama') {
+        // Platform Founder / Root Owner: enters Platform Overview in Cockpit
+        router.push('/admin/cockpit?view=platform');
       } else if (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') {
+        // Business Tenant Owner (e.g. kuco.corp): enters Company Cockpit
         router.push('/admin/cockpit');
       } else if (res.user?.isGuestMember || res.user?.onboardingCompleted) {
+        // Frontline Staff (Leaders & Agents: Meta, Mimi, etc): enters Ticket Workbench
         router.push('/dashboard');
       } else {
         router.push('/onboarding');
