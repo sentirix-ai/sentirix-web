@@ -59,6 +59,12 @@ function JoinWorkspaceContent() {
   const [isLockingQuota, setIsLockingQuota] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const isPodQuotaPreAllocated = Boolean(
+    tokenData?.workspace?.isQuotaLocked ||
+    tokenData?.workspace?.podCategory === 'SPECIALIZED' ||
+    isQuotaLocked
+  );
+
   // Success state for Leader (Resilient against F5/refresh before clicking Enter Workspace)
   const [leaderLockedResult, setLeaderLockedResult] = useState<{
     workspaceName: string;
@@ -196,6 +202,7 @@ function JoinWorkspaceContent() {
           const res = await fetchAgentTokenStatus(token, sid);
           if (!res.valid) {
             if (res.isLockedToOtherSession) setIsLockedToOtherSession(true);
+            if (res.isClaimed) setIsClaimedSeat(true);
             setErrorMessage(res.error || 'Agent token is invalid or has already been used.');
           } else {
             setTokenData(res);
@@ -332,7 +339,10 @@ function JoinWorkspaceContent() {
       setFormError(null);
 
       const maxAllowed = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
-      const safeSubordinates = Math.min(Number(selectedSubordinates) || 1, maxAllowed);
+      const safeSubordinates =
+        tokenData?.workspace?.isQuotaLocked && tokenData?.workspace?.assignedQuota
+          ? Math.max(1, tokenData.workspace.assignedQuota - 1)
+          : Math.min(Number(selectedSubordinates) || 1, maxAllowed);
       const sid = getClientSessionId();
 
       const res = await lockLeaderQuota({
@@ -516,7 +526,7 @@ function JoinWorkspaceContent() {
                     token: res.newToken!,
                     joinUrl: res.joinUrl!,
                     isUsed: false,
-                    usedBy: null,
+                    usedBy: t.usedBy || null,
                     isOpened: false,
                   }
                 : t,
@@ -607,28 +617,34 @@ function JoinWorkspaceContent() {
               )}
             </div>
 
-            {isClaimedSeat ? (
-              <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-emerald-950/90 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40 font-mono">
-                ORGANIZATIONAL POLICY • LEADERSHIP ACTIVE
-              </span>
-            ) : isLockedToOtherSession ? (
+            {isLockedToOtherSession ? (
               <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider bg-amber-950/90 text-amber-300 px-3 py-1 rounded-full border border-amber-500/40 font-mono">
-                SECURITY NOTICE • SINGLE-USE BROWSER LOCKED
+                SECURITY GOVERNANCE • ACTIVE SESSION DETECTED
+              </span>
+            ) : isClaimedSeat ? (
+              <span className="inline-block text-[10px] font-bold uppercase tracking-wider bg-emerald-950/90 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/40 font-mono">
+                {tokenType === 'LEADER'
+                  ? 'ORGANIZATIONAL POLICY • LEADERSHIP ACTIVE'
+                  : 'ORGANIZATIONAL POLICY • SEAT OCCUPIED'}
               </span>
             ) : null}
 
             <h2 className="text-lg font-bold text-white tracking-tight">
-              {isClaimedSeat
-                ? 'Leadership Seat Occupied'
-                : isLockedToOtherSession
-                ? 'Link Active in Another Browser Session'
+              {isLockedToOtherSession
+                ? tokenType === 'LEADER'
+                  ? 'Leadership Seat Currently Engaged'
+                  : 'Frontline Seat Currently Engaged'
+                : isClaimedSeat
+                ? tokenType === 'LEADER'
+                  ? 'Leadership Seat Occupied'
+                  : 'Frontline Seat Occupied'
                 : 'Token Access Denied'}
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed max-w-md mx-auto">
               {errorMessage}
             </p>
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-              {isClaimedSeat ? (
+              {isClaimedSeat && tokenType === 'LEADER' && !isLockedToOtherSession ? (
                 <>
                   <a
                     href="/"
@@ -641,15 +657,15 @@ function JoinWorkspaceContent() {
                     href="/"
                     className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800/60 transition-all font-medium cursor-pointer"
                   >
-                    <span>Return to Home</span>
+                    <span>Return to Corporate Portal</span>
                   </a>
                 </>
               ) : (
                 <a
                   href="/"
-                  className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold"
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold cursor-pointer"
                 >
-                  <span>Return to Home</span>
+                  <span>Return to Corporate Portal</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </a>
               )}
@@ -685,9 +701,8 @@ function JoinWorkspaceContent() {
               <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                 {leaderLockedResult.agentTokens.map((agt, idx) => {
                   const isCopied = copiedTokens.includes(agt.token);
-                  const isClaimed = !!agt.isUsed;
-                  const isOpened = !!agt.isOpened;
-                  const isLocked = isClaimed || isOpened;
+                  const isClaimed = !!agt.isUsed || !!agt.usedBy;
+                  const isOpened = !isClaimed && !!agt.isOpened;
 
                   return (
                     <div
@@ -701,21 +716,21 @@ function JoinWorkspaceContent() {
                         <span className="font-mono text-blue-300 font-bold">{agt.token}</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {isLocked ? (
+                        {isClaimed ? (
+                          <div
+                            className="px-2.5 py-1 rounded text-[11px] font-bold border bg-emerald-950/40 border-emerald-500/40 text-emerald-300 flex items-center gap-1.5 select-none"
+                            title={`Token has been claimed by ${agt.usedBy || 'member'}`}
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Claimed{agt.usedBy ? ` (${agt.usedBy})` : ''}</span>
+                          </div>
+                        ) : isOpened ? (
                           <div
                             className="px-2.5 py-1 rounded text-[11px] font-bold border bg-[#111827] border-slate-800 text-slate-500 cursor-not-allowed opacity-75 flex items-center gap-1.5 select-none"
-                            title={
-                              isClaimed
-                                ? `Token has been claimed by ${agt.usedBy || 'member'}`
-                                : 'Token link is currently opened by member'
-                            }
+                            title="Token link is currently opened by member"
                           >
                             <Lock className="w-3 h-3 text-slate-500" />
-                            <span>
-                              {isClaimed
-                                ? `Claimed${agt.usedBy ? ` (${agt.usedBy})` : ''}`
-                                : 'Opened'}
-                            </span>
+                            <span>Opened</span>
                           </div>
                         ) : (
                           <button
@@ -737,11 +752,11 @@ function JoinWorkspaceContent() {
                           disabled={regeneratingToken === agt.token}
                           onClick={() => handleRegenerateAgentToken(agt.token)}
                           className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
-                            isCopied || isLocked
+                            isCopied || isOpened
                               ? 'bg-blue-950/90 border border-blue-500/80 text-blue-300 hover:bg-blue-900 hover:border-blue-400 shadow-sm shadow-blue-950/60'
                               : 'bg-[#111827] border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
                           }`}
-                          title="Regenerate token for this team member slot if link is lost or revoked"
+                          title="Regenerate single-use access link for this team member"
                         >
                           <RefreshCw
                             className={`w-3 h-3 ${
@@ -911,11 +926,11 @@ function JoinWorkspaceContent() {
               {/* Leader Profile Details */}
               <div className="space-y-4 p-4 rounded-xl bg-[#0B0F19] border border-slate-800">
                 <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                  Step 1: Complete Your Profile
+                  Leader Profile
                 </span>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Your Full Name <span className="text-red-400">*</span>
+                    Full Name <span className="text-red-400">*</span>
                   </label>
                   <input
                     type="text"
@@ -923,106 +938,57 @@ function JoinWorkspaceContent() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="e.g. Marcus Vance"
-                    className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500"
+                    className="w-full bg-[#111827] border border-slate-800 rounded-lg px-3.5 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 font-medium"
                   />
                 </div>
               </div>
 
-              {/* Interconnected Quota Allocation Box with Dropdown + [✓] Checkmark button */}
-              <div className="p-4 rounded-xl bg-[#0B0F19] border border-blue-500/40 space-y-3">
+              {/* PRE-ALLOCATED MANDATE CARD: Quota already confirmed by Admin */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-[#0B0F19] to-blue-950/20 border border-blue-500/30 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400">
-                    Step 2: Allocate Your Pod Quota
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Provisioned Seat Capacity</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-emerald-400" />
+                    CONFIRMED BY ADMIN
                   </span>
                 </div>
 
-                {/* Quota Stats Overview */}
-                <div className="p-3 rounded-lg bg-[#111827] border border-slate-800 text-[11px] space-y-1.5 text-slate-300">
-                  <div className="flex justify-between">
-                    <span>Total Organization Quota:</span>
-                    <strong className="text-white">{tokenData?.quotaStats?.totalSeats} Seats</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Locked by Other Pods:</span>
-                    <strong className="text-amber-400">{tokenData?.quotaStats?.lockedSeats} Seats</strong>
-                  </div>
-                  <div className="flex justify-between pt-1 border-t border-slate-800 font-semibold text-blue-300">
-                    <span>Max Available for Your Pod:</span>
-                    <strong className="text-emerald-400">
-                      {((tokenData?.quotaStats?.maxSubordinatesAllowed ?? 0) + 1)} Seats
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Dropdown Selection & Checkmark Locking Button */}
-                <div className="pt-2">
-                  <label className="block text-xs font-bold text-white mb-1.5">
-                    Select Allocation Seats:
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex-1">
-                      <select
-                        value={selectedSubordinates}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          const max = tokenData?.quotaStats?.maxSubordinatesAllowed || 7;
-                          if (val > max) {
-                            setFormError(`Subordinate quota exceeds maximum allowed (${max} seats).`);
-                          } else {
-                            if (formError) setFormError(null);
-                            setSelectedSubordinates(val);
-                          }
-                        }}
-                        className={`w-full ${
-                          isQuotaLocked || tokenData?.quotaStats?.isLastPod
-                            ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
-                            : 'bg-[#111827] border-2 border-blue-500 text-white'
-                        } font-bold text-xs rounded-xl px-3.5 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer disabled:opacity-80`}
-                        disabled={isQuotaLocked || tokenData?.quotaStats?.isLastPod}
-                      >
-                        {tokenData?.quotaStats?.allowedOptions?.map((num: number) => (
-                          <option key={num} value={num} className="bg-[#111827] text-white">
-                            {num + 1} Seats (1 Leader + {num} Agent{num > 1 ? 's' : ''})
-                          </option>
-                        ))}
-                      </select>
+                <div className="p-3.5 rounded-xl bg-[#111827] border border-slate-800 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-extrabold text-white">
+                      {tokenData?.workspace?.assignedQuota || selectedSubordinates + 1} Dedicated Seats
                     </div>
-
-                    <button
-                      type="button"
-                      disabled={isLockingQuota}
-                      onClick={handleToggleQuotaLock}
-                      className={`px-5 py-2.5 rounded-xl text-white text-xs font-extrabold flex items-center gap-1.5 shadow-lg cursor-pointer transition-all shrink-0 ${
-                        isQuotaLocked
-                          ? 'bg-emerald-700 hover:bg-emerald-600 shadow-emerald-700/40'
-                          : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30'
-                      } disabled:opacity-50`}
-                    >
-                      {isLockingQuota ? (
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Check className="w-4 h-4 stroke-[3]" />
-                      )}
-                      <span>{isQuotaLocked ? 'Quota Locked' : 'Lock Quota'}</span>
-                    </button>
+                    <div className="text-[11px] text-slate-400">
+                      1 Pod Leader + {Math.max(0, (tokenData?.workspace?.assignedQuota || selectedSubordinates + 1) - 1)} Support Agents
+                    </div>
                   </div>
+                  <span className="text-[10px] font-mono font-semibold text-blue-300 bg-blue-950/60 border border-blue-500/30 px-2.5 py-1 rounded-full">
+                    Admin-Assigned
+                  </span>
                 </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Pod capacity has been designated by your Workspace Super Admin. Seat allocation is managed centrally.
+                </p>
               </div>
 
               {/* Main Submit Button at bottom */}
               <button
                 type="submit"
-                disabled={isSubmitting || !fullName.trim() || !isQuotaLocked}
+                disabled={isSubmitting || !fullName.trim()}
                 className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer"
               >
                 {isSubmitting ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Activating Account &amp; Generating Tokens...</span>
+                    <span>Activating Pod &amp; Issuing Tokens...</span>
                   </div>
                 ) : (
                   <>
-                    <span>Activate Pod &amp; Continue to Next Step</span>
+                    <span>Complete Activation &amp; Issue Tokens</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1035,9 +1001,9 @@ function JoinWorkspaceContent() {
             /* AGENT RETURNING VIEW (e.g. moko returning) */
             <div className="p-6 sm:p-8 bg-[#111827] border border-blue-500/40 rounded-2xl shadow-2xl space-y-6">
               <div className="text-center space-y-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold">
-                  <Users className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Frontline Agent</span>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-mono font-bold uppercase tracking-wider">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>AUTHORIZED ACCESS • SESSION RESTORATION</span>
                 </div>
 
                 {tokenData?.organization?.name && (
@@ -1047,8 +1013,11 @@ function JoinWorkspaceContent() {
                 )}
 
                 <h1 className="text-xl font-black text-white pt-1">
-                  Welcome back, {tokenData.assignedMemberName}!
+                  Welcome Back, {tokenData.assignedMemberName}!
                 </h1>
+                <p className="text-xs text-slate-400">
+                  Your designated frontline seat for {cleanPodName(tokenData?.workspace?.name)} is ready for resumption. No password required.
+                </p>
               </div>
 
               {/* Specialization Unit Card */}
@@ -1102,11 +1071,11 @@ function JoinWorkspaceContent() {
                   {isSubmitting ? (
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Launching Workspace...</span>
+                      <span>Resuming Session...</span>
                     </div>
                   ) : (
                     <>
-                      <span>Launch Pod Ticket Workspace</span>
+                      <span>Resume Workspace Session</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

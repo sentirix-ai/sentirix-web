@@ -341,6 +341,27 @@ export default function DashboardPage() {
         }
       });
 
+      // Listen for session terminated (Single Concurrent Session enforcement)
+      socket.on(
+        'auth:session_terminated',
+        async (payload: { userId?: string; username?: string; reason?: string }) => {
+          const session = getSession();
+          if (!session) return;
+          const matches =
+            (session.id && payload.userId && session.id === payload.userId) ||
+            (session.username &&
+              payload.username &&
+              session.username.toLowerCase() === payload.username.toLowerCase());
+          if (matches) {
+            await logoutUser();
+            alert(
+              'Sesi kerja Anda telah beralih ke perangkat atau jendela lain. Sesi pada halaman ini ditutup untuk melindungi keamanan akun Anda.',
+            );
+            window.location.href = '/';
+          }
+        },
+      );
+
       // Listen for leadership reassignment by Super Admin (Instant Eviction & Token Disarm)
       socket.on(
         'team:leader_reassigned',

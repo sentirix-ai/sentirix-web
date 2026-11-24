@@ -261,6 +261,7 @@ interface PodDraft {
   podCategory: string;
   description: string;
   services: string[];
+  seats?: number;
 }
 
 const CORPORATE_ACRONYMS = new Set([
@@ -342,8 +343,9 @@ export default function TitaniumOnboardingPage() {
     }
   }, [selectedIndustry]);
 
-  // Step 2: Member Input via Typing
+  // Step 2: Member Input via Typing & Locked Capacity Allocation
   const [typedMembers, setTypedMembers] = useState<number>(() => getInitialDraft()?.typedMembers || 20);
+  const [isCapacityLocked, setIsCapacityLocked] = useState<boolean>(() => Boolean(getInitialDraft()?.isCapacityLocked));
 
   // Step 3: Pods & Multi-Services
   const [pods, setPods] = useState<PodDraft[]>(() => getInitialDraft()?.pods || []);
@@ -382,6 +384,110 @@ export default function TitaniumOnboardingPage() {
   // Auto-calculated pod count: Math.ceil(typedMembers / 8)
   const calculatedPodCount = Math.max(1, Math.ceil((Number(typedMembers) || 1) / 8));
   const rawFraction = ((Number(typedMembers) || 1) / 8).toFixed(1);
+
+  // Step 2 Locked Capacity Allocation Logic
+  const calculateBalancedSeats = (totalMembers: number, podCount: number): number[] => {
+    if (podCount <= 0) return [];
+    const base = Math.floor(totalMembers / podCount);
+    const remainder = totalMembers % podCount;
+    const result: number[] = [];
+    for (let i = 0; i < podCount; i++) {
+      result.push(base + (i < remainder ? 1 : 0));
+    }
+    return result;
+  };
+
+  const handleLockCapacity = () => {
+    if (!typedMembers || typedMembers < 1) {
+      setErrorMessage('Please specify at least 1 team member.');
+      return;
+    }
+    setErrorMessage(null);
+    const podCount = Math.max(1, Math.ceil(typedMembers / 8));
+    const balanced = calculateBalancedSeats(typedMembers, podCount);
+
+    const preset = INDUSTRY_PRESETS.find((p) => p.id === selectedIndustry);
+    const services = availableServices.length > 0
+      ? availableServices
+      : (preset?.defaultServices || CUSTOM_INDUSTRY_DEFAULT_SERVICES);
+
+    let updatedPods: PodDraft[] = [];
+    if (pods.length === podCount && pods.length > 0) {
+      updatedPods = pods.map((p, idx) => ({
+        ...p,
+        seats: p.seats && p.seats >= 1 ? p.seats : balanced[idx],
+      }));
+      const currentSum = updatedPods.reduce((sum, p) => sum + (p.seats || 0), 0);
+      if (currentSum !== typedMembers) {
+        updatedPods = updatedPods.map((p, idx) => ({
+          ...p,
+          seats: balanced[idx],
+        }));
+      }
+    } else {
+      updatedPods = [];
+      for (let i = 0; i < podCount; i++) {
+        const podNum = i + 1;
+        const podLabel = podNum < 10 ? `Pod 0${podNum}` : `Pod ${podNum}`;
+        const svc = services[i % services.length] || `Core Service #${podNum}`;
+        const existingPod = pods[i];
+        updatedPods.push({
+          name: existingPod?.name || podLabel,
+          podCategory: existingPod?.podCategory || 'GENERAL',
+          description: existingPod?.description || `Dedicated operational unit for ${svc}`,
+          services: existingPod?.services && existingPod.services.length > 0 ? existingPod.services : [svc],
+          seats: balanced[i],
+        });
+      }
+    }
+
+    setPods(updatedPods);
+    setIsCapacityLocked(true);
+    persistDraft({
+      typedMembers,
+      isCapacityLocked: true,
+      pods: updatedPods,
+      lastActiveStep: 2,
+    });
+  };
+
+  const handleUnlockCapacity = () => {
+    setIsCapacityLocked(false);
+    setErrorMessage(null);
+    persistDraft({
+      isCapacityLocked: false,
+      lastActiveStep: 2,
+    });
+  };
+
+  const handleAdjustPodSeats = (podIndex: number, delta: number) => {
+    setPods((prev) => {
+      const next = prev.map((p, idx) => {
+        if (idx !== podIndex) return p;
+        const currentSeats = p.seats || Math.floor(typedMembers / prev.length) || 1;
+        const nextSeats = Math.min(8, Math.max(1, currentSeats + delta));
+        return { ...p, seats: nextSeats };
+      });
+      persistDraft({ pods: next, isCapacityLocked: true, lastActiveStep: 2 });
+      return next;
+    });
+  };
+
+  const handleResetPodSeatsToBalanced = () => {
+    const podCount = Math.max(1, Math.ceil(typedMembers / 8));
+    const balanced = calculateBalancedSeats(typedMembers, podCount);
+    setPods((prev) => {
+      const next = prev.map((p, idx) => ({
+        ...p,
+        seats: balanced[idx] || 1,
+      }));
+      persistDraft({ pods: next, isCapacityLocked: true, lastActiveStep: 2 });
+      return next;
+    });
+  };
+
+  const totalAllocatedSeats = pods.reduce((sum, p) => sum + (p.seats || 0), 0);
+  const isAllocationBalanced = isCapacityLocked && totalAllocatedSeats === typedMembers;
 
   useEffect(() => {
     const active = getSession();
@@ -502,6 +608,7 @@ export default function TitaniumOnboardingPage() {
       if (draft.selectedIndustry) setSelectedIndustry(draft.selectedIndustry);
       if (draft.customIndustryText) setCustomIndustryText(draft.customIndustryText);
       if (draft.typedMembers) setTypedMembers(draft.typedMembers);
+      if (draft.isCapacityLocked !== undefined) setIsCapacityLocked(Boolean(draft.isCapacityLocked));
       if (draft.pods && Array.isArray(draft.pods) && draft.pods.length > 0) {
         setPods(draft.pods);
       }
@@ -575,6 +682,7 @@ export default function TitaniumOnboardingPage() {
       selectedIndustry: overrides.selectedIndustry ?? selectedIndustry,
       customIndustryText: overrides.customIndustryText ?? customIndustryText,
       typedMembers: overrides.typedMembers ?? typedMembers,
+      isCapacityLocked: overrides.isCapacityLocked ?? isCapacityLocked,
       pods: overrides.pods ?? pods,
       availableServices: overrides.availableServices ?? availableServices,
       username: active.username,
@@ -603,6 +711,7 @@ export default function TitaniumOnboardingPage() {
         selectedIndustry,
         customIndustryText,
         typedMembers,
+        isCapacityLocked,
         pods,
         availableServices,
         username: active.username,
@@ -669,6 +778,7 @@ export default function TitaniumOnboardingPage() {
             podCategory: 'GENERAL',
             description: `Dedicated operational unit for ${fallbackSvc}`,
             services: [fallbackSvc],
+            seats: 8,
           });
         }
       }
@@ -728,6 +838,7 @@ export default function TitaniumOnboardingPage() {
 
         // Adjust AI pods count to match calculatedPodCount with mutually exclusive categories
         const usedServices = new Set<string>();
+        const balanced = calculateBalancedSeats(typedMembers, calculatedPodCount);
         let targetPods = aiResult.pods.map((p, idx) => {
           let podSvc = p.service?.trim() || p.name.replace(/\s+Pod$/i, '').trim();
           if (!podSvc || usedServices.has(podSvc)) {
@@ -742,6 +853,7 @@ export default function TitaniumOnboardingPage() {
             podCategory: p.category || 'GENERAL',
             description: p.description || '',
             services: [podSvc],
+            seats: pods[idx]?.seats || balanced[idx] || 8,
           };
         });
 
@@ -756,6 +868,7 @@ export default function TitaniumOnboardingPage() {
             podCategory: 'GENERAL',
             description: `Dedicated operational unit for specialization #${num}`,
             services: [fallbackSvc],
+            seats: pods[num - 1]?.seats || balanced[num - 1] || 8,
           });
         }
 
@@ -768,6 +881,7 @@ export default function TitaniumOnboardingPage() {
           lastActiveStep: 3,
           maxUnlockedStep: 3,
           typedMembers,
+          isCapacityLocked: true,
           pods: targetPods,
           availableServices: services,
         });
@@ -785,6 +899,7 @@ export default function TitaniumOnboardingPage() {
   const buildFallbackPods = (servicesList: string[], count: number) => {
     const list: PodDraft[] = [];
     const usedServices = new Set<string>();
+    const balanced = calculateBalancedSeats(typedMembers, count);
     for (let i = 1; i <= count; i++) {
       const unused = servicesList.find((s) => !usedServices.has(s));
       const defaultSvc = unused || servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
@@ -795,6 +910,7 @@ export default function TitaniumOnboardingPage() {
         podCategory: 'GENERAL',
         description: `Dedicated operational unit for ${defaultSvc}`,
         services: [defaultSvc],
+        seats: pods[i - 1]?.seats || balanced[i - 1] || 8,
       });
     }
     setPods(list);
@@ -802,6 +918,7 @@ export default function TitaniumOnboardingPage() {
       lastActiveStep: 3,
       maxUnlockedStep: 3,
       typedMembers,
+      isCapacityLocked: true,
       pods: list,
       availableServices: servicesList,
     });
@@ -835,6 +952,15 @@ export default function TitaniumOnboardingPage() {
       setErrorMessage('Please enter at least 1 team member.');
       return;
     }
+    if (!isCapacityLocked) {
+      setErrorMessage('Please click "Lock & Allocate Capacity" to confirm pod seat distribution before proceeding.');
+      return;
+    }
+    const currentAllocated = pods.reduce((sum, p) => sum + (p.seats || 0), 0);
+    if (currentAllocated !== typedMembers) {
+      setErrorMessage(`Total allocated pod seats (${currentAllocated}) must match total team headcount (${typedMembers}).`);
+      return;
+    }
     setErrorMessage(null);
     setMaxUnlockedStep((prev) => Math.max(prev, 3));
     setCurrentStep(3);
@@ -846,8 +972,9 @@ export default function TitaniumOnboardingPage() {
     } else {
       persistDraft({
         lastActiveStep: 3,
-        maxUnlockedStep: 3,
+        maxUnlockedStep: Math.max(maxUnlockedStep, 3),
         typedMembers,
+        isCapacityLocked: true,
         pods,
         availableServices,
       });
@@ -1065,7 +1192,7 @@ export default function TitaniumOnboardingPage() {
           podCategory: p.podCategory,
           description: p.description,
           services: p.services,
-          seats: 8,
+          seats: Number(p.seats) || 8,
         })),
       };
 
@@ -1268,7 +1395,7 @@ export default function TitaniumOnboardingPage() {
 
               // Strict validation chain: Step 1 name is a mandatory prerequisite for ALL subsequent steps!
               const isStep1Valid = organizationName.trim().length > 0 && (selectedIndustry !== 'OTHER' || customIndustryText.trim().length > 0);
-              const isStep2Valid = isStep1Valid && Number(typedMembers) >= 1;
+              const isStep2Valid = isStep1Valid && Number(typedMembers) >= 1 && isCapacityLocked && totalAllocatedSeats === typedMembers;
               const isStep3Valid = isStep2Valid && pods.length > 0;
 
               let isUnlocked = false;
@@ -1406,9 +1533,23 @@ export default function TitaniumOnboardingPage() {
                       key={ind.id}
                       type="button"
                       onClick={() => {
+                        const isChanged = selectedIndustry !== ind.id;
                         setSelectedIndustry(ind.id);
                         if (errorMessage) setErrorMessage(null);
-                        persistDraft({ selectedIndustry: ind.id, lastActiveStep: 1 });
+                        if (isChanged) {
+                          const newPreset = INDUSTRY_PRESETS.find((p) => p.id === ind.id);
+                          const newServices = newPreset ? [...newPreset.defaultServices] : [...CUSTOM_INDUSTRY_DEFAULT_SERVICES];
+                          setAvailableServices(newServices);
+                          setPods([]);
+                          persistDraft({
+                            selectedIndustry: ind.id,
+                            availableServices: newServices,
+                            pods: [],
+                            lastActiveStep: 1,
+                          });
+                        } else {
+                          persistDraft({ selectedIndustry: ind.id, lastActiveStep: 1 });
+                        }
                       }}
                       className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[96px] ${
                         isSelected
@@ -1435,9 +1576,21 @@ export default function TitaniumOnboardingPage() {
               {/* 13th Option: Custom Industry / AI Architect Unified Card */}
               <div
                 onClick={() => {
+                  const isChanged = selectedIndustry !== 'OTHER';
                   setSelectedIndustry('OTHER');
                   if (errorMessage) setErrorMessage(null);
-                  persistDraft({ selectedIndustry: 'OTHER', lastActiveStep: 1 });
+                  if (isChanged) {
+                    setAvailableServices([...CUSTOM_INDUSTRY_DEFAULT_SERVICES]);
+                    setPods([]);
+                    persistDraft({
+                      selectedIndustry: 'OTHER',
+                      availableServices: [...CUSTOM_INDUSTRY_DEFAULT_SERVICES],
+                      pods: [],
+                      lastActiveStep: 1,
+                    });
+                  } else {
+                    persistDraft({ selectedIndustry: 'OTHER', lastActiveStep: 1 });
+                  }
                   setTimeout(() => customInputRef.current?.focus(), 50);
                 }}
                 className={`rounded-xl border text-left transition-all cursor-pointer p-4 ${
@@ -1513,48 +1666,214 @@ export default function TitaniumOnboardingPage() {
           {currentStep === 2 && (
             <div className="space-y-6">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>STEP 2 • CAPACITY PROVISIONING</span>
+                </div>
+                <h2 className="text-xl font-black text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-blue-400" />
-                  How many team members do you want to add?
+                  Total Team Member Allocation
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Enter the total customer support personnel who will be using Sentirix at your company.
+                  Specify the total customer support headcount for your organization. Sentirix will automatically structure your team into dedicated operational pods.
                 </p>
               </div>
 
-              {/* Interactive Typing Input */}
-              <div className="p-6 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-4">
-                <label className="block text-xs font-bold text-slate-300">
-                  Total Team Members (Enter any number):
-                </label>
-                <div className="flex items-center gap-4">
+              {/* Interactive Typing Input & Lock Action Card */}
+              <div className="p-6 rounded-2xl bg-[#0B0F19] border border-slate-800 space-y-5 shadow-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Total Team Members:
+                    </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Max 8 members per pod for zero-latency operations
+                    </p>
+                  </div>
+
+                  {isCapacityLocked ? (
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>LOCKED BY ADMIN</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleUnlockCapacity}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-slate-700"
+                        title="Unlock to edit total headcount"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Edit Total</span>
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="relative flex-1 max-w-xs">
                     <input
                       type="number"
                       min="1"
                       max="500"
+                      disabled={isCapacityLocked}
                       value={typedMembers}
                       onWheel={(e) => e.currentTarget.blur()}
                       onChange={(e) => {
                         const val = parseInt(e.target.value, 10);
                         const nextVal = isNaN(val) ? 1 : Math.max(1, val);
                         setTypedMembers(nextVal);
-                        persistDraft({ typedMembers: nextVal, lastActiveStep: 2 });
+                        setIsCapacityLocked(false);
+                        persistDraft({ typedMembers: nextVal, isCapacityLocked: false, lastActiveStep: 2 });
                       }}
-                      className="w-full bg-[#111827] border-2 border-blue-500/60 focus:border-blue-400 text-white text-2xl font-black rounded-xl px-4 py-3 text-center tracking-wide focus:outline-hidden focus:ring-4 focus:ring-blue-500/20 transition-all font-mono"
+                      className={`w-full bg-[#111827] border-2 text-white text-3xl font-black rounded-xl px-4 py-3 text-center tracking-wide focus:outline-hidden font-mono transition-all ${
+                        isCapacityLocked
+                          ? 'border-emerald-500/50 bg-emerald-950/10 text-emerald-200 cursor-not-allowed'
+                          : 'border-blue-500/60 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/20'
+                      }`}
                     />
                   </div>
-                  <span className="text-sm font-semibold text-slate-400">Team Members</span>
+                  <div className="flex-1 space-y-1">
+                    <div className="text-sm font-bold text-white">
+                      <span>Customer Support Personnel</span>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      With <strong className="text-white">{typedMembers} members</strong>, your organization structures into <strong className="text-emerald-400">{calculatedPodCount} dedicated {calculatedPodCount === 1 ? 'pod' : 'pods'}</strong>.
+                    </p>
+                  </div>
                 </div>
 
-                {/* Professional Operational Rationale Text */}
-                <p className="text-xs text-slate-300 leading-relaxed pt-2">
-                  With <span className="font-bold text-white">{typedMembers} total members</span>, your team will be structured into <span className="font-bold text-emerald-400">{calculatedPodCount} pods</span> to maintain an optimal span of control and ensure high-velocity issue resolution.
-                </p>
+                {/* Primary Lock Trigger when not locked */}
+                {!isCapacityLocked && (
+                  <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <p className="text-[11px] text-slate-400">
+                      Click Lock to distribute seat quotas and view pod allocations.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleLockCapacity}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer active:scale-95 shrink-0"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>Lock &amp; Allocate Capacity</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
+              {/* DYNAMIC PER-POD ALLOCATION SECTION - REVEALED ON LOCKED */}
+              {isCapacityLocked && (
+                <div className="p-6 rounded-2xl bg-[#0B0F19] border border-blue-500/40 space-y-5 shadow-2xl animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2 font-mono">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                        <span>Pod Capacity Allocation Mandate</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Designated seat limits for each frontline pod. Pod Leaders will receive these fixed quotas upon activation.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full border flex items-center gap-1.5 ${
+                        isAllocationBalanced
+                          ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-400'
+                          : 'bg-amber-950/80 border-amber-500/40 text-amber-400 animate-pulse'
+                      }`}>
+                        {isAllocationBalanced ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                        <span>{totalAllocatedSeats} / {typedMembers} Seats Allocated</span>
+                      </span>
+
+                      {!isAllocationBalanced && (
+                        <button
+                          type="button"
+                          onClick={handleResetPodSeatsToBalanced}
+                          className="text-[11px] font-mono text-slate-300 hover:text-white bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                          title="Auto-balance seats evenly across pods"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Auto-Balance</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Warning banner if not balanced */}
+                  {!isAllocationBalanced && (
+                    <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs flex items-center gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        Capacity discrepancy: {Math.abs(typedMembers - totalAllocatedSeats)} {totalAllocatedSeats < typedMembers ? 'seats remaining unassigned' : 'seats over-allocated'}. Adjust individual pod steppers to match exactly {typedMembers} total seats.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Pod Cards Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pods.map((pod, pIdx) => {
+                      const podSeats = pod.seats || 1;
+                      const agentsCount = Math.max(0, podSeats - 1);
+                      const podLabel = pod.name || `Pod ${pIdx + 1 < 10 ? `0${pIdx + 1}` : pIdx + 1}`;
+
+                      return (
+                        <div
+                          key={pIdx}
+                          className="p-4 rounded-xl bg-[#111827] border border-slate-800 hover:border-slate-700 transition-all space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-blue-500" />
+                              <span>{podLabel}</span>
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-500/30">
+                              Max 8 Seats
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0B0F19] border border-slate-800">
+                            <div>
+                              <div className="text-base font-black font-mono text-white">
+                                {podSeats} <span className="text-xs font-normal text-slate-400">Seats</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                1 Leader + {agentsCount} Agents
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={podSeats <= 1}
+                                onClick={() => handleAdjustPodSeats(pIdx, -1)}
+                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+                                title="Decrease seat"
+                              >
+                                -
+                              </button>
+                              <span className="w-6 text-center font-mono font-bold text-xs text-white">
+                                {podSeats}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={podSeats >= 8}
+                                onClick={() => handleAdjustPodSeats(pIdx, 1)}
+                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
+                                title="Increase seat"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => {
@@ -1562,19 +1881,31 @@ export default function TitaniumOnboardingPage() {
                     setCurrentStep(1);
                     persistDraft({ lastActiveStep: 1 });
                   }}
-                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer self-start sm:self-auto"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>Back</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={handleNextToStep3}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
-                >
-                  <span>Next: Configure Pods &amp; Services</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  {!isCapacityLocked ? (
+                    <span className="text-[11px] text-slate-500 font-medium text-right">
+                      Lock capacity to proceed
+                    </span>
+                  ) : !isAllocationBalanced ? (
+                    <span className="text-[11px] text-amber-400 font-medium text-right">
+                      Balance seat allocation ({totalAllocatedSeats}/{typedMembers}) to proceed
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={!isCapacityLocked || !isAllocationBalanced}
+                    onClick={handleNextToStep3}
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
+                  >
+                    <span>Next: Configure Pods &amp; Services</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1670,8 +2001,9 @@ export default function TitaniumOnboardingPage() {
                             <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-1 rounded-full font-semibold">
                               {pod.services.length} Categories Selected
                             </span>
-                            <span className="text-[11px] font-semibold uppercase tracking-wider bg-slate-800/80 border border-slate-700/50 text-slate-300 px-3 py-1 rounded-full font-mono">
-                              Max 8 Members
+                            <span className="text-[11px] font-semibold uppercase tracking-wider bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 px-3 py-1 rounded-full font-mono flex items-center gap-1.5">
+                              <Lock className="w-3 h-3 text-emerald-400" />
+                              <span>{pod.seats || 8} Dedicated Seats</span>
                             </span>
                           </div>
                         </div>

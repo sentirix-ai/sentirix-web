@@ -24,14 +24,14 @@ export default function PresenceHeartbeat() {
     // 1. Initial ping
     sendHeartbeat(targetId);
 
-    // 2. Periodic heartbeat every 20 seconds
+    // 2. Periodic heartbeat every 15 seconds
     const interval = setInterval(() => {
       const current = getSession();
       const currentId = current?.id || current?.username;
       if (currentId) {
         sendHeartbeat(currentId);
       }
-    }, 20000);
+    }, 15000);
 
     // 3. Instant ping when tab becomes visible / focused again
     const handleVisibilityChange = () => {
@@ -95,7 +95,6 @@ export default function PresenceHeartbeat() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('focus', handleVisibilityChange);
     window.addEventListener('beforeunload', handleUnload);
-    window.addEventListener('pagehide', handleUnload);
 
     return () => {
       clearInterval(interval);
@@ -105,7 +104,6 @@ export default function PresenceHeartbeat() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleUnload);
-      window.removeEventListener('pagehide', handleUnload);
     };
   }, []);
 
