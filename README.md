@@ -1,11 +1,11 @@
 <div align="center">
   <br />
-  <h1>✨ Sentirix Web Dashboard</h1>
+  <h1>✨ Sevaniq Web Dashboard</h1>
   <p><strong>The Modern, Real-Time Next.js 16 Interface for AI-Native Customer Support</strong></p>
   <p><em>Equipped with instant sentiment badges, Google Gemini Copilot sidebar, live agent collision avoidance, and executive analytics.</em></p>
 
   <p>
-    <a href="https://github.com/sentirix-ai/sentirix-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/sentirix-ai/sentirix-web/ci.yml?branch=main&style=flat-square&logo=github-actions&label=CI%20Build" alt="CI Status" /></a>
+    <a href="https://github.com/sevaniq-ai/sevaniq-web/actions"><img src="https://img.shields.io/github/actions/workflow/status/sevaniq-ai/sevaniq-web/ci.yml?branch=main&style=flat-square&logo=github-actions&label=CI%20Build" alt="CI Status" /></a>
     <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Framework-Next.js%2016-black?style=flat-square&logo=next.js" alt="Next.js 16" /></a>
     <a href="https://react.dev"><img src="https://img.shields.io/badge/UI-React%2019-61DAFB?style=flat-square&logo=react" alt="React 19" /></a>
     <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Styles-Tailwind%20CSS%204-38B2AC?style=flat-square&logo=tailwind-css" alt="Tailwind CSS 4" /></a>
@@ -18,9 +18,9 @@
 
 ---
 
-## ⚡ What is Sentirix Web?
+## ⚡ What is Sevaniq Web?
 
-**Sentirix Web** is the frontend client for the Sentirix AI customer support platform. Engineered using **Next.js 16 (App Router)** and **React 19**, it delivers a sub-millisecond, real-time operating experience for support engineers, team leads, and workspace administrators.
+**Sevaniq Web** is the frontend client for the Sevaniq AI customer support platform. Engineered using **Next.js 16 (App Router)** and **React 19**, it delivers a sub-millisecond, real-time operating experience for support engineers, team leads, and workspace administrators.
 
 ---
 
@@ -96,7 +96,7 @@ flowchart TD
 
 ### Prerequisites
 * [Node.js](https://nodejs.org) (v18.0 or newer)
-* [Sentirix Core API](https://github.com/sentirix-ai/sentirix-core) running on `http://localhost:4000`
+* [Sevaniq Core API](https://github.com/sevaniq-ai/sevaniq-core) running on `http://localhost:4000`
 
 ### 1. Configure Environment Variables
 Copy `.env.example` to create your local environment file:
@@ -118,7 +118,7 @@ npm install
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser to access the Sentirix dashboard.
+Open [http://localhost:3000](http://localhost:3000) in your browser to access the Sevaniq dashboard.
 
 ---
 

@@ -18,7 +18,7 @@ app.prepare().then(() => {
       console.error('Failed to listen:', err);
       process.exit(1);
     }
-    console.log(`> Sentirix Web production server is running on http://localhost:${port}`);
+    console.log(`> Sevaniq Web production server is running on http://localhost:${port}`);
   });
 
   server.on('error', (err) => {

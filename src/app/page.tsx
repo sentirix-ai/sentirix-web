@@ -52,7 +52,7 @@ import {
   getSession,
   UserSession,
 } from '../lib/auth';
-import { fetchOnboardingDraft } from '../lib/api';
+import { API_BASE_URL, fetchOnboardingDraft } from '../lib/api';
 
 export default function LandingPage() {
   const router = useRouter();
@@ -197,7 +197,7 @@ export default function LandingPage() {
 
     // 1. Try real live backend AI triage endpoint
     try {
-      const res = await fetch('http://localhost:4000/api/v1/ai/analyze-ticket', {
+      const res = await fetch(`${API_BASE_URL}/ai/analyze-ticket`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -316,7 +316,7 @@ export default function LandingPage() {
         } else if (lower.includes('package') || lower.includes('tracking') || lower.includes('courier') || lower.includes('paket') || lower.includes('resi') || lower.includes('kurir')) {
           dynamicDraft = `Hello, we apologize for the shipment delay. We have tracked your carrier coordinates through ${podName} and issued an expedited dispatch request to the regional distribution hub. Automated tracking updates will be provided periodically until delivery is confirmed.`;
         } else {
-          dynamicDraft = `Hello, thank you for contacting Sentirix Support. Regarding your inquiry: "${text.slice(0, 80)}...", our autonomous copilot has routed your ticket to ${podName} under priority protocol. A specialized agent is currently reviewing your request to ensure rapid resolution.`;
+          dynamicDraft = `Hello, thank you for contacting Sevaniq Support. Regarding your inquiry: "${text.slice(0, 80)}...", our autonomous copilot has routed your ticket to ${podName} under priority protocol. A specialized agent is currently reviewing your request to ensure rapid resolution.`;
         }
 
         setSimResult({
@@ -345,7 +345,7 @@ export default function LandingPage() {
       pod: 'Pod 01: Operations & Specialized Support',
       latency: '240ms',
       grounding: 'KB-Policy-General-v2',
-      draft: `Thank you for contacting Sentirix. We have received your message: "${text.slice(0, 70)}..." and routed it to our specialized operations team. A verified resolution draft has been initiated under priority SLA.`,
+      draft: `Thank you for contacting Sevaniq. We have received your message: "${text.slice(0, 70)}..." and routed it to our specialized operations team. A verified resolution draft has been initiated under priority SLA.`,
     });
     setIsSimulating(false);
   };
@@ -368,7 +368,7 @@ export default function LandingPage() {
           targetStep = session.onboardingDraft.lastActiveStep;
         } else {
           try {
-            const cached = localStorage.getItem(`sentirix_onboarding_draft_${uName}`);
+            const cached = localStorage.getItem(`sevaniq_onboarding_draft_${uName}`);
             if (cached) {
               const parsed = JSON.parse(cached);
               if (parsed.lastActiveStep && parsed.lastActiveStep >= 1 && parsed.lastActiveStep <= 4) {
@@ -397,7 +397,7 @@ export default function LandingPage() {
       }
 
       // 1. Check if user has an unfinished Step 4 Token Distribution session (Resilient restore on browser reopen/crash)
-      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
+      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sevaniq_onboarding_step') : null;
       if (pendingStep === '4' || (!session.onboardingCompleted && (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN'))) {
         router.push('/onboarding?step=4');
         return;
@@ -413,9 +413,8 @@ export default function LandingPage() {
     }
   }, [router]);
 
-  // Ensure authentication modal is strictly closed on page load and clear any residual query strings
+  // Clear any residual query strings on page load (auth modal starts closed via useState(false))
   useEffect(() => {
-    setIsAuthOpen(false);
     if (typeof window !== 'undefined' && window.location.search) {
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -458,7 +457,7 @@ export default function LandingPage() {
         // 2. Cross-check cached localStorage draft if targetStep is still 1
         if (targetStep <= 1) {
           try {
-            const cached = localStorage.getItem(`sentirix_onboarding_draft_${uName}`) || (uEmail ? localStorage.getItem(`sentirix_onboarding_draft_${uEmail}`) : null);
+            const cached = localStorage.getItem(`sevaniq_onboarding_draft_${uName}`) || (uEmail ? localStorage.getItem(`sevaniq_onboarding_draft_${uEmail}`) : null);
             if (cached) {
               const parsed = JSON.parse(cached);
               if (parsed.lastActiveStep && parsed.lastActiveStep >= 1 && parsed.lastActiveStep <= 4) {
@@ -482,7 +481,7 @@ export default function LandingPage() {
         return;
       }
 
-      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
+      const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sevaniq_onboarding_step') : null;
       if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') && res.user?.username?.toLowerCase() !== 'pungkyrama')) {
         router.push('/onboarding?step=4');
       } else if (res.user?.username?.toLowerCase() === 'pungkyrama') {
@@ -577,13 +576,13 @@ export default function LandingPage() {
 
       // Clean slate guarantee: wipe any local residual drafts for this username/email
       try {
-        localStorage.removeItem(`sentirix_onboarding_draft_${cleanUsername}`);
-        localStorage.removeItem(`sentirix_onboarding_draft_${cleanEmail}`);
-        localStorage.removeItem('sentirix_onboarding_step');
-        localStorage.removeItem('sentirix_pending_tokens');
-        localStorage.removeItem('sentirix_dispatched_tokens');
-        localStorage.removeItem('sentirix_regenerated_tokens');
-        localStorage.removeItem('sentirix_planned_capacity');
+        localStorage.removeItem(`sevaniq_onboarding_draft_${cleanUsername}`);
+        localStorage.removeItem(`sevaniq_onboarding_draft_${cleanEmail}`);
+        localStorage.removeItem('sevaniq_onboarding_step');
+        localStorage.removeItem('sevaniq_pending_tokens');
+        localStorage.removeItem('sevaniq_dispatched_tokens');
+        localStorage.removeItem('sevaniq_regenerated_tokens');
+        localStorage.removeItem('sevaniq_planned_capacity');
       } catch {}
 
       // Direct new user immediately to team capacity setup interface starting from clean Step 1
@@ -613,17 +612,23 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           {/* Left: Brand Logo & Title */}
           <div className="flex items-center shrink-0">
-            <a href="/" className="flex items-center gap-3 group">
+            <Link href="/" className="flex items-center gap-3 group">
               <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-lg shadow-black/40 group-hover:scale-105 transition-transform">
                 <img
-                  src="/logo_warna_s.png"
-                  alt="Sentirix Logo"
+                  src="/logo_sevaniq_icon.png"
+                  alt="Sevaniq Logo"
                   className="w-full h-full object-contain"
                 />
               </div>
               <div className="flex flex-col">
                 <span className="font-extrabold text-xl text-[#F8FAFC] tracking-tight flex items-center gap-2">
-                  Sentirix
+                  <span className="bg-white px-2.5 py-0.5 rounded-lg inline-flex items-center shadow-xs">
+                    <img
+                      src="/sevaniq_wordmark.png"
+                      alt="SEVANIQ"
+                      className="h-4.5 w-auto object-contain"
+                    />
+                  </span>
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-950/80 text-blue-400 border border-blue-800/80">
                     AI COPILOT
                   </span>
@@ -632,7 +637,7 @@ export default function LandingPage() {
                   AUTONOMOUS SUPPORT INTELLIGENCE
                 </span>
               </div>
-            </a>
+            </Link>
           </div>
 
           {/* Center: Navigation Links (Pure, Elegant & Spacious) */}
@@ -709,7 +714,7 @@ export default function LandingPage() {
 
           <p className="max-w-3xl mx-auto text-lg sm:text-xl text-[#94A3B8] leading-relaxed font-normal mb-10">
             Transform high-volume inbound complaints into immediate, zero-hallucination
-            resolutions. Sentirix pairs advanced generative reasoning with real-time collision
+            resolutions. Sevaniq pairs advanced generative reasoning with real-time collision
             guards to deflect repetitive tickets and empower human agents to resolve issues 4.2x
             faster.
           </p>
@@ -722,7 +727,7 @@ export default function LandingPage() {
               }}
               className="w-full sm:w-auto px-8 py-4 rounded-xl bg-[#F8FAFC] hover:bg-[#E2E8F0] text-[#0D0F12] font-black text-base shadow-xl shadow-black/40 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
             >
-              <span>Deploy Sentirix Free</span>
+              <span>Deploy Sevaniq Free</span>
               <ArrowRight className="w-5 h-5" />
             </button>
 
@@ -743,7 +748,7 @@ export default function LandingPage() {
                 <div className="w-3 h-3 rounded-full bg-rose-500/80" />
                 <div className="w-3 h-3 rounded-full bg-amber-500/80" />
                 <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
-                <span className="text-xs font-mono text-slate-500 ml-2 hidden sm:inline">sentirix.app/workspace/tickets/TCK-9402</span>
+                <span className="text-xs font-mono text-slate-500 ml-2 hidden sm:inline">sevaniq.app/workspace/tickets/TCK-9402</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950/60 border border-emerald-800 text-[10px] font-bold text-emerald-400">
@@ -962,7 +967,7 @@ export default function LandingPage() {
             Test Gemini Copilot in Real Time
           </h2>
           <p className="text-sm sm:text-base text-[#94A3B8] leading-relaxed">
-            Select a high-stress enterprise scenario or enter a custom customer message below. Watch Sentirix detect sentiment, assign an operational pod, and compose a zero-hallucination resolution in milliseconds.
+            Select a high-stress enterprise scenario or enter a custom customer message below. Watch Sevaniq detect sentiment, assign an operational pod, and compose a zero-hallucination resolution in milliseconds.
           </p>
         </div>
 
@@ -1283,7 +1288,7 @@ export default function LandingPage() {
               Multi-Pod Architecture Calculator
             </h2>
             <p className="text-sm text-[#94A3B8]">
-              Sentirix enforces an 8:1 span of control per operational pod. Slide your total team size to simulate your division structure and labor efficiency gains.
+              Sevaniq enforces an 8:1 span of control per operational pod. Slide your total team size to simulate your division structure and labor efficiency gains.
             </p>
           </div>
 
@@ -1394,7 +1399,7 @@ export default function LandingPage() {
                 type="button"
                 onClick={() => {
                   if (typeof window !== 'undefined') {
-                    localStorage.setItem('sentirix_planned_capacity', String(calcAgents));
+                    localStorage.setItem('sevaniq_planned_capacity', String(calcAgents));
                   }
                   setAuthMode('SIGNUP');
                   setIsAuthOpen(true);
@@ -1427,7 +1432,7 @@ export default function LandingPage() {
               Decoupled, High-Throughput Pipeline
             </p>
             <p className="text-sm text-[#94A3B8] leading-relaxed">
-              Sentirix bridges your existing helpdesk ecosystem (Zendesk, Intercom) with low-latency
+              Sevaniq bridges your existing helpdesk ecosystem (Zendesk, Intercom) with low-latency
               Gemini 3.8 Flash &amp; Argon intelligence via a fault-tolerant, modular full-stack architecture.
             </p>
           </div>
@@ -1543,7 +1548,7 @@ export default function LandingPage() {
               Enterprise-Grade Security & Privacy by Design
             </h3>
             <p className="text-sm text-[#94A3B8] max-w-xl">
-              Sentirix does not train general models on your customer conversations. All data is
+              Sevaniq does not train general models on your customer conversations. All data is
               isolated per tenant with cryptographic AES-256 encryption at rest and TLS 1.3 in transit.
             </p>
           </div>
@@ -1569,9 +1574,9 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-6 h-6 rounded-lg overflow-hidden border border-slate-700 bg-white p-0.5 flex items-center justify-center">
-              <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+              <img src="/logo_sevaniq_icon.png" alt="Sevaniq Logo" className="w-full h-full object-contain" />
             </div>
-            <span className="font-bold text-[#CBD5E1]">Sentirix Inc.</span>
+            <span className="font-bold text-[#CBD5E1]">Sevaniq Inc.</span>
             <span>© 2026. All rights reserved.</span>
           </div>
           <div className="flex items-center gap-6">
@@ -1590,10 +1595,10 @@ export default function LandingPage() {
         {/* Global Regulatory & Trademark Disclaimer */}
         <div className="max-w-6xl mx-auto px-6 mt-8 pt-6 border-t border-[#262A30]/60 text-left text-[11px] text-[#64748B] leading-relaxed space-y-1">
           <p>
-            <strong className="text-[#94A3B8]">Legal Disclaimer:</strong> Sentirix is an independent enterprise software platform. Zendesk, Intercom, and Okta are registered trademarks of their respective owners in the United States and other jurisdictions. References to third-party technologies are made solely to describe API interoperability under nominative fair use.
+            <strong className="text-[#94A3B8]">Legal Disclaimer:</strong> Sevaniq is an independent enterprise software platform. Zendesk, Intercom, and Okta are registered trademarks of their respective owners in the United States and other jurisdictions. References to third-party technologies are made solely to describe API interoperability under nominative fair use.
           </p>
           <p>
-            SOC 2 and GDPR references denote architectural security alignments and privacy-by-design controls implemented within the Sentirix engineering framework, and do not represent formal certification issuances.
+            SOC 2 and GDPR references denote architectural security alignments and privacy-by-design controls implemented within the Sevaniq engineering framework, and do not represent formal certification issuances.
           </p>
         </div>
       </footer>
@@ -1622,11 +1627,11 @@ export default function LandingPage() {
             <div className="p-6 border-b border-[#262A30] bg-[#111317]">
               <div className="flex items-center gap-2.5 mb-2">
                 <div className="w-9 h-9 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-sm">
-                  <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+                  <img src="/logo_sevaniq_icon.png" alt="Sevaniq Logo" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#F8FAFC] tracking-tight">
-                    Sentirix Access Portal
+                    Sevaniq Access Portal
                   </h3>
                   <p className="text-xs text-[#94A3B8]">Autonomous Support Intelligence</p>
                 </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Ticket, Message, AttachmentPayload } from '../lib/types';
 import { generateAiReply, summarizeThread } from '../lib/api';
 import {
@@ -29,11 +29,7 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
 }) => {
   const [tone, setTone] = useState<'professional' | 'empathetic' | 'concise'>('professional');
   const [isDrafting, setIsDrafting] = useState(false);
-  const [aiDraft, setAiDraft] = useState<string | null>(null);
-  const [groundedSources, setGroundedSources] = useState<string[]>([]);
-
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [summaryPoints, setSummaryPoints] = useState<string[] | null>(null);
 
   // Per-Ticket Memory Cache so switching tabs restores that ticket's AI draft
   const [aiDraftsByTicket, setAiDraftsByTicket] = useState<
@@ -43,21 +39,10 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
 
   const [copied, setCopied] = useState(false);
 
-  // Synchronize AI Draft & Summary whenever ticket tab switches
-  useEffect(() => {
-    if (!ticket) {
-      setAiDraft(null);
-      setGroundedSources([]);
-      setSummaryPoints(null);
-      return;
-    }
-    const cached = aiDraftsByTicket[ticket.id];
-    setAiDraft(cached?.draft || null);
-    setGroundedSources(cached?.sources || []);
-
-    const cachedSummary = summariesByTicket[ticket.id];
-    setSummaryPoints(cachedSummary || null);
-  }, [ticket?.id]);
+  const cachedDraft = ticket ? aiDraftsByTicket[ticket.id] : undefined;
+  const aiDraft = cachedDraft?.draft ?? null;
+  const groundedSources = cachedDraft?.sources ?? [];
+  const summaryPoints = ticket ? (summariesByTicket[ticket.id] ?? null) : null;
 
   const activeAttachments = useMemo<AttachmentPayload[]>(() => {
     const list: AttachmentPayload[] = [];
@@ -86,8 +71,6 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
       setIsDrafting(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
       const result = await generateAiReply(ticket.title, ticket.description, history, tone, activeAttachments);
-      setAiDraft(result.draft);
-      setGroundedSources(result.groundedSources);
       // Cache draft per ticket
       setAiDraftsByTicket((prev) => ({
         ...prev,
@@ -104,7 +87,6 @@ export const AiCopilotSidebar: React.FC<AiCopilotSidebarProps> = ({
       setIsSummarizing(true);
       const history = messages.map((m) => ({ sender: m.senderName, content: m.content }));
       const result = await summarizeThread(ticket.title, history, activeAttachments);
-      setSummaryPoints(result.bulletPoints);
       // Cache summary per ticket
       setSummariesByTicket((prev) => ({
         ...prev,

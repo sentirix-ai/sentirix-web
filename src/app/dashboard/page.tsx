@@ -53,7 +53,11 @@ export default function DashboardPage() {
   const [draftsByTicket, setDraftsByTicket] = useState<Record<string, string>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [collisionAgent, setCollisionAgent] = useState<string | null>(null);
+  const [collisionInfo, setCollisionInfo] = useState<{ ticketId: string; agentName: string } | null>(null);
+  const collisionAgent =
+    collisionInfo && selectedTicket && collisionInfo.ticketId === selectedTicket.id
+      ? collisionInfo.agentName
+      : null;
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -75,98 +79,111 @@ export default function DashboardPage() {
   };
 
   const loadAnalytics = useCallback(async () => {
+    const activeId = getSession()?.username;
+    if (!activeId) return;
     setIsRefreshingAnalytics(true);
-    const data = await fetchOwnerAnalytics('pungkyrama');
+    const data = await fetchOwnerAnalytics(activeId);
     if (data) setOwnerAnalytics(data);
     setIsRefreshingAnalytics(false);
   }, []);
 
   // Check Auth Session
   useEffect(() => {
-    const session = getSession();
-    if (!session) {
-      window.location.href = '/';
-      return;
-    }
+    let cancelled = false;
 
-    // Strictly route Super Admins / Org Owners out of frontline helpdesk
-    if ((session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') && session.username.toLowerCase() !== 'pungkyrama') {
-      if (!session.onboardingCompleted) {
-        router.push('/onboarding?step=4');
-      } else {
-        router.push('/admin/cockpit');
-      }
-      return;
-    }
-
-    const isSuperAdmin = session.username.toLowerCase() === 'pungkyrama' || session.role === 'SUPER_ADMIN' || (session.role === 'ADMIN' && !(session as any).workspaceId);
-    const isLeader =
-      !isSuperAdmin &&
-      (session.role === 'POD_LEADER' ||
-        session.role === 'LEADER' ||
-        (session as any).workspaceRole === 'LEADER' ||
-        (!session.isGuestMember && !!(session as any).workspaceId));
-    const isGuest = !!session.isGuestMember && !isLeader;
-
-    // If regular user has not yet completed onboarding, redirect to /onboarding
-    if (!isSuperAdmin && !isLeader && !isGuest && !session.onboardingCompleted) {
-      router.push('/onboarding');
-      return;
-    }
-
-    // Verify user account is still active in database (not wiped or frozen)
-    checkMemberStatus(session.id || session.username || session.email).then((isActive) => {
-      if (!isActive) {
-        logoutUser();
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      const session = getSession();
+      if (!session) {
         window.location.href = '/';
+        return;
       }
-    });
 
-    // If this is an invited guest agent member, verify that their session hasn't been purged
-    const guestUser = session as any;
-    if (guestUser.workspaceId && guestUser.id && isGuest) {
-      checkMemberStatus(guestUser.id).then((isActive) => {
+      // Strictly route Super Admins / Org Owners out of frontline helpdesk
+      if ((session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') && session.username.toLowerCase() !== 'pungkyrama') {
+        if (!session.onboardingCompleted) {
+          router.push('/onboarding?step=4');
+        } else {
+          router.push('/admin/cockpit');
+        }
+        return;
+      }
+
+      const isSuperAdmin =
+        session.username.toLowerCase() === 'pungkyrama' ||
+        session.role === 'SUPER_ADMIN' ||
+        (session.role === 'ADMIN' && !session.workspaceId);
+      const isLeader =
+        !isSuperAdmin &&
+        (session.role === 'POD_LEADER' ||
+          session.role === 'LEADER' ||
+          session.workspaceRole === 'LEADER' ||
+          (!session.isGuestMember && Boolean(session.workspaceId)));
+      const isGuest = Boolean(session.isGuestMember) && !isLeader;
+
+      // If regular user has not yet completed onboarding, redirect to /onboarding
+      if (!isSuperAdmin && !isLeader && !isGuest && !session.onboardingCompleted) {
+        router.push('/onboarding');
+        return;
+      }
+
+      // Verify user account is still active in database (not wiped or frozen)
+      checkMemberStatus(session.id || session.username || session.email).then((isActive) => {
         if (!isActive) {
-          alert('The workspace owner has logged out. Your temporary agent session has ended.');
           logoutUser();
           window.location.href = '/';
         }
       });
-    }
 
-    setUser(session);
-
-    // If Platform Owner (@pungkyrama), load owner analytics
-    if (isSuperAdmin) {
-      loadAnalytics();
-    }
-
-    // Load Workspace & Multi-Pod setup for regular users & Leaders
-    if (!isSuperAdmin && session.username) {
-      if ((session as any).workspaceId) {
-        setSelectedPodId((session as any).workspaceId);
-      }
-      fetchMyWorkspace(session.username).then((ws) => {
-        if (ws) {
-          setWorkspace(ws);
-          if (ws.workspaceId) {
-            setSelectedPodId(ws.workspaceId);
+      // If this is an invited guest agent member, verify that their session hasn't been purged
+      if (session.workspaceId && session.id && isGuest) {
+        checkMemberStatus(session.id).then((isActive) => {
+          if (!isActive) {
+            alert('The workspace owner has logged out. Your temporary agent session has ended.');
+            logoutUser();
+            window.location.href = '/';
           }
+        });
+      }
+
+      setUser(session);
+
+      // If Platform Owner (@pungkyrama), load owner analytics
+      if (isSuperAdmin) {
+        void loadAnalytics();
+      }
+
+      // Load Workspace & Multi-Pod setup for regular users & Leaders
+      if (!isSuperAdmin && session.username) {
+        if (session.workspaceId) {
+          setSelectedPodId(session.workspaceId);
         }
-      });
-      fetchOrganizationPods(session.username).then((res) => {
-        if (res) {
-          setPods(res.pods || []);
-          setOrganizationName(res.organizationName);
-          setIndustry(res.industry);
-        }
-      });
-    }
+        fetchMyWorkspace(session.username).then((ws) => {
+          if (!cancelled && ws) {
+            setWorkspace(ws);
+            if (ws.workspaceId) {
+              setSelectedPodId(ws.workspaceId);
+            }
+          }
+        });
+        fetchOrganizationPods(session.username).then((res) => {
+          if (!cancelled && res) {
+            setPods(res.pods || []);
+            setOrganizationName(res.organizationName);
+            setIndustry(res.industry);
+          }
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router, loadAnalytics]);
 
   // Load Tickets (Filtered by Status, Search, and Selected Pod)
   const loadTickets = useCallback(async () => {
-    const isMember = !!(user as any)?.isGuestMember || !!(user as any)?.workspaceId;
+    const isMember = Boolean(user?.isGuestMember) || Boolean(user?.workspaceId);
     const data = await fetchTickets(statusFilter, searchQuery, isMember, selectedPodId);
     const filtered = isMember
       ? data.filter(
@@ -198,17 +215,24 @@ export default function DashboardPage() {
       if (prev.length > 0) return prev;
       return filtered.slice(0, 3);
     });
-  }, [statusFilter, searchQuery, selectedTicket, user]);
+  }, [statusFilter, searchQuery, selectedTicket, selectedPodId, user]);
 
   useEffect(() => {
-    loadTickets();
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void loadTickets();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loadTickets]);
 
   // Load Messages when Selected Ticket Changes
   useEffect(() => {
     if (selectedTicket) {
       fetchMessages(selectedTicket.id).then(setMessages);
-      setCollisionAgent(null);
     }
   }, [selectedTicket]);
 
@@ -281,8 +305,14 @@ export default function DashboardPage() {
       socket.on('agent:viewing_alert', (payload: { ticketId: string; agentName: string }) => {
         setSelectedTicket((current) => {
           if (current && payload.ticketId === current.id) {
-            setCollisionAgent(payload.agentName);
-            setTimeout(() => setCollisionAgent(null), 8000);
+            setCollisionInfo({ ticketId: payload.ticketId, agentName: payload.agentName });
+            setTimeout(() => {
+              setCollisionInfo((prev) =>
+                prev?.ticketId === payload.ticketId && prev.agentName === payload.agentName
+                  ? null
+                  : prev,
+              );
+            }, 8000);
           }
           return current;
         });
@@ -291,7 +321,7 @@ export default function DashboardPage() {
       // Listen for real-time team member left / logged out (Requirement 2)
       socket.on('team:member_left', () => {
         const session = getSession();
-        if (session && !((session as any).workspaceId) && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+        if (session && !session.workspaceId && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
           fetchMyWorkspace(session.username).then((ws) => {
             if (ws) setWorkspace(ws);
           });
@@ -332,8 +362,7 @@ export default function DashboardPage() {
       socket.on('team:workspace_purged', (payload: { workspaceId: string }) => {
         const session = getSession();
         if (session) {
-          const guest = session as any;
-          if (guest.workspaceId === payload.workspaceId) {
+          if (session.workspaceId === payload.workspaceId) {
             alert('The workspace owner has logged out. Your temporary agent session has ended.');
             logoutUser();
             window.location.href = '/';
@@ -385,7 +414,7 @@ export default function DashboardPage() {
               workspaceRole: 'AGENT',
             };
             setSession(updatedSession);
-            setUser(updatedSession as any);
+            setUser(updatedSession);
             setWorkspace((prev) =>
               prev ? { ...prev, isLeader: false, inviteToken: '', inviteUrl: '', members: [] } : null,
             );
@@ -402,7 +431,7 @@ export default function DashboardPage() {
               workspaceRole: 'LEADER',
             };
             setSession(updatedSession);
-            setUser(updatedSession as any);
+            setUser(updatedSession);
             if (session.username) {
               fetchMyWorkspace(session.username).then((ws) => {
                 if (ws) setWorkspace(ws);
@@ -412,7 +441,7 @@ export default function DashboardPage() {
         },
       );
     } catch {
-      setIsConnected(false);
+      // Initial connection state defaults to false
     }
 
     return () => {
@@ -446,7 +475,7 @@ export default function DashboardPage() {
     }
     setSelectedTicket(ticket);
     setComposerText(draftsByTicket[ticket.id] || '');
-    setCollisionAgent(null);
+    setCollisionInfo(null);
     setOpenTicketTabs((prev) => {
       if (prev.some((t) => t.id === ticket.id)) return prev;
       if (prev.length >= 5) {
@@ -465,7 +494,7 @@ export default function DashboardPage() {
     }
     setSelectedTicket(ticket);
     setComposerText(draftsByTicket[ticket.id] || '');
-    setCollisionAgent(null);
+    setCollisionInfo(null);
   };
 
   const handleCloseTicketTab = (ticketId: string) => {
@@ -569,6 +598,10 @@ export default function DashboardPage() {
       attachments,
       attachmentMeta,
     );
+    if (!newMsg) {
+      alert('Your session could not be authenticated to post this message. Please sign in again.');
+      return;
+    }
     newMsg.senderName = type === 'INTERNAL_NOTE' ? `${senderName} (Internal)` : senderName;
     setMessages((prev) => [...prev, newMsg]);
     // Clear draft for this ticket upon successful send
@@ -581,7 +614,11 @@ export default function DashboardPage() {
 
   const handleStatusChange = async (status: TicketStatus, resolutionNotes?: string) => {
     if (!selectedTicket) return;
-    await updateTicketStatus(selectedTicket.id, status, resolutionNotes);
+    const updated = await updateTicketStatus(selectedTicket.id, status, resolutionNotes);
+    if (!updated) {
+      alert('Authentication required to update ticket status. Please sign in again.');
+      return;
+    }
     const nowIso = new Date().toISOString();
     const resolvedFields = (status === 'RESOLVED' || status === 'CLOSED')
       ? { resolvedAt: nowIso, resolutionNotes: resolutionNotes || 'Problem successfully resolved' }
@@ -615,7 +652,7 @@ export default function DashboardPage() {
     const targetWorkspaceId =
       selectedPodId && selectedPodId !== 'ALL'
         ? selectedPodId
-        : (user as any)?.workspaceId || undefined;
+        : user?.workspaceId || undefined;
 
     let attachments: AttachmentPayload[] | undefined = undefined;
     let attachmentMeta: { attachmentName?: string; attachmentType?: string; attachmentData?: string } = {};
@@ -661,12 +698,12 @@ export default function DashboardPage() {
       sessionStorage.setItem('is_manual_logout', 'true');
     } catch {}
     if (user) {
-      const isMember = !!(user as any)?.isGuestMember || !!(user as any)?.workspaceId;
-      const targetMemberId = (user as any)?.id || (user as any)?.username || user?.username;
+      const isMember = Boolean(user.isGuestMember) || Boolean(user.workspaceId);
+      const targetMemberId = user.id || user.username;
       if (isMember) {
         // Requirement 2: Member logout removes member from active count and releases seat
         try {
-          await memberLogout(targetMemberId, (user as any)?.workspaceId);
+          await memberLogout(targetMemberId, user.workspaceId);
         } catch {
           // Fail silently
         }

@@ -204,7 +204,7 @@ export default function CustomerSupportPortalPage() {
           {/* Logo & Identity */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden bg-white p-1 border border-slate-200/90 shadow-xs flex items-center justify-center ring-2 ring-slate-100 shrink-0">
-              <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+              <img src="/logo_sevaniq_icon.png" alt="Sevaniq Logo" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">

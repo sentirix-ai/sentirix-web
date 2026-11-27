@@ -58,17 +58,23 @@ export const AdminCockpitView: React.FC<AdminCockpitViewProps> = ({
     <div className="min-h-screen bg-[#0B0F17] text-white flex flex-col font-sans selection:bg-[#2563EB] selection:text-white">
       {/* 1. TOP HEADER matching admin.jpg */}
       <header className="h-16 border-b border-[#1E2638] bg-[#0E131F] px-6 flex items-center justify-between sticky top-0 z-30">
-        {/* Left: Sentirix Logo + Divider + LIVE MONITORING & ANALYTICS */}
+        {/* Left: Sevaniq Logo + Divider + LIVE MONITORING & ANALYTICS */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-md shadow-blue-500/10">
             <img
-              src="/logo_warna_s.png"
-              alt="Sentirix Logo"
+              src="/logo_sevaniq_icon.png"
+              alt="Sevaniq Logo"
               className="w-full h-full object-contain"
             />
           </div>
           <div className="flex items-center gap-3">
-            <span className="font-extrabold text-xl text-white tracking-tight">Sentirix</span>
+            <div className="bg-white px-2 py-1 rounded-lg flex items-center shadow-xs">
+              <img
+                src="/sevaniq_wordmark.png"
+                alt="SEVANIQ"
+                className="h-4.5 w-auto object-contain"
+              />
+            </div>
             <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-800/60">
               AI COPILOT
             </span>
@@ -153,11 +159,11 @@ export const AdminCockpitView: React.FC<AdminCockpitViewProps> = ({
                 {user?.avatarUrl ? (
                   <img
                     src={user.avatarUrl}
-                    alt={user.username || 'pungkyrama'}
+                    alt={user.username || 'Administrator'}
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <span>{user?.avatarText || 'PR'}</span>
+                  <span>{user?.avatarText || 'AD'}</span>
                 )}
               </div>
               {/* Camera hover badge */}
@@ -173,7 +179,7 @@ export const AdminCockpitView: React.FC<AdminCockpitViewProps> = ({
               title="Click to open account settings"
             >
               <span className="block text-xs font-bold text-white group-hover:text-[#60A5FA] transition-colors">
-                {user?.username || 'pungkyrama'}
+                {user?.username || 'Administrator'}
               </span>
               <span className="block text-[10px] text-slate-400 -mt-0.5 font-medium group-hover:text-slate-300 transition-colors">
                 Platform Admin

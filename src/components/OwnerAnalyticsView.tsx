@@ -123,7 +123,7 @@ export const OwnerAnalyticsView: React.FC<OwnerAnalyticsViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `sentirix-marketing-leads-${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `sevaniq-marketing-leads-${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -144,7 +144,7 @@ export const OwnerAnalyticsView: React.FC<OwnerAnalyticsViewProps> = ({
               <span>Owner Analytics &amp; Marketing Intelligence</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Central hub for monitoring user growth, team capacity adoption trends, marketing lead intelligence, and Sentirix operational health.
+              Central hub for monitoring user growth, team capacity adoption trends, marketing lead intelligence, and Sevaniq operational health.
             </p>
           </div>
 
@@ -296,7 +296,7 @@ export const OwnerAnalyticsView: React.FC<OwnerAnalyticsViewProps> = ({
           </div>
 
           <div className="mt-4 pt-3 border-t border-[#1E2638]/60 flex items-center justify-between text-[11px] text-slate-400">
-            <span>This metric helps measure marketing campaign effectiveness for Sentirix.</span>
+            <span>This metric helps measure marketing campaign effectiveness for Sevaniq.</span>
             <span className="text-indigo-400 font-semibold">Total: {summary.totalUsers} Users</span>
           </div>
         </div>

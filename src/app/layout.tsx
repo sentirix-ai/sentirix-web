@@ -14,13 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Sentirix — Autonomous Support Intelligence & AI Copilot',
+  title: 'Sevaniq — Autonomous Support Intelligence & AI Copilot',
   description:
     'Autonomous Support Intelligence with real-time AI copilot and multi-pod architecture powered by Google Gemini.',
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon.ico',
-    apple: '/logo_warna_s.png',
+    apple: '/logo_sevaniq_icon.png',
   },
   other: {
     google: 'notranslate',

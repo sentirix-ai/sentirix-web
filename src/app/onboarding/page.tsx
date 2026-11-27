@@ -3,44 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ShoppingCart,
-  Truck,
-  CreditCard,
-  Laptop,
-  HeartPulse,
-  Home,
-  Plane,
-  Gamepad2,
-  Wifi,
-  Car,
-  Scale,
-  GraduationCap,
-  Building2,
-  Users,
-  Shield,
-  CheckCircle2,
-  ArrowRight,
-  ArrowLeft,
-  Sparkles,
-  SlidersHorizontal,
-  Layers,
-  Info,
-  AlertCircle,
-  AlertTriangle,
-  Edit3,
-  Trash2,
-  Plus,
   Check,
-  Copy,
-  Share2,
-  ExternalLink,
-  RefreshCw,
-  Lock,
-  RotateCcw,
-  GitFork,
-  ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
+import type { OnboardingDraft } from '../../lib/types';
 import {
   generatePodsForIndustry,
   setupMultiPodV2,
@@ -54,238 +21,20 @@ import {
   fetchOnboardingDraft,
   deleteOnboardingDraft,
 } from '../../lib/api';
+import {
+  INDUSTRY_PRESETS,
+  CUSTOM_INDUSTRY_DEFAULT_SERVICES,
+  type PodDraft,
+  type LeaderTokenPreview,
+  type SemanticWarningState,
+  toCorporateTitleCase,
+} from '../../components/onboarding/onboarding.constants';
+import { OnboardingStep1Industry } from '../../components/onboarding/OnboardingStep1Industry';
+import { OnboardingStep2Capacity } from '../../components/onboarding/OnboardingStep2Capacity';
+import { OnboardingStep3Pods } from '../../components/onboarding/OnboardingStep3Pods';
+import { OnboardingStep4Tokens } from '../../components/onboarding/OnboardingStep4Tokens';
 
-interface IndustryOption {
-  id: string;
-  name: string;
-  tagline: string;
-  icon: React.ComponentType<{ className?: string }>;
-  accentColor: string;
-  defaultServices: string[];
-}
-
-const INDUSTRY_PRESETS: IndustryOption[] = [
-  {
-    id: 'ECOMMERCE',
-    name: 'E-Commerce & D2C Brands',
-    tagline: 'WISMO tracking, RMA returns, checkout vouchers, VIP buyers, merchant onboarding',
-    icon: ShoppingCart,
-    accentColor: 'from-emerald-500/20 to-teal-500/10 border-emerald-500/40 text-emerald-400',
-    defaultServices: [
-      'WISMO & Carrier Exceptions',
-      'Returns, Exchanges & Damaged Claims',
-      'Checkout, Payments & Promotions',
-      'VIP Concierge & High-LTV Buyers',
-      'Merchant Onboarding & Catalog Compliance',
-      'Product Quality & Brand Protection',
-    ],
-  },
-  {
-    id: 'LOGISTICS',
-    name: 'Logistics, Freight & 3PLs',
-    tagline: 'Linehaul transit, last-mile RTS, freight damage, COD settlement, fleet dispatch',
-    icon: Truck,
-    accentColor: 'from-blue-500/20 to-indigo-500/10 border-blue-500/40 text-blue-400',
-    defaultServices: [
-      'Linehaul & Transit Hub Exceptions',
-      'Last-Mile & Delivery Route Exceptions',
-      'Freight Damage & Insurance Claims',
-      'B2B Shipper Accounts & COD Settlement',
-      'Fleet Dispatch & Special Handling',
-      'Courier Misconduct & Driver Operations',
-    ],
-  },
-  {
-    id: 'FINTECH',
-    name: 'FinTech & Digital Payments',
-    tagline: 'ACH disputes, biometric KYC, chargeback defense, BNPL lending, treasury clearing',
-    icon: CreditCard,
-    accentColor: 'from-purple-500/20 to-pink-500/10 border-purple-500/40 text-purple-400',
-    defaultServices: [
-      'ACH, Wire & Real-Time Disputes',
-      'Biometric KYC & Account Security',
-      'Fraud, Scam & Chargeback Defense',
-      'B2B Payment Gateway & Webhooks',
-      'Digital Lending, BNPL & Collections',
-      'Treasury, Settlement & Clearing',
-    ],
-  },
-  {
-    id: 'SAAS',
-    name: 'B2B SaaS & Tech Enterprise',
-    tagline: 'REST APIs, webhooks, Okta/SAML SSO, SLA downtime incidents, subscription invoicing',
-    icon: Laptop,
-    accentColor: 'from-cyan-500/20 to-blue-500/10 border-cyan-500/40 text-cyan-400',
-    defaultServices: [
-      'Tier-1 User Access & Admin Onboarding',
-      'Tier-2 API, Webhooks & Developer Interop',
-      'Tier-3 Application Bug & Engineering',
-      'Enterprise Security, SAML SSO & SCIM',
-      'Subscription Invoicing, Tax & Procurement',
-      'P0/P1 Downtime & SLA Escalations',
-    ],
-  },
-  {
-    id: 'HEALTHCARE',
-    name: 'Healthcare & Telemedicine',
-    tagline: 'Doctor video visits, Rx pharmacy delivery, HIPAA records, clinical triage',
-    icon: HeartPulse,
-    accentColor: 'from-rose-500/20 to-red-500/10 border-rose-500/40 text-rose-400',
-    defaultServices: [
-      'Urgent Triage & Clinical Escalations',
-      'Doctor Appointments & Telehealth Video',
-      'Digital Prescriptions & Pharmacy Delivery',
-      'Health Insurance Claims & Prior Auth',
-      'Electronic Health Records & HIPAA Privacy',
-      'Chronic Care & Patient Follow-up',
-    ],
-  },
-  {
-    id: 'REAL_ESTATE',
-    name: 'Real Estate & PropTech',
-    tagline: 'Tenant emergency repairs, lease agreements, security deposits, HOA compliance',
-    icon: Home,
-    accentColor: 'from-teal-500/20 to-emerald-500/10 border-teal-500/40 text-teal-400',
-    defaultServices: [
-      'Tenant Emergency Maintenance & Repairs',
-      'Lease Agreements, Move-in & Handover',
-      'Rent Collection & Security Deposits',
-      'HOA Compliance, Noise & Violations',
-      'Property Amenities & Facilities',
-      'Landlord Relations & Vendor Work Orders',
-    ],
-  },
-  {
-    id: 'TRAVEL',
-    name: 'Travel, Hospitality & Airlines',
-    tagline: 'Flight rescheduling, hotel overbooking, 24/7 trip disruption, MICE, rental cars',
-    icon: Plane,
-    accentColor: 'from-amber-500/20 to-orange-500/10 border-amber-500/40 text-amber-400',
-    defaultServices: [
-      'Flight Rescheduling & Disruptions',
-      'Hotel Bookings & Property Disputes',
-      'Trip Disruptions & 24/7 Emergency',
-      'Corporate Travel & MICE Groups',
-      'Rental Car & Airport Ground Transport',
-      'Travel Insurance & Cancellation Claims',
-    ],
-  },
-  {
-    id: 'GAMING',
-    name: 'Gaming & Interactive Media',
-    tagline: 'Account recovery, in-game item refunds, anti-cheat ban appeals, tournament support',
-    icon: Gamepad2,
-    accentColor: 'from-violet-500/20 to-fuchsia-500/10 border-violet-500/40 text-violet-400',
-    defaultServices: [
-      'Account Security, 2FA & Stolen Items',
-      'In-Game Purchases & Currency Refunds',
-      'Player Toxicity, Cheating & Bans',
-      'Server Latency, Bugs & Client Crashes',
-      'Guilds, Clan Support & Community',
-      'Esports Tournaments & Anti-Cheat',
-    ],
-  },
-  {
-    id: 'TELECOM',
-    name: 'Telecommunications & ISPs',
-    tagline: 'Fiber network outages, technician dispatch, modem router diagnostics, eSIM porting',
-    icon: Wifi,
-    accentColor: 'from-sky-500/20 to-cyan-500/10 border-sky-500/40 text-sky-400',
-    defaultServices: [
-      'Network Outage & Area Downtime',
-      'Field Technician On-Site Dispatch',
-      'Modem/Router & Wi-Fi Diagnostics',
-      'Billing Invoices & Rate Expirations',
-      'SIM Card, eSIM & Number Porting',
-      'Enterprise Dedicated Fiber & SLA Lines',
-    ],
-  },
-  {
-    id: 'AUTOMOTIVE',
-    name: 'Automotive & EV Mobility',
-    tagline: 'Roadside towing, EV charging stations, warranty recall servicing, damage claims',
-    icon: Car,
-    accentColor: 'from-orange-500/20 to-red-500/10 border-orange-500/40 text-orange-400',
-    defaultServices: [
-      'Roadside Assistance & Towing',
-      'EV Charging Station & App Billing',
-      'Vehicle Warranty & Recall Servicing',
-      'Car Rental Damage & Toll Disputes',
-      'Fleet Telematics & Commercial Vehicle',
-      'Auto Insurance Claims & Accident Reports',
-    ],
-  },
-  {
-    id: 'PROFESSIONAL_SERVICES',
-    name: 'Legal & CPA Tax Services',
-    tagline: 'IRS tax filing, client retainer agreements, attorney scheduling, document vault',
-    icon: Scale,
-    accentColor: 'from-yellow-500/20 to-amber-500/10 border-yellow-500/40 text-yellow-400',
-    defaultServices: [
-      'Tax Filing Deadlines & IRS Documents',
-      'Client Retainer Onboarding & Scope',
-      'Attorney & Consultant Scheduling',
-      'Secure Document Vault & Compliance',
-      'Billing Invoices, Trust & Retainers',
-      'Corporate Entity Formation & Filings',
-    ],
-  },
-  {
-    id: 'EDTECH',
-    name: 'Education & Bootcamps',
-    tagline: 'LMS virtual classrooms, tuition financial aid, degree credentials, proctoring',
-    icon: GraduationCap,
-    accentColor: 'from-indigo-500/20 to-blue-500/10 border-indigo-500/40 text-indigo-400',
-    defaultServices: [
-      'LMS Platform & Virtual Classrooms',
-      'Tuition Payments, Aid & Billing',
-      'Academic Advising & Tutor Support',
-      'Certification & Degree Verification',
-      'Admissions, Placement & Counseling',
-      'Exam Integrity & Proctoring Support',
-    ],
-  },
-];
-
-const CUSTOM_INDUSTRY_DEFAULT_SERVICES = [
-  'Frontline Operations & Ticket Triage',
-  'Billing Invoices & Payment Disputes',
-  'Product Quality & Warranty Claims',
-  'Technical Diagnostics & Application Support',
-  'Account Security & Profile Management',
-  'Executive & High-Priority SLA Escalations',
-];
-
-interface PodDraft {
-  name: string;
-  podCategory: string;
-  description: string;
-  services: string[];
-  seats?: number;
-}
-
-const CORPORATE_ACRONYMS = new Set([
-  'PT', 'CV', 'UD', 'TBK', 'LLC', 'LTD', 'GMBH', 'PTE', 'USA', 'UK', 'ID', 'BCA', 'BRI', 'BNI', 'IBM', 'AWS', 'NASA', 'SAP', 'AI', 'IT', 'HQ'
-]);
-
-function toCorporateTitleCase(input: string): string {
-  if (!input) return '';
-  const trailingSpaces = input.match(/\s+$/)?.[0] || '';
-  const words = input.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return trailingSpaces;
-
-  const formattedWords = words.map((word) => {
-    const upper = word.toUpperCase();
-    if (CORPORATE_ACRONYMS.has(upper)) {
-      return upper;
-    }
-    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-  });
-
-  return formattedWords.join(' ') + trailingSpaces;
-}
-
-function getInitialDraft(): any {
+function getInitialDraft(): OnboardingDraft | null {
   if (typeof window === 'undefined') return null;
   try {
     const urlParams = new URLSearchParams(window.location.search);
@@ -293,12 +42,12 @@ function getInitialDraft(): any {
     const active = getSession();
     if (active?.onboardingDraft) return active.onboardingDraft;
     if (active?.username) {
-      const raw = localStorage.getItem(`sentirix_onboarding_draft_${active.username.toLowerCase()}`);
-      if (raw) return JSON.parse(raw);
+      const raw = localStorage.getItem(`sevaniq_onboarding_draft_${active.username.toLowerCase()}`);
+      if (raw) return JSON.parse(raw) as OnboardingDraft;
     }
     if (active?.email) {
-      const raw = localStorage.getItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`);
-      if (raw) return JSON.parse(raw);
+      const raw = localStorage.getItem(`sevaniq_onboarding_draft_${active.email.toLowerCase()}`);
+      if (raw) return JSON.parse(raw) as OnboardingDraft;
     }
   } catch {}
   return null;
@@ -352,30 +101,14 @@ export default function TitaniumOnboardingPage() {
   const [availableServices, setAvailableServices] = useState<string[]>(() => getInitialDraft()?.availableServices || []);
   const [newServiceInput, setNewServiceInput] = useState<string>('');
   const [isGeneratingPods, setIsGeneratingPods] = useState<boolean>(false);
-  const [editingPodIndex, setEditingPodIndex] = useState<number | null>(null);
-  const [newPodName, setNewPodName] = useState<string>('');
   const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
   const [editingServiceText, setEditingServiceText] = useState<string>('');
   const [isValidatingSemantic, setIsValidatingSemantic] = useState<boolean>(false);
-  const [semanticWarning, setSemanticWarning] = useState<{
-    original: string;
-    proposed: string;
-    explanation: string;
-    index: number;
-  } | null>(null);
+  const [semanticWarning, setSemanticWarning] = useState<SemanticWarningState | null>(null);
 
   // Step 4: Submission & Single-Use Leader Tokens Result
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [generatedLeaderTokens, setGeneratedLeaderTokens] = useState<Array<{
-    workspaceId: string;
-    workspaceName: string;
-    podCategory: string;
-    services: string[];
-    token: string;
-    joinUrl: string;
-    isClaimed?: boolean;
-    leaderName?: string | null;
-  }>>([]);
+  const [generatedLeaderTokens, setGeneratedLeaderTokens] = useState<LeaderTokenPreview[]>([]);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const [regeneratingToken, setRegeneratingToken] = useState<string | null>(null);
   const [dispatchedTokens, setDispatchedTokens] = useState<Set<string>>(new Set());
@@ -490,190 +223,200 @@ export default function TitaniumOnboardingPage() {
   const isAllocationBalanced = isCapacityLocked && totalAllocatedSeats === typedMembers;
 
   useEffect(() => {
-    const active = getSession();
-    if (!active) {
-      router.push('/');
-      return;
-    }
+    let cancelled = false;
 
-    setLocalSession(active);
-    setIsVerifying(false);
-
-    // 1. Resilient Step 4 Recovery: Check Postgres Database & LocalStorage
-    fetchPendingLeaderTokens(active.username).then((dbRes) => {
-      if (dbRes?.hasPendingTokens) {
-        // Hydrate all previous step choices from PostgreSQL database so Step 1, 2, 3 remain 100% intact!
-        if (dbRes.organizationName) setOrganizationName(dbRes.organizationName);
-        if (dbRes.industry) setSelectedIndustry(dbRes.industry);
-        if (dbRes.customIndustryDescription) setCustomIndustryText(dbRes.customIndustryDescription);
-        if (dbRes.totalSeats) setTypedMembers(dbRes.totalSeats);
-        if (dbRes.pods && dbRes.pods.length > 0) {
-          setPods(dbRes.pods.map((p) => ({ ...p, description: p.description || '' })));
-        }
-        if (dbRes.availableServices && dbRes.availableServices.length > 0) setAvailableServices(dbRes.availableServices);
-        setMaxUnlockedStep(4);
-
-        const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-        const requestedStep = urlParams?.get('step');
-        const pendingLocalStorageStep = typeof window !== 'undefined' ? localStorage.getItem('sentirix_onboarding_step') : null;
-
-        // If onboarding is NOT completed in database, or step 4 is requested / stored, stay on Step 4!
-        if (!dbRes.onboardingCompleted || requestedStep === '4' || pendingLocalStorageStep === '4') {
-          setGeneratedLeaderTokens(dbRes.leaderTokens);
-          setCurrentStep(4);
-
-          // Force session promotion to ADMIN with onboardingCompleted: false
-          const adminSession: UserSession = {
-            ...active,
-            role: 'ADMIN',
-            onboardingCompleted: false,
-          };
-          setSession(adminSession);
-          setLocalSession(adminSession);
-
-          // Restore dispatched & regenerated tokens
-          try {
-            localStorage.setItem('sentirix_onboarding_step', '4');
-            localStorage.setItem('sentirix_pending_tokens', JSON.stringify(dbRes.leaderTokens));
-            const rawDispatched = localStorage.getItem('sentirix_dispatched_tokens');
-            if (rawDispatched) setDispatchedTokens(new Set(JSON.parse(rawDispatched)));
-            const rawRegenerated = localStorage.getItem('sentirix_regenerated_tokens');
-            if (rawRegenerated) setRegeneratedTokens(new Set(JSON.parse(rawRegenerated)));
-          } catch {}
-          return;
-        }
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      const active = getSession();
+      if (!active) {
+        router.push('/');
+        return;
       }
 
-      // If already fully completed onboarding in both session and database, route to cockpit
-      if (active.onboardingCompleted && dbRes?.onboardingCompleted) {
-        if (typeof window !== 'undefined') {
-          const urlParams = new URLSearchParams(window.location.search);
-          if (urlParams.get('step') !== '2') {
-            if (active.role === 'ADMIN' || dbRes?.hasPendingTokens) {
-              router.push('/admin/cockpit');
-            } else {
-              router.push('/dashboard');
-            }
+      setLocalSession(active);
+      setIsVerifying(false);
+
+      // 1. Resilient Step 4 Recovery: Check Postgres Database & LocalStorage
+      fetchPendingLeaderTokens(active.username).then((dbRes) => {
+        if (cancelled) return;
+        if (dbRes?.hasPendingTokens) {
+          // Hydrate all previous step choices from PostgreSQL database so Step 1, 2, 3 remain 100% intact!
+          if (dbRes.organizationName) setOrganizationName(dbRes.organizationName);
+          if (dbRes.industry) setSelectedIndustry(dbRes.industry);
+          if (dbRes.customIndustryDescription) setCustomIndustryText(dbRes.customIndustryDescription);
+          if (dbRes.totalSeats) setTypedMembers(dbRes.totalSeats);
+          if (dbRes.pods && dbRes.pods.length > 0) {
+            setPods(dbRes.pods.map((p) => ({ ...p, description: p.description || '' })));
+          }
+          if (dbRes.availableServices && dbRes.availableServices.length > 0) setAvailableServices(dbRes.availableServices);
+          setMaxUnlockedStep(4);
+
+          const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+          const requestedStep = urlParams?.get('step');
+          const pendingLocalStorageStep = typeof window !== 'undefined' ? localStorage.getItem('sevaniq_onboarding_step') : null;
+
+          // If onboarding is NOT completed in database, or step 4 is requested / stored, stay on Step 4!
+          if (!dbRes.onboardingCompleted || requestedStep === '4' || pendingLocalStorageStep === '4') {
+            setGeneratedLeaderTokens(dbRes.leaderTokens);
+            setCurrentStep(4);
+
+            // Force session promotion to ADMIN with onboardingCompleted: false
+            const adminSession: UserSession = {
+              ...active,
+              role: 'ADMIN',
+              onboardingCompleted: false,
+            };
+            setSession(adminSession);
+            setLocalSession(adminSession);
+
+            // Restore dispatched & regenerated tokens
+            try {
+              localStorage.setItem('sevaniq_onboarding_step', '4');
+              localStorage.setItem('sevaniq_pending_tokens', JSON.stringify(dbRes.leaderTokens));
+              const rawDispatched = localStorage.getItem('sevaniq_dispatched_tokens');
+              if (rawDispatched) setDispatchedTokens(new Set(JSON.parse(rawDispatched)));
+              const rawRegenerated = localStorage.getItem('sevaniq_regenerated_tokens');
+              if (rawRegenerated) setRegeneratedTokens(new Set(JSON.parse(rawRegenerated)));
+            } catch {}
             return;
           }
         }
-      }
-    }).catch(() => {});
 
-    // Read planned capacity from landing page calculator if present
-    try {
-      const planned = localStorage.getItem('sentirix_planned_capacity');
-      if (planned) {
-        const num = Number(planned);
-        if (!isNaN(num) && num >= 1) {
-          setTypedMembers(num);
-        }
-        localStorage.removeItem('sentirix_planned_capacity');
-      }
-    } catch {}
-
-    // 2. In-Progress Onboarding Draft Restoration (Step 1, 2, 3 autosave recovery)
-    const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-    const isFresh = urlParams?.get('fresh') === 'true';
-    if (isFresh) {
-      const draftKey = `sentirix_onboarding_draft_${active.username.toLowerCase()}`;
-      try {
-        localStorage.removeItem(draftKey);
-        if (active.email) {
-          localStorage.removeItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`);
-        }
-        localStorage.removeItem('sentirix_onboarding_step');
-        localStorage.removeItem('sentirix_pending_tokens');
-        localStorage.removeItem('sentirix_dispatched_tokens');
-        localStorage.removeItem('sentirix_regenerated_tokens');
-      } catch {}
-      setCurrentStep(1);
-      setMaxUnlockedStep(1);
-      setOrganizationName('');
-      setPods([]);
-      return;
-    }
-
-    const requestedStep = urlParams?.get('step');
-    if (requestedStep && ['1', '2', '3', '4'].includes(requestedStep)) {
-      const stepNum = Number(requestedStep);
-      setCurrentStep(stepNum);
-      setMaxUnlockedStep((prev) => Math.max(prev, stepNum));
-    }
-
-    const draftKey = `sentirix_onboarding_draft_${active.username.toLowerCase()}`;
-    const applyDraft = (draft: any) => {
-      if (!draft) return;
-      if (draft.organizationName) setOrganizationName(draft.organizationName);
-      if (draft.selectedIndustry) setSelectedIndustry(draft.selectedIndustry);
-      if (draft.customIndustryText) setCustomIndustryText(draft.customIndustryText);
-      if (draft.typedMembers) setTypedMembers(draft.typedMembers);
-      if (draft.isCapacityLocked !== undefined) setIsCapacityLocked(Boolean(draft.isCapacityLocked));
-      if (draft.pods && Array.isArray(draft.pods) && draft.pods.length > 0) {
-        setPods(draft.pods);
-      }
-      if (draft.availableServices && Array.isArray(draft.availableServices) && draft.availableServices.length > 0) {
-        setAvailableServices(draft.availableServices);
-      }
-      const isOrgValid = !!(draft.organizationName?.trim() || organizationName.trim());
-      const unlocked = Math.max(draft.maxUnlockedStep || 1, draft.lastActiveStep || 1);
-      setMaxUnlockedStep((prev) => Math.max(prev, isOrgValid ? unlocked : 1));
-
-      if (!requestedStep && draft.lastActiveStep && draft.lastActiveStep >= 1 && draft.lastActiveStep <= 4) {
-        if (draft.lastActiveStep > 1 && !isOrgValid) {
-          setCurrentStep(1);
-        } else {
-          setCurrentStep(draft.lastActiveStep);
-        }
-      }
-    };
-
-    // Apply server-delivered draft from active session first
-    if (active.onboardingDraft) {
-      applyDraft(active.onboardingDraft);
-    }
-
-    try {
-      const cached = localStorage.getItem(draftKey);
-      if (cached) {
-        applyDraft(JSON.parse(cached));
-      }
-    } catch {}
-
-    fetchOnboardingDraft(active.username).then((serverDraft) => {
-      if (serverDraft) {
-        applyDraft(serverDraft);
-        try {
-          localStorage.setItem(draftKey, JSON.stringify(serverDraft));
-        } catch {}
-      }
-    }).catch(() => {});
-
-    // Handle redirection from Super Admin Cockpit "Refresh Team" (?step=2)
-    try {
-      if (typeof window !== 'undefined') {
-        const urlParams = new URLSearchParams(window.location.search);
-        const stepParam = urlParams.get('step');
-        if (stepParam === '2') {
-          setCurrentStep(2);
-          fetchSuperAdminCockpit(active.username).then((data) => {
-            if (data?.organization) {
-              if (data.organization.name) setOrganizationName(data.organization.name);
-              if (data.organization.industry) setSelectedIndustry(data.organization.industry);
-              if (data.organization.totalSeats) setTypedMembers(data.organization.totalSeats);
+        // If already fully completed onboarding in both session and database, route to cockpit
+        if (active.onboardingCompleted && dbRes?.onboardingCompleted) {
+          if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('step') !== '2') {
+              if (active.role === 'ADMIN' || dbRes?.hasPendingTokens) {
+                router.push('/admin/cockpit');
+              } else {
+                router.push('/dashboard');
+              }
+              return;
             }
-          }).catch(() => {});
+          }
         }
+      }).catch(() => {});
+
+      // Read planned capacity from landing page calculator if present
+      try {
+        const planned = localStorage.getItem('sevaniq_planned_capacity');
+        if (planned) {
+          const num = Number(planned);
+          if (!isNaN(num) && num >= 1) {
+            setTypedMembers(num);
+          }
+          localStorage.removeItem('sevaniq_planned_capacity');
+        }
+      } catch {}
+
+      // 2. In-Progress Onboarding Draft Restoration (Step 1, 2, 3 autosave recovery)
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const isFresh = urlParams?.get('fresh') === 'true';
+      if (isFresh) {
+        const draftKey = `sevaniq_onboarding_draft_${active.username.toLowerCase()}`;
+        try {
+          localStorage.removeItem(draftKey);
+          if (active.email) {
+            localStorage.removeItem(`sevaniq_onboarding_draft_${active.email.toLowerCase()}`);
+          }
+          localStorage.removeItem('sevaniq_onboarding_step');
+          localStorage.removeItem('sevaniq_pending_tokens');
+          localStorage.removeItem('sevaniq_dispatched_tokens');
+          localStorage.removeItem('sevaniq_regenerated_tokens');
+        } catch {}
+        setCurrentStep(1);
+        setMaxUnlockedStep(1);
+        setOrganizationName('');
+        setPods([]);
+        return;
       }
-    } catch {}
+
+      const requestedStep = urlParams?.get('step');
+      if (requestedStep && ['1', '2', '3', '4'].includes(requestedStep)) {
+        const stepNum = Number(requestedStep);
+        setCurrentStep(stepNum);
+        setMaxUnlockedStep((prev) => Math.max(prev, stepNum));
+      }
+
+      const draftKey = `sevaniq_onboarding_draft_${active.username.toLowerCase()}`;
+      const applyDraft = (draft: OnboardingDraft | null) => {
+        if (!draft) return;
+        if (draft.organizationName) setOrganizationName(draft.organizationName);
+        if (draft.selectedIndustry) setSelectedIndustry(draft.selectedIndustry);
+        if (draft.customIndustryText) setCustomIndustryText(draft.customIndustryText);
+        if (draft.typedMembers) setTypedMembers(draft.typedMembers);
+        if (draft.isCapacityLocked !== undefined) setIsCapacityLocked(Boolean(draft.isCapacityLocked));
+        if (draft.pods && Array.isArray(draft.pods) && draft.pods.length > 0) {
+          setPods(draft.pods);
+        }
+        if (draft.availableServices && Array.isArray(draft.availableServices) && draft.availableServices.length > 0) {
+          setAvailableServices(draft.availableServices);
+        }
+        const isOrgValid = !!(draft.organizationName?.trim() || organizationName.trim());
+        const unlocked = Math.max(draft.maxUnlockedStep || 1, draft.lastActiveStep || 1);
+        setMaxUnlockedStep((prev) => Math.max(prev, isOrgValid ? unlocked : 1));
+
+        if (!requestedStep && draft.lastActiveStep && draft.lastActiveStep >= 1 && draft.lastActiveStep <= 4) {
+          if (draft.lastActiveStep > 1 && !isOrgValid) {
+            setCurrentStep(1);
+          } else {
+            setCurrentStep(draft.lastActiveStep);
+          }
+        }
+      };
+
+      // Apply server-delivered draft from active session first
+      if (active.onboardingDraft) {
+        applyDraft(active.onboardingDraft);
+      }
+
+      try {
+        const cached = localStorage.getItem(draftKey);
+        if (cached) {
+          applyDraft(JSON.parse(cached) as OnboardingDraft);
+        }
+      } catch {}
+
+      fetchOnboardingDraft(active.username).then((serverDraft) => {
+        if (!cancelled && serverDraft) {
+          applyDraft(serverDraft);
+          try {
+            localStorage.setItem(draftKey, JSON.stringify(serverDraft));
+          } catch {}
+        }
+      }).catch(() => {});
+
+      // Handle redirection from Super Admin Cockpit "Refresh Team" (?step=2)
+      try {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const stepParam = params.get('step');
+          if (stepParam === '2') {
+            setCurrentStep(2);
+            fetchSuperAdminCockpit(active.username).then((data) => {
+              if (!cancelled && data?.organization) {
+                if (data.organization.name) setOrganizationName(data.organization.name);
+                if (data.organization.industry) setSelectedIndustry(data.organization.industry);
+                if (data.organization.totalSeats) setTypedMembers(data.organization.totalSeats);
+              }
+            }).catch(() => {});
+          }
+        }
+      } catch {}
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   // Autosave Draft Helper
-  const persistDraft = (overrides: Record<string, any> = {}) => {
+  const persistDraft = (overrides: Partial<OnboardingDraft> = {}) => {
     const active = session || getSession();
     if (!active?.username) return;
     const uName = active.username.toLowerCase();
-    const draftKey = `sentirix_onboarding_draft_${uName}`;
+    const draftKey = `sevaniq_onboarding_draft_${uName}`;
 
     const draftData = {
       lastActiveStep: overrides.lastActiveStep ?? currentStep,
@@ -694,7 +437,7 @@ export default function TitaniumOnboardingPage() {
     try {
       localStorage.setItem(draftKey, JSON.stringify(draftData));
       if (active.email) {
-        localStorage.setItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
+        localStorage.setItem(`sevaniq_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
       }
     } catch {}
 
@@ -720,9 +463,9 @@ export default function TitaniumOnboardingPage() {
       };
 
       try {
-        localStorage.setItem(`sentirix_onboarding_draft_${active.username.toLowerCase()}`, JSON.stringify(draftData));
+        localStorage.setItem(`sevaniq_onboarding_draft_${active.username.toLowerCase()}`, JSON.stringify(draftData));
         if (active.email) {
-          localStorage.setItem(`sentirix_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
+          localStorage.setItem(`sevaniq_onboarding_draft_${active.email.toLowerCase()}`, JSON.stringify(draftData));
         }
       } catch {}
 
@@ -735,16 +478,33 @@ export default function TitaniumOnboardingPage() {
     router.push('/');
   };
 
-  // Safety net & Reactive Pod Count Synchronization for Step 3
-  useEffect(() => {
-    if (currentStep === 3 && !isGeneratingPods) {
-      if (pods.length === 0) {
-        prepareStep3Pods();
-      } else if (pods.length !== calculatedPodCount) {
-        syncPodsWithCapacity(calculatedPodCount);
-      }
+  const buildFallbackPods = (servicesList: string[], count: number) => {
+    const list: PodDraft[] = [];
+    const usedServices = new Set<string>();
+    const balanced = calculateBalancedSeats(typedMembers, count);
+    for (let i = 1; i <= count; i++) {
+      const unused = servicesList.find((s) => !usedServices.has(s));
+      const defaultSvc = unused || servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
+      usedServices.add(defaultSvc);
+      const podLabel = i < 10 ? `Pod 0${i}` : `Pod ${i}`;
+      list.push({
+        name: podLabel,
+        podCategory: 'GENERAL',
+        description: `Dedicated operational unit for ${defaultSvc}`,
+        services: [defaultSvc],
+        seats: pods[i - 1]?.seats || balanced[i - 1] || 8,
+      });
     }
-  }, [currentStep, pods.length, calculatedPodCount, isGeneratingPods]);
+    setPods(list);
+    persistDraft({
+      lastActiveStep: 3,
+      maxUnlockedStep: 3,
+      typedMembers,
+      isCapacityLocked: true,
+      pods: list,
+      availableServices: servicesList,
+    });
+  };
 
   // Dynamic Pod Synchronization (Adjusts count to match targetCount while preserving existing pod customizations)
   const syncPodsWithCapacity = (targetCount: number) => {
@@ -827,7 +587,7 @@ export default function TitaniumOnboardingPage() {
           services = [...aiResult.defaultServices];
           setAvailableServices(services);
         } else if (selectedIndustry === 'OTHER') {
-          const dynamicServices = aiResult.pods.map((p: any) =>
+          const dynamicServices = aiResult.pods.map((p) =>
             p.service?.trim() || p.name.replace(/\s+Pod$/i, '').trim()
           );
           if (dynamicServices.length > 0) {
@@ -896,33 +656,22 @@ export default function TitaniumOnboardingPage() {
     }
   };
 
-  const buildFallbackPods = (servicesList: string[], count: number) => {
-    const list: PodDraft[] = [];
-    const usedServices = new Set<string>();
-    const balanced = calculateBalancedSeats(typedMembers, count);
-    for (let i = 1; i <= count; i++) {
-      const unused = servicesList.find((s) => !usedServices.has(s));
-      const defaultSvc = unused || servicesList[(i - 1) % servicesList.length] || `Core Service #${i}`;
-      usedServices.add(defaultSvc);
-      const podLabel = i < 10 ? `Pod 0${i}` : `Pod ${i}`;
-      list.push({
-        name: podLabel,
-        podCategory: 'GENERAL',
-        description: `Dedicated operational unit for ${defaultSvc}`,
-        services: [defaultSvc],
-        seats: pods[i - 1]?.seats || balanced[i - 1] || 8,
-      });
-    }
-    setPods(list);
-    persistDraft({
-      lastActiveStep: 3,
-      maxUnlockedStep: 3,
-      typedMembers,
-      isCapacityLocked: true,
-      pods: list,
-      availableServices: servicesList,
+  // Safety net & Reactive Pod Count Synchronization for Step 3
+  useEffect(() => {
+    if (currentStep !== 3 || isGeneratingPods) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      if (pods.length === 0) {
+        void prepareStep3Pods();
+      } else if (pods.length !== calculatedPodCount) {
+        syncPodsWithCapacity(calculatedPodCount);
+      }
     });
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, pods.length, calculatedPodCount, isGeneratingPods]);
 
   const handleNextToStep2 = () => {
     const cleanName = toCorporateTitleCase(organizationName.trim().replace(/\s+/g, ' '));
@@ -1011,19 +760,6 @@ export default function TitaniumOnboardingPage() {
       persistDraft({ availableServices: updatedServices, lastActiveStep: 3, maxUnlockedStep: 3 });
     }
     setNewServiceInput('');
-  };
-
-  const handleSavePodName = (index: number) => {
-    if (!newPodName.trim()) return;
-    const cleanName = newPodName.replace(/\s+Pod$/i, '').trim();
-    let updatedPods: PodDraft[] = [];
-    setPods((prev) => {
-      updatedPods = prev.map((p, idx) => (idx === index ? { ...p, name: cleanName } : p));
-      return updatedPods;
-    });
-    setEditingPodIndex(null);
-    setNewPodName('');
-    persistDraft({ pods: updatedPods, lastActiveStep: 3, maxUnlockedStep: 3 });
   };
 
   const handleStartEditService = (index: number, currentText: string) => {
@@ -1203,10 +939,11 @@ export default function TitaniumOnboardingPage() {
         return;
       }
 
-      // Update session: PROMOTE TO ADMIN, but DO NOT complete onboarding yet!
+      // Update session: PROMOTE TO ADMIN, preserve refreshed JWT with updated role
       const updatedSession: UserSession = {
         ...session,
         role: 'ADMIN',
+        ...(res.token ? { token: res.token } : {}),
         onboardingCompleted: false,
       };
       setSession(updatedSession);
@@ -1216,8 +953,8 @@ export default function TitaniumOnboardingPage() {
       const tokens = res.leaderTokens || [];
       setGeneratedLeaderTokens(tokens);
       try {
-        localStorage.setItem('sentirix_onboarding_step', '4');
-        localStorage.setItem('sentirix_pending_tokens', JSON.stringify(tokens));
+        localStorage.setItem('sevaniq_onboarding_step', '4');
+        localStorage.setItem('sevaniq_pending_tokens', JSON.stringify(tokens));
       } catch {}
 
       setCurrentStep(4);
@@ -1238,7 +975,7 @@ export default function TitaniumOnboardingPage() {
     setDispatchedTokens((prev) => {
       const next = new Set(prev).add(token);
       try {
-        localStorage.setItem('sentirix_dispatched_tokens', JSON.stringify(Array.from(next)));
+        localStorage.setItem('sevaniq_dispatched_tokens', JSON.stringify(Array.from(next)));
       } catch {}
       return next;
     });
@@ -1267,7 +1004,7 @@ export default function TitaniumOnboardingPage() {
               : t,
           );
           try {
-            localStorage.setItem('sentirix_pending_tokens', JSON.stringify(updated));
+            localStorage.setItem('sevaniq_pending_tokens', JSON.stringify(updated));
           } catch {}
           return updated;
         });
@@ -1278,7 +1015,7 @@ export default function TitaniumOnboardingPage() {
           next.delete(oldToken);
           next.add(freshToken);
           try {
-            localStorage.setItem('sentirix_dispatched_tokens', JSON.stringify(Array.from(next)));
+            localStorage.setItem('sevaniq_dispatched_tokens', JSON.stringify(Array.from(next)));
           } catch {}
           return next;
         });
@@ -1291,7 +1028,7 @@ export default function TitaniumOnboardingPage() {
         setRegeneratedTokens((prev) => {
           const next = new Set(prev).add(freshToken);
           try {
-            localStorage.setItem('sentirix_regenerated_tokens', JSON.stringify(Array.from(next)));
+            localStorage.setItem('sevaniq_regenerated_tokens', JSON.stringify(Array.from(next)));
           } catch {}
           return next;
         });
@@ -1315,21 +1052,24 @@ export default function TitaniumOnboardingPage() {
       };
       setSession(finalSession);
       try {
-        await completeOnboarding(active.username);
+        const doneRes = await completeOnboarding(active.username);
+        if (doneRes?.token) {
+          setSession({ ...finalSession, token: doneRes.token });
+        }
       } catch {}
       try {
         await deleteOnboardingDraft(active.username);
       } catch {}
       try {
         const uName = active.username.toLowerCase();
-        localStorage.removeItem(`sentirix_onboarding_draft_${uName}`);
+        localStorage.removeItem(`sevaniq_onboarding_draft_${uName}`);
       } catch {}
     }
     try {
-      localStorage.removeItem('sentirix_onboarding_step');
-      localStorage.removeItem('sentirix_pending_tokens');
-      localStorage.removeItem('sentirix_dispatched_tokens');
-      localStorage.removeItem('sentirix_regenerated_tokens');
+      localStorage.removeItem('sevaniq_onboarding_step');
+      localStorage.removeItem('sevaniq_pending_tokens');
+      localStorage.removeItem('sevaniq_dispatched_tokens');
+      localStorage.removeItem('sevaniq_regenerated_tokens');
     } catch {}
 
     router.push('/admin/cockpit');
@@ -1340,7 +1080,7 @@ export default function TitaniumOnboardingPage() {
       <div className="min-h-screen bg-[#0B0F19] flex items-center justify-center text-slate-400 text-xs">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span>Verifying Sentirix session...</span>
+          <span>Verifying Sevaniq session...</span>
         </div>
       </div>
     );
@@ -1358,9 +1098,11 @@ export default function TitaniumOnboardingPage() {
         <div className="flex items-center mb-4 px-1">
           <div className="inline-flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-700 bg-white p-0.5 flex items-center justify-center shadow-md">
-              <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+              <img src="/logo_sevaniq_icon.png" alt="Sevaniq Logo" className="w-full h-full object-contain" />
             </div>
-            <span className="font-extrabold text-base text-white tracking-tight">Sentirix</span>
+            <div className="bg-white px-2 py-0.5 rounded-md flex items-center">
+              <img src="/sevaniq_wordmark.png" alt="SEVANIQ" className="h-3.5 w-auto object-contain" />
+            </div>
             <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
               AI COPILOT
             </span>
@@ -1375,11 +1117,7 @@ export default function TitaniumOnboardingPage() {
           <p className="text-sm text-slate-400 max-w-3xl mx-auto">
             {currentStep === 4
               ? 'Distribute one-time activation links to designated Pod Leaders to initialize workspace governance.'
-              : (
-                <>
-                  Build an agile, high-velocity customer support structure without inter-departmental friction <span className="whitespace-nowrap">across all teams.</span>
-                </>
-              )}
+              : 'Configure your organizational structure, pod quotas, and ticket routing specializations.'}
           </p>
 
           {/* Stepper Dots (Interactive & Clickable for Unlocked Steps) */}
@@ -1484,971 +1222,89 @@ export default function TitaniumOnboardingPage() {
         <div className="bg-[#111827] border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-xl">
           {/* STEP 1: INDUSTRY SELECTION */}
           {currentStep === 1 && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-blue-400" />
-                  What industry is your company in?
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Sentirix will recommend specialized pods and tailored services designed for your sector.
-                </p>
-              </div>
-
-              {/* Organization Name Input */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1">
-                  <span>Organization / Company Name</span>
-                  <span className="text-red-400 font-bold">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={organizationName}
-                  onChange={(e) => {
-                    const formatted = toCorporateTitleCase(e.target.value);
-                    setOrganizationName(formatted);
-                    if (errorMessage && formatted.trim()) setErrorMessage(null);
-                    persistDraft({ organizationName: formatted, lastActiveStep: 1 });
-                  }}
-                  onBlur={() => {
-                    const formatted = toCorporateTitleCase(organizationName.trim().replace(/\s+/g, ' '));
-                    setOrganizationName(formatted);
-                    persistDraft({ organizationName: formatted, lastActiveStep: 1 });
-                  }}
-                  placeholder="e.g., Acme Global Enterprises"
-                  className={`w-full bg-[#0B0F19] border ${
-                    !organizationName.trim() && errorMessage ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-800'
-                  } rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium`}
-                />
-              </div>
-
-              {/* 12 Industry Preset Cards (3 rows of 4) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                {INDUSTRY_PRESETS.map((ind) => {
-                  const Icon = ind.icon;
-                  const isSelected = selectedIndustry === ind.id;
-                  return (
-                    <button
-                      key={ind.id}
-                      type="button"
-                      onClick={() => {
-                        const isChanged = selectedIndustry !== ind.id;
-                        setSelectedIndustry(ind.id);
-                        if (errorMessage) setErrorMessage(null);
-                        if (isChanged) {
-                          const newPreset = INDUSTRY_PRESETS.find((p) => p.id === ind.id);
-                          const newServices = newPreset ? [...newPreset.defaultServices] : [...CUSTOM_INDUSTRY_DEFAULT_SERVICES];
-                          setAvailableServices(newServices);
-                          setPods([]);
-                          persistDraft({
-                            selectedIndustry: ind.id,
-                            availableServices: newServices,
-                            pods: [],
-                            lastActiveStep: 1,
-                          });
-                        } else {
-                          persistDraft({ selectedIndustry: ind.id, lastActiveStep: 1 });
-                        }
-                      }}
-                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[96px] ${
-                        isSelected
-                          ? 'bg-[#1E293B] border-blue-500 shadow-lg shadow-blue-500/20 ring-1 ring-blue-500'
-                          : 'bg-[#0B0F19] border-slate-800 hover:border-slate-700 hover:bg-[#151D2F]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div
-                          className={`w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br ${ind.accentColor}`}
-                        >
-                          <Icon className="w-5 h-5" />
-                        </div>
-                        {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-400" />}
-                      </div>
-                      <div>
-                        <h3 className="text-xs font-bold text-white tracking-tight">{ind.name}</h3>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 13th Option: Custom Industry / AI Architect Unified Card */}
-              <div
-                onClick={() => {
-                  const isChanged = selectedIndustry !== 'OTHER';
-                  setSelectedIndustry('OTHER');
-                  if (errorMessage) setErrorMessage(null);
-                  if (isChanged) {
-                    setAvailableServices([...CUSTOM_INDUSTRY_DEFAULT_SERVICES]);
-                    setPods([]);
-                    persistDraft({
-                      selectedIndustry: 'OTHER',
-                      availableServices: [...CUSTOM_INDUSTRY_DEFAULT_SERVICES],
-                      pods: [],
-                      lastActiveStep: 1,
-                    });
-                  } else {
-                    persistDraft({ selectedIndustry: 'OTHER', lastActiveStep: 1 });
-                  }
-                  setTimeout(() => customInputRef.current?.focus(), 50);
-                }}
-                className={`rounded-xl border text-left transition-all cursor-pointer p-4 ${
-                  selectedIndustry === 'OTHER'
-                    ? 'bg-[#1E293B] border-indigo-500 shadow-lg shadow-indigo-500/20 ring-1 ring-indigo-500/50'
-                    : 'bg-[#0B0F19] border-slate-800 hover:border-slate-700 hover:bg-[#151D2F]'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gradient-to-br from-indigo-500/20 to-blue-500/10 border border-indigo-500/40 text-indigo-400 shrink-0">
-                      <SlidersHorizontal className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-white tracking-tight">Custom Industry / Other Sector</h3>
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                          CUSTOM SETUP
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0 flex items-center gap-2">
-                    {selectedIndustry === 'OTHER' && <CheckCircle2 className="w-4 h-4 text-indigo-400" />}
-                  </div>
-                </div>
-
-                {/* Inline Input automatically revealed inside the card when active */}
-                {selectedIndustry === 'OTHER' && (
-                  <div
-                    className="mt-3.5 pt-3.5 border-t border-slate-700/60 animate-fadeIn"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <label className="block text-[11px] font-semibold text-indigo-300 mb-1.5 flex items-center gap-1.5">
-                      <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Specify Your Unique Business Domain</span>
-                    </label>
-                    <input
-                      ref={customInputRef}
-                      type="text"
-                      value={customIndustryText}
-                      onChange={(e) => setCustomIndustryText(e.target.value)}
-                      onBlur={() => {
-                        persistDraft({ customIndustryText, lastActiveStep: 1 });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleNextToStep2();
-                        }
-                      }}
-                      placeholder="e.g., Autonomous Agricultural Drones, Renewable Energy Logistics..."
-                      className="w-full bg-[#0B0F19] border border-slate-700 focus:border-indigo-500 rounded-lg px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500/40 transition-all font-medium"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={handleNextToStep2}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
-                >
-                  <span>Next: Set Team Member Capacity</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <OnboardingStep1Industry
+              organizationName={organizationName}
+              setOrganizationName={setOrganizationName}
+              selectedIndustry={selectedIndustry}
+              setSelectedIndustry={setSelectedIndustry}
+              customIndustryText={customIndustryText}
+              setCustomIndustryText={setCustomIndustryText}
+              customInputRef={customInputRef}
+              errorMessage={errorMessage}
+              setErrorMessage={setErrorMessage}
+              setAvailableServices={setAvailableServices}
+              setPods={setPods}
+              persistDraft={persistDraft}
+              onNext={handleNextToStep2}
+            />
           )}
 
-          {/* STEP 2: MEMBER CAPACITY TYPING & DYNAMIC FORMULA CALLOUT */}
           {currentStep === 2 && (
-            <div className="space-y-6">
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-950/80 border border-blue-500/30 text-blue-400 text-[11px] font-bold mb-2">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-                  <span>STEP 2 • CAPACITY PROVISIONING</span>
-                </div>
-                <h2 className="text-xl font-black text-white flex items-center gap-2">
-                  <Users className="w-5 h-5 text-blue-400" />
-                  Total Team Member Allocation
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Specify the total customer support headcount for your organization. Sentirix will automatically structure your team into dedicated operational pods.
-                </p>
-              </div>
-
-              {/* Interactive Typing Input & Lock Action Card */}
-              <div className="p-6 rounded-2xl bg-[#0B0F19] border border-slate-800 space-y-5 shadow-xl">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                      Total Team Members:
-                    </label>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Max 8 members per pod for zero-latency operations
-                    </p>
-                  </div>
-
-                  {isCapacityLocked ? (
-                    <div className="flex items-center gap-2">
-                      <span className="px-3 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-                        <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>LOCKED BY ADMIN</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleUnlockCapacity}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer border border-slate-700"
-                        title="Unlock to edit total headcount"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Edit Total</span>
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="relative flex-1 max-w-xs">
-                    <input
-                      type="number"
-                      min="1"
-                      max="500"
-                      disabled={isCapacityLocked}
-                      value={typedMembers}
-                      onWheel={(e) => e.currentTarget.blur()}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        const nextVal = isNaN(val) ? 1 : Math.max(1, val);
-                        setTypedMembers(nextVal);
-                        setIsCapacityLocked(false);
-                        persistDraft({ typedMembers: nextVal, isCapacityLocked: false, lastActiveStep: 2 });
-                      }}
-                      className={`w-full bg-[#111827] border-2 text-white text-3xl font-black rounded-xl px-4 py-3 text-center tracking-wide focus:outline-hidden font-mono transition-all ${
-                        isCapacityLocked
-                          ? 'border-emerald-500/50 bg-emerald-950/10 text-emerald-200 cursor-not-allowed'
-                          : 'border-blue-500/60 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/20'
-                      }`}
-                    />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <div className="text-sm font-bold text-white">
-                      <span>Customer Support Personnel</span>
-                    </div>
-                    <p className="text-xs text-slate-400 leading-relaxed">
-                      With <strong className="text-white">{typedMembers} members</strong>, your organization structures into <strong className="text-emerald-400">{calculatedPodCount} dedicated {calculatedPodCount === 1 ? 'pod' : 'pods'}</strong>.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Primary Lock Trigger when not locked */}
-                {!isCapacityLocked && (
-                  <div className="pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <p className="text-[11px] text-slate-400">
-                      Click Lock to distribute seat quotas and view pod allocations.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleLockCapacity}
-                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer active:scale-95 shrink-0"
-                    >
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Lock &amp; Allocate Capacity</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* DYNAMIC PER-POD ALLOCATION SECTION - REVEALED ON LOCKED */}
-              {isCapacityLocked && (
-                <div className="p-6 rounded-2xl bg-[#0B0F19] border border-blue-500/40 space-y-5 shadow-2xl animate-fadeIn">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
-                    <div>
-                      <h3 className="text-sm font-bold text-white flex items-center gap-2 font-mono">
-                        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                        <span>Pod Capacity Allocation Mandate</span>
-                      </h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Designated seat limits for each frontline pod. Pod Leaders will receive these fixed quotas upon activation.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-mono font-bold px-3 py-1 rounded-full border flex items-center gap-1.5 ${
-                        isAllocationBalanced
-                          ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-400'
-                          : 'bg-amber-950/80 border-amber-500/40 text-amber-400 animate-pulse'
-                      }`}>
-                        {isAllocationBalanced ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                        <span>{totalAllocatedSeats} / {typedMembers} Seats Allocated</span>
-                      </span>
-
-                      {!isAllocationBalanced && (
-                        <button
-                          type="button"
-                          onClick={handleResetPodSeatsToBalanced}
-                          className="text-[11px] font-mono text-slate-300 hover:text-white bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                          title="Auto-balance seats evenly across pods"
-                        >
-                          <RefreshCw className="w-3 h-3" />
-                          <span>Auto-Balance</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Warning banner if not balanced */}
-                  {!isAllocationBalanced && (
-                    <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs flex items-center gap-2.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>
-                        Capacity discrepancy: {Math.abs(typedMembers - totalAllocatedSeats)} {totalAllocatedSeats < typedMembers ? 'seats remaining unassigned' : 'seats over-allocated'}. Adjust individual pod steppers to match exactly {typedMembers} total seats.
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Pod Cards Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {pods.map((pod, pIdx) => {
-                      const podSeats = pod.seats || 1;
-                      const agentsCount = Math.max(0, podSeats - 1);
-                      const podLabel = pod.name || `Pod ${pIdx + 1 < 10 ? `0${pIdx + 1}` : pIdx + 1}`;
-
-                      return (
-                        <div
-                          key={pIdx}
-                          className="p-4 rounded-xl bg-[#111827] border border-slate-800 hover:border-slate-700 transition-all space-y-3"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-blue-500" />
-                              <span>{podLabel}</span>
-                            </span>
-                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-500/30">
-                              Max 8 Seats
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between p-2.5 rounded-lg bg-[#0B0F19] border border-slate-800">
-                            <div>
-                              <div className="text-base font-black font-mono text-white">
-                                {podSeats} <span className="text-xs font-normal text-slate-400">Seats</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                1 Leader + {agentsCount} Agents
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={podSeats <= 1}
-                                onClick={() => handleAdjustPodSeats(pIdx, -1)}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
-                                title="Decrease seat"
-                              >
-                                -
-                              </button>
-                              <span className="w-6 text-center font-mono font-bold text-xs text-white">
-                                {podSeats}
-                              </span>
-                              <button
-                                type="button"
-                                disabled={podSeats >= 8}
-                                onClick={() => handleAdjustPodSeats(pIdx, 1)}
-                                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-xs font-bold flex items-center justify-center transition-all cursor-pointer"
-                                title="Increase seat"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setCurrentStep(1);
-                    persistDraft({ lastActiveStep: 1 });
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer self-start sm:self-auto"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back</span>
-                </button>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  {!isCapacityLocked ? (
-                    <span className="text-[11px] text-slate-500 font-medium text-right">
-                      Lock capacity to proceed
-                    </span>
-                  ) : !isAllocationBalanced ? (
-                    <span className="text-[11px] text-amber-400 font-medium text-right">
-                      Balance seat allocation ({totalAllocatedSeats}/{typedMembers}) to proceed
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={!isCapacityLocked || !isAllocationBalanced}
-                    onClick={handleNextToStep3}
-                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
-                  >
-                    <span>Next: Configure Pods &amp; Services</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
+            <OnboardingStep2Capacity
+              typedMembers={typedMembers}
+              setTypedMembers={setTypedMembers}
+              calculatedPodCount={calculatedPodCount}
+              isCapacityLocked={isCapacityLocked}
+              setIsCapacityLocked={setIsCapacityLocked}
+              pods={pods}
+              totalAllocatedSeats={totalAllocatedSeats}
+              isAllocationBalanced={isAllocationBalanced}
+              handleLockCapacity={handleLockCapacity}
+              handleUnlockCapacity={handleUnlockCapacity}
+              handleAdjustPodSeats={handleAdjustPodSeats}
+              handleResetPodSeatsToBalanced={handleResetPodSeatsToBalanced}
+              handleNextToStep3={handleNextToStep3}
+              setCurrentStep={setCurrentStep}
+              setErrorMessage={setErrorMessage}
+              persistDraft={persistDraft}
+            />
           )}
 
-          {/* STEP 3: PODS SETUP & MULTI-SERVICES ALLOCATION */}
           {currentStep === 3 && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-blue-400" />
-                  Configure Operational Pods &amp; Assign Ticket Categories
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Assign customer issue categories to your {calculatedPodCount} operational pods. Pods can operate exclusively or share high-volume scopes with dynamic AI load balancing.
-                </p>
-              </div>
-
-              {/* Quick Add Custom Service Tag - American Corporate Style */}
-              <div className="p-5 rounded-2xl bg-[#0B0F19] border border-slate-800/90 shadow-lg space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2 font-mono">
-                      <Plus className="w-4 h-4 text-blue-400" />
-                      Add Custom Ticket Category
-                    </h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Enter a new service specialization or customer complaint category. It will appear for all pods below.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleResetServicesToDefault}
-                    title="Reset all categories back to standard industry presets"
-                    className="text-[11px] font-mono text-slate-400 hover:text-blue-400 bg-slate-900 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reset Defaults</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={newServiceInput}
-                    onChange={(e) => setNewServiceInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddGlobalService();
-                      }
-                    }}
-                    placeholder="e.g., VIP Priority Concierge & White-Glove Support"
-                    className="flex-1 bg-[#111827] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-slate-600 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all font-medium"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleAddGlobalService();
-                    }}
-                    className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/25 transition-all shrink-0 active:scale-95"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Add Category</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Pod Cards List */}
-              {isGeneratingPods ? (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <span>AI Architect is designing {calculatedPodCount} operational pods...</span>
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  {pods.map((pod, pIdx) => {
-                    const isEditing = editingPodIndex === pIdx;
-                    return (
-                      <div
-                        key={pIdx}
-                        className="p-6 rounded-2xl bg-[#0B0F19] border border-slate-800/80 shadow-xl shadow-black/40 space-y-5"
-                      >
-                        {/* Header: Fixed Paten Pod Identity */}
-                        <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                            <h3 className="text-base font-bold text-white tracking-tight font-mono">
-                              {`Pod ${pIdx + 1 < 10 ? `0${pIdx + 1}` : pIdx + 1}`}
-                            </h3>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-1 rounded-full font-semibold">
-                              {pod.services.length} Categories Selected
-                            </span>
-                            <span className="text-[11px] font-semibold uppercase tracking-wider bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 px-3 py-1 rounded-full font-mono flex items-center gap-1.5">
-                              <Lock className="w-3 h-3 text-emerald-400" />
-                              <span>{pod.seats || 8} Dedicated Seats</span>
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Vertical Stack: Numbered 1 to 6, then 7+ from top to bottom */}
-                        <div className="space-y-2">
-                            {availableServices.map((svc, sIdx) => {
-                              const isChecked = pod.services.includes(svc);
-                              const otherPodsSharing = pods.filter((p, idx) => idx !== pIdx && p.services.includes(svc));
-                              const isCoveredByOther = otherPodsSharing.length > 0;
-                              const otherPodNames = otherPodsSharing.map((p) => p.name).join(', ');
-                              const indexNumber = sIdx + 1 < 10 ? `0${sIdx + 1}` : `${sIdx + 1}`;
-                              const isEditingThis = editingServiceIndex === sIdx;
-
-                              if (isEditingThis) {
-                                return (
-                                  <div key={`${svc}-${sIdx}`} className="space-y-2">
-                                    <div className="w-full p-2.5 rounded-xl bg-[#111827] border border-blue-500/80 shadow-md flex items-center gap-3">
-                                      <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold bg-blue-600/30 text-blue-300 border border-blue-500/50 shrink-0">
-                                        {indexNumber}
-                                      </span>
-                                      <input
-                                        type="text"
-                                        value={editingServiceText}
-                                        onChange={(e) => {
-                                          setEditingServiceText(e.target.value);
-                                          if (semanticWarning) setSemanticWarning(null);
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') {
-                                            e.preventDefault();
-                                            handleSaveEditService(sIdx);
-                                          } else if (e.key === 'Escape') {
-                                            setEditingServiceIndex(null);
-                                            setSemanticWarning(null);
-                                          }
-                                        }}
-                                        className="flex-1 bg-[#0B0F19] border border-blue-500/50 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-hidden font-medium"
-                                        autoFocus
-                                      />
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <button
-                                          type="button"
-                                          disabled={isValidatingSemantic}
-                                          onClick={() => handleSaveEditService(sIdx)}
-                                          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5"
-                                        >
-                                          {isValidatingSemantic ? (
-                                            <>
-                                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                              <span>Checking...</span>
-                                            </>
-                                          ) : (
-                                            <span>Save</span>
-                                          )}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setEditingServiceIndex(null);
-                                            setSemanticWarning(null);
-                                          }}
-                                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-md transition-all cursor-pointer"
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* AI Semantic Guardian Divergence Warning Dialog - Corporate American Style */}
-                                    {semanticWarning && semanticWarning.index === sIdx && (
-                                      <div className="p-4 rounded-xl bg-[#13110C] border border-amber-500/80 text-amber-200 text-xs space-y-3 animate-fadeIn shadow-2xl ring-1 ring-amber-500/20">
-                                        <div className="flex items-start gap-3">
-                                          <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                                            <AlertTriangle className="w-4 h-4" />
-                                          </div>
-                                          <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                              <h4 className="font-bold text-white text-xs tracking-tight">
-                                                Operational Scope Notice
-                                              </h4>
-                                              <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-600/50">
-                                                AI GOVERNANCE
-                                              </span>
-                                            </div>
-                                            <p className="text-[11px] text-slate-300 leading-relaxed font-normal">
-                                              {semanticWarning.explanation}
-                                            </p>
-                                          </div>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
-                                          <button
-                                            type="button"
-                                            onClick={() => handleAddDivergentAsNewCategory(semanticWarning.proposed)}
-                                            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20 active:scale-95"
-                                          >
-                                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                                            <span>+ Add as New Category</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setEditingServiceText(semanticWarning.original);
-                                              setSemanticWarning(null);
-                                            }}
-                                            className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
-                                            title="Restore the baseline category name"
-                                          >
-                                            <RotateCcw className="w-3.5 h-3.5" />
-                                            <span>Revert to Original Name</span>
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div
-                                  key={`${svc}-${sIdx}`}
-                                  onClick={() => handleToggleServiceForPod(pIdx, svc)}
-                                  className={`w-full p-3 rounded-xl text-left transition-all flex items-center justify-between gap-3 border group cursor-pointer ${
-                                    isChecked
-                                      ? isCoveredByOther
-                                        ? 'bg-indigo-950/25 border-indigo-500/60 text-white shadow-sm ring-1 ring-indigo-500/30'
-                                        : 'bg-blue-950/30 border-blue-500/70 text-white shadow-sm ring-1 ring-blue-500/30'
-                                      : 'bg-[#111827]/70 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700 hover:bg-[#111827]'
-                                  }`}
-                                  title={
-                                    isChecked
-                                      ? isCoveredByOther
-                                        ? `Click to remove from this pod (currently shared with ${otherPodNames})`
-                                        : 'Click to remove from this pod'
-                                      : isCoveredByOther
-                                      ? `Click to assign to this pod and enable AI load balancing with ${otherPodNames}`
-                                      : 'Click to assign to this pod'
-                                  }
-                                >
-                                  {/* Left: Index Number */}
-                                  <span
-                                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 transition-colors ${
-                                      isChecked
-                                        ? isCoveredByOther
-                                          ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/50'
-                                          : 'bg-blue-600/30 text-blue-300 border border-blue-500/50'
-                                        : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 group-hover:text-slate-300'
-                                    }`}
-                                  >
-                                    {indexNumber}
-                                  </span>
-
-                                  {/* Middle: Service Name */}
-                                  <span className="flex-1 text-xs font-semibold tracking-wide truncate">
-                                    {svc}
-                                  </span>
-
-                                  {/* Actions: Rename & Delete buttons */}
-                                  <div className="flex items-center gap-1 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleStartEditService(sIdx, svc);
-                                      }}
-                                      title="Rename this category"
-                                      className="p-1.5 rounded-md text-slate-500 hover:text-blue-400 hover:bg-slate-800/80 transition-all cursor-pointer"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    {/* Delete button: ONLY available for custom added categories (index 6+, #07 onwards) */}
-                                    {sIdx >= 6 && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteService(sIdx, svc);
-                                        }}
-                                        title="Delete this custom category"
-                                        className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 transition-all cursor-pointer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  {/* Right Section: Inline Shared Scope Badge (if shared or covered) + Checkbox */}
-                                  <div className="flex items-center gap-2.5 shrink-0">
-                                    {isChecked && isCoveredByOther ? (
-                                      <div
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0c1527] border border-cyan-500/30 text-[10px] font-mono shadow-xs shrink-0 select-none transition-all group-hover:border-cyan-500/50"
-                                        title={`Shared with ${otherPodNames}: Inbound tickets will be dynamically balanced by AI Triage based on real-time agent availability.`}
-                                      >
-                                        <GitFork className="w-3 h-3 text-cyan-400 shrink-0" />
-                                        <span className="text-slate-300 font-semibold tracking-wide uppercase">
-                                          SHARED SCOPE &bull; {otherPodNames}
-                                        </span>
-                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse ml-0.5" />
-                                        <span className="text-cyan-300 font-bold uppercase tracking-wider text-[9px] bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/25">
-                                          AI BALANCED
-                                        </span>
-                                      </div>
-                                    ) : !isChecked && isCoveredByOther ? (
-                                      <div
-                                        className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[10px] font-mono text-slate-400 shrink-0 select-none group-hover:border-slate-700 transition-colors"
-                                        title={`Covered by ${otherPodNames}. Click checkbox to include this pod in shared load balancing.`}
-                                      >
-                                        <GitFork className="w-3 h-3 text-slate-500 shrink-0" />
-                                        <span className="text-slate-400 font-medium">Covered by {otherPodNames}</span>
-                                        <span className="text-[9px] text-slate-500">&bull; Click to share</span>
-                                      </div>
-                                    ) : null}
-
-                                    {/* Checkbox */}
-                                    <div
-                                      className={`w-5 h-5 rounded-md flex items-center justify-center border shrink-0 transition-all ${
-                                        isChecked
-                                          ? isCoveredByOther
-                                            ? 'bg-gradient-to-br from-indigo-600 to-blue-600 border-indigo-400 text-white shadow-md shadow-indigo-500/30'
-                                            : 'bg-blue-600 border-blue-500 text-white shadow-md shadow-blue-500/40'
-                                          : 'border-slate-700 bg-slate-800/40 group-hover:border-slate-600'
-                                      }`}
-                                    >
-                                      {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setCurrentStep(2);
-                    persistDraft({ lastActiveStep: 2 });
-                  }}
-                  title="Back to Member Capacity Selection (Step 2)"
-                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={
-                    generatedLeaderTokens.length > 0
-                      ? () => {
-                          setCurrentStep(4);
-                          persistDraft({ lastActiveStep: 4 });
-                        }
-                      : handleFinalSubmit
-                  }
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Creating Organization &amp; Tokens...</span>
-                    </>
-                  ) : generatedLeaderTokens.length > 0 ? (
-                    <>
-                      <span>Continue to Leader Activation (Step 4)</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  ) : (
-                    <>
-                      <span>Create Organization &amp; Generate Activation Tokens</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+            <OnboardingStep3Pods
+              pods={pods}
+              calculatedPodCount={calculatedPodCount}
+              availableServices={availableServices}
+              newServiceInput={newServiceInput}
+              setNewServiceInput={setNewServiceInput}
+              editingServiceIndex={editingServiceIndex}
+              setEditingServiceIndex={setEditingServiceIndex}
+              editingServiceText={editingServiceText}
+              setEditingServiceText={setEditingServiceText}
+              isValidatingSemantic={isValidatingSemantic}
+              semanticWarning={semanticWarning}
+              setSemanticWarning={setSemanticWarning}
+              isGeneratingPods={isGeneratingPods}
+              isSubmitting={isSubmitting}
+              generatedLeaderTokens={generatedLeaderTokens}
+              handleAddGlobalService={handleAddGlobalService}
+              handleStartEditService={handleStartEditService}
+              handleSaveEditService={handleSaveEditService}
+              handleDeleteService={handleDeleteService}
+              handleToggleServiceForPod={handleToggleServiceForPod}
+              handleResetServicesToDefault={handleResetServicesToDefault}
+              handleAddDivergentAsNewCategory={handleAddDivergentAsNewCategory}
+              handleFinalSubmit={handleFinalSubmit}
+              setCurrentStep={setCurrentStep}
+              setErrorMessage={setErrorMessage}
+              persistDraft={persistDraft}
+            />
           )}
 
-          {/* STEP 4: SINGLE-USE LEADER TOKENS DISTRIBUTION SCREEN */}
           {currentStep === 4 && (
-            <div className="space-y-6">
-              <div className="text-center pb-3 border-b border-slate-800">
-                <div className="w-12 h-12 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-900/20">
-                  <CheckCircle2 className="w-6 h-6" />
-                </div>
-                <h2 className="text-lg font-extrabold text-white">
-                  Organization created
-                </h2>
-                <p className="text-xs text-slate-400 mt-1 max-w-lg mx-auto">
-                  Distribute the one-time activation links below to designated Pod Leaders to initialize workspace governance.
-                  <br />
-                  <strong className="text-blue-400">Security Policy:</strong> Each link is <strong>single-use and invalidates immediately upon redemption</strong>.
-                </p>
-              </div>
-
-              {/* Leader Tokens Grid */}
-              <div className="space-y-3.5">
-                {generatedLeaderTokens.map((item, idx) => {
-                  const isCopied = copiedToken === item.token;
-                  const isDispatched = dispatchedTokens.has(item.token);
-                  const isRegenerated = regeneratedTokens.has(item.token);
-
-                  return (
-                    <div
-                      key={item.token}
-                      className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-blue-900/80 text-blue-300 text-[10px] font-bold flex items-center justify-center">
-                            {idx + 1}
-                          </span>
-                          <h4 className="text-xs font-bold text-white">{item.workspaceName}</h4>
-                          {item.isClaimed ? (
-                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5 shadow-sm">
-                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                              LEADER ASSIGNED • {item.leaderName || 'ACTIVE'}
-                            </span>
-                          ) : isDispatched ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-950/70 border border-blue-500/40 text-blue-300 flex items-center gap-1">
-                              <Lock className="w-3 h-3 text-blue-400" />
-                              LINK DISPATCHED • LOCKED
-                            </span>
-                          ) : isRegenerated ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/40 text-amber-300 flex items-center gap-1">
-                              <Sparkles className="w-3 h-3 text-amber-400" />
-                              REGENERATED • SINGLE-USE
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-500/40 text-emerald-400">
-                              SINGLE-USE • UNCLAIMED
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
-                          <span>Token:</span>
-                          <span className="text-blue-300 font-bold bg-[#111827] px-2 py-0.5 rounded border border-slate-800">
-                            {item.token}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Single Smart Action Button: Copy Link -> Morphs to Regenerate & Copy New Link */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        {item.isClaimed ? (
-                          <div
-                            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border bg-slate-900/90 border-slate-800 text-slate-300 cursor-default select-none shadow-sm"
-                            title={`Pod leadership is assigned to ${item.leaderName || 'its leader'}. Under organizational governance policy, each operational pod maintains exactly one Team Lead seat. To rotate leadership, manage members in the Admin Cockpit.`}
-                          >
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Seat Occupied</span>
-                          </div>
-                        ) : isDispatched ? (
-                          <button
-                            type="button"
-                            disabled={regeneratingToken === item.token}
-                            onClick={() => handleRegenerateLeaderToken(item.token, item.workspaceId)}
-                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all border shadow-sm ${
-                              regeneratingToken === item.token
-                                ? 'bg-slate-900 border-slate-800 text-slate-400 cursor-wait'
-                                : isCopied
-                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/20 cursor-pointer'
-                                : 'bg-gradient-to-r from-amber-600/20 to-orange-600/20 hover:from-amber-600/30 hover:to-orange-600/30 border-amber-500/60 text-amber-300 hover:text-amber-200 cursor-pointer shadow-amber-500/10'
-                            }`}
-                            title="Revokes active link, provisions a new single-use token, and automatically copies it to clipboard"
-                          >
-                            {regeneratingToken === item.token ? (
-                              <>
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
-                                <span>Generating &amp; Copying...</span>
-                              </>
-                            ) : isCopied ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 text-white" />
-                                <span>New Link Copied! ✓</span>
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Regenerate &amp; Copy New Link</span>
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLink(item.token, item.joinUrl)}
-                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                              isCopied
-                                ? 'bg-emerald-600 border-emerald-500 text-white shadow-md shadow-emerald-600/20'
-                                : 'bg-blue-600 hover:bg-blue-500 border-blue-500 text-white shadow-md shadow-blue-600/20'
-                            }`}
-                            title="Copy single-use activation link to clipboard"
-                          >
-                            {isCopied ? (
-                              <>
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Link Copied! ✓</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5" />
-                                <span>Copy Link</span>
-                              </>
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Action Buttons: Back to Step 3 & Done Sharing */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrorMessage(null);
-                    setCurrentStep(3);
-                    persistDraft({ lastActiveStep: 3 });
-                  }}
-                  title="Back to Pod Architecture Setup (Step 3)"
-                  className="px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-all flex items-center gap-2 border border-slate-800 cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Back</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDoneSharing}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-2 cursor-pointer"
-                >
-                  <span>Complete Setup &amp; Enter Executive Cockpit</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <OnboardingStep4Tokens
+              generatedLeaderTokens={generatedLeaderTokens}
+              copiedToken={copiedToken}
+              regeneratingToken={regeneratingToken}
+              dispatchedTokens={dispatchedTokens}
+              regeneratedTokens={regeneratedTokens}
+              handleCopyLink={handleCopyLink}
+              handleRegenerateLeaderToken={handleRegenerateLeaderToken}
+              handleDoneSharing={handleDoneSharing}
+              setCurrentStep={setCurrentStep}
+              setErrorMessage={setErrorMessage}
+              persistDraft={persistDraft}
+            />
           )}
         </div>
       </div>

@@ -264,4 +264,254 @@ export interface SetupMultiPodPayload {
   }>;
 }
 
+export interface OnboardingPodDraft {
+  name: string;
+  podCategory: string;
+  description: string;
+  services: string[];
+  seats?: number;
+}
+
+export interface OnboardingDraft {
+  lastActiveStep?: number;
+  maxUnlockedStep?: number;
+  organizationName?: string;
+  selectedIndustry?: string;
+  customIndustryText?: string;
+  typedMembers?: number;
+  isCapacityLocked?: boolean;
+  pods?: OnboardingPodDraft[];
+  availableServices?: string[];
+  username?: string;
+  email?: string;
+  userId?: string;
+}
+
+export interface TokenWorkspaceSummary {
+  id?: string;
+  name?: string;
+  podCategory?: string;
+  services?: string[];
+  isQuotaLocked?: boolean;
+  assignedQuota?: number;
+  maxMembers?: number;
+  inviteToken?: string;
+  isCatchAll?: boolean;
+  organizationId?: string | null;
+}
+
+export interface OrganizationSummaryRecord {
+  id: string;
+  name: string;
+  industry?: string;
+  customIndustryDescription?: string | null;
+  planTier?: string;
+  totalSeats?: number;
+  leadershipMode?: string;
+  onboardingCompleted?: boolean;
+}
+
+export interface ApiUserProfile {
+  id: string;
+  username?: string | null;
+  fullName?: string;
+  email?: string;
+  phone?: string | null;
+  role: string;
+  workspaceRole?: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  isGuestMember?: boolean;
+  avatarText?: string;
+  avatarUrl?: string | null;
+  token?: string;
+  onboardingCompleted?: boolean;
+}
+
+export interface QuotaStats {
+  totalSeats: number;
+  totalPods: number;
+  lockedSeats: number;
+  lockedPodsCount: number;
+  otherUnlockedPodsCount: number;
+  isLastPod: boolean;
+  maxSubordinatesAllowed: number;
+  allowedOptions: number[];
+}
+
+export interface LeaderAgentTokenPreview {
+  token: string;
+  joinUrl: string;
+  isUsed?: boolean;
+  usedBy?: string | null;
+  isOpened?: boolean;
+}
+
+export interface LeaderTokenStatusResult {
+  valid: boolean;
+  error?: string;
+  isUsed?: boolean;
+  isClaimed?: boolean;
+  isLockedToOtherSession?: boolean;
+  token?: string;
+  role?: string;
+  isExistingLeader?: boolean;
+  isReLogin?: boolean;
+  existingLeaderName?: string | null;
+  existingLeaderId?: string | null;
+  existingLeaderUsername?: string | null;
+  leaderName?: string | null;
+  leaderUser?: ApiUserProfile | null;
+  agentTokens?: LeaderAgentTokenPreview[];
+  workspace?: TokenWorkspaceSummary;
+  organization?: OrganizationSummaryRecord;
+  quotaStats?: QuotaStats;
+}
+
+export interface AgentTokenStatusResult {
+  valid: boolean;
+  error?: string;
+  isClaimed?: boolean;
+  isLockedToOtherSession?: boolean;
+  token?: string;
+  role?: string;
+  isReLogin?: boolean;
+  assignedMemberName?: string | null;
+  workspace?: TokenWorkspaceSummary;
+  organization?: OrganizationSummaryRecord;
+  leaderName?: string | null;
+}
+
+export interface CockpitSessionRecord {
+  id: string;
+  loginAt: string | Date;
+  logoutAt?: string | Date | null;
+  logoutReason: string;
+  isOnline: boolean;
+  durationSeconds: number;
+  reconnectedAt?: string | Date | null;
+}
+
+export interface CockpitPresenceUser {
+  userId: string;
+  id?: string;
+  fullName: string | null;
+  username: string | null;
+  role: string;
+  podName: string;
+  workspaceId: string | null;
+  joinedAt: string | Date;
+  isOnline: boolean;
+  status: string;
+  currentOnlineSeconds: number;
+  activeTicketsCount: number;
+  operationalState: string;
+  operationalStateLabel: string;
+  workloadDescription: string;
+  latestLoginAt: string | Date | null;
+  latestLogoutAt: string | Date | null;
+  hadUnexpectedDisconnect: boolean;
+  unexpectedDisconnectTime: string | Date | null;
+  reconnectedTime: string | Date | null;
+  disconnectDowntimeSeconds: number;
+  customersServedToday: number;
+  lifetimeCustomersServed: number;
+  avgHandlingTimeSeconds: number;
+  sessionHistory: CockpitSessionRecord[];
+}
+
+export interface CockpitWorkspaceItem {
+  id: string;
+  name: string;
+  podCategory: string;
+  services: string[];
+  isQuotaLocked: boolean;
+  assignedQuota: number;
+  maxMembers: number;
+  membersCount: number;
+  leaderName: string | null;
+  leaderClaimed: boolean;
+  openTicketsCount: number;
+}
+
+export interface CockpitTokenAuditItem {
+  id: string;
+  token: string;
+  role: string;
+  podName: string;
+  workspaceId: string;
+  isUsed: boolean;
+  rawIsUsed: boolean;
+  needsRegeneration: boolean;
+  usedBy: string | null;
+  usedAt?: string | Date | null;
+  createdAt: string | Date;
+  userId: string | null;
+  username: string | null;
+  isUserOnline: boolean;
+  userStatus: string;
+  hadManualLogout: boolean;
+  hadCloseBrowser?: boolean;
+  hadForceLogout: boolean;
+}
+
+export interface CockpitCrisisTicket {
+  id: string;
+  ticketNumber: number;
+  title: string;
+  priority: Priority;
+  sentiment: Sentiment;
+  podName: string;
+  createdAt: string | Date;
+  isHanging?: boolean;
+  hangingReason?: string | null;
+  hangingSince?: string | Date | null;
+}
+
+export interface CockpitSlaBreachedTicket {
+  id: string;
+  ticketNumber: number;
+  title: string;
+  priority: Priority;
+  sentiment: Sentiment;
+  podName: string;
+  createdAt: string | Date;
+  elapsedMinutes: number;
+}
+
+export interface CockpitLeaderActivation {
+  workspaceId: string;
+  podName: string;
+  leaderName: string;
+  joinedAt: string | Date;
+  isQuotaLocked: boolean;
+  assignedQuota: number;
+}
+
+export interface CockpitStats {
+  totalSeats?: number;
+  claimedSeats?: number;
+  seatUtilizationPercentage?: number;
+  totalPods?: number;
+  lockedPods?: number;
+  crisisCount?: number;
+  onlineCount?: number;
+  slaCompliancePercentage?: number;
+  slaStatusLabel?: string;
+  slaMetCount?: number;
+  slaBreachedCount?: number;
+  totalEvaluatedTickets?: number;
+}
+
+export interface SuperAdminCockpitData {
+  organization: OrganizationSummaryRecord;
+  stats: CockpitStats;
+  workspaces: CockpitWorkspaceItem[];
+  tokenAudit: CockpitTokenAuditItem[];
+  crisisTickets: CockpitCrisisTicket[];
+  slaBreachedTickets: CockpitSlaBreachedTicket[];
+  presenceMonitoring: CockpitPresenceUser[];
+  recentLeaderActivations: CockpitLeaderActivation[];
+}
+
 

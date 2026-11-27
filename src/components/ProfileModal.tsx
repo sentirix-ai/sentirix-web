@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   Camera,
@@ -29,24 +29,30 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   user,
   onProfileUpdated,
 }) => {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  if (!isOpen || !user) return null;
+
+  return (
+    <ProfileModalContent
+      key={`${user.id || user.username}-${user.avatarUrl || 'none'}`}
+      onClose={onClose}
+      user={user}
+      onProfileUpdated={onProfileUpdated}
+    />
+  );
+};
+
+const ProfileModalContent: React.FC<{
+  onClose: () => void;
+  user: UserSession;
+  onProfileUpdated: (updatedUser: UserSession) => void;
+}> = ({ onClose, user, onProfileUpdated }) => {
+  const [selectedImage, setSelectedImage] = useState<string | null>(user.avatarUrl || null);
   const [isRemoving, setIsRemoving] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(
     null,
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Sync state whenever modal opens or user changes
-  useEffect(() => {
-    if (isOpen && user) {
-      setSelectedImage(user.avatarUrl || null);
-      setIsRemoving(false);
-      setFeedback(null);
-    }
-  }, [isOpen, user]);
-
-  if (!isOpen || !user) return null;
 
   // Process selected file with client-side canvas compression & square crop
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,7 +158,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 leading-tight">Account Profile Settings</h3>
-              <p className="text-xs text-slate-500">Manage your avatar photo and Sentirix account details</p>
+              <p className="text-xs text-slate-500">Manage your avatar photo and Sevaniq account details</p>
             </div>
           </div>
           <button
@@ -305,7 +311,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                 <div className="min-w-0">
                   <span className="block text-[10px] uppercase font-bold text-slate-400">Work Email</span>
                   <span className="block text-xs font-bold text-slate-800 truncate">
-                    {user.email || 'admin@sentrix.enterprise'}
+                    {user.email || '—'}
                   </span>
                 </div>
               </div>

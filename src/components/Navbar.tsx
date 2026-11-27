@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import {
   Plus,
   Radio,
@@ -53,18 +54,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   organizationName,
   industry,
 }) => {
-  const isSuperAdmin = user?.username?.toLowerCase() === 'pungkyrama' || user?.role === 'SUPER_ADMIN' || (user?.role === 'ADMIN' && !(user as any)?.workspaceId);
+  const isSuperAdmin =
+    user?.username?.toLowerCase() === 'pungkyrama' ||
+    user?.role === 'SUPER_ADMIN' ||
+    (user?.role === 'ADMIN' && !user?.workspaceId);
   const isLeader =
     !isSuperAdmin &&
     (user?.role === 'POD_LEADER' ||
       user?.role === 'LEADER' ||
-      (user as any)?.workspaceRole === 'LEADER' ||
+      user?.workspaceRole === 'LEADER' ||
       workspace?.isLeader === true);
   const isAgent = !isSuperAdmin && !isLeader;
   const [copiedPortal, setCopiedPortal] = useState(false);
 
   const handleCopyPortal = () => {
-    navigator.clipboard.writeText('http://localhost:3000/portal');
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+    navigator.clipboard.writeText(`${origin}/portal`);
     setCopiedPortal(true);
     setTimeout(() => setCopiedPortal(false), 2200);
   };
@@ -72,18 +77,22 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs">
       <div className="flex items-center gap-3">
-        <a href="/" className="flex items-center gap-3 group">
+        <Link href="/" className="flex items-center gap-3 group">
           {/* Logo matching portal.jpg colors & style */}
           <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 bg-white p-1 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
             <img
-              src="/logo_warna_s.png"
-              alt="Sentirix Logo"
+              src="/logo_sevaniq_icon.png"
+              alt="Sevaniq Logo"
               className="w-full h-full object-contain"
             />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg text-[#0F172A] tracking-tight">Sentirix</span>
+              <img
+                src="/sevaniq_wordmark.png"
+                alt="SEVANIQ"
+                className="h-5 w-auto object-contain"
+              />
               <span className="text-[10px] font-bold uppercase tracking-wider bg-[#EEF2FF] text-[#2563EB] px-2 py-0.5 rounded-full border border-[#C7D2FE]">
                 AI COPILOT
               </span>
@@ -92,7 +101,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               AUTONOMOUS SUPPORT INTELLIGENCE
             </p>
           </div>
-        </a>
+        </Link>
       </div>
 
       <div className="flex items-center gap-3.5">

@@ -12,9 +12,48 @@ import {
   GeneratePodsResponse,
   SetupMultiPodPayload,
   AttachmentPayload,
+  ApiUserProfile,
+  OrganizationSummaryRecord,
+  TokenWorkspaceSummary,
+  QuotaStats,
+  LeaderTokenStatusResult,
+  AgentTokenStatusResult,
+  LeaderAgentTokenPreview,
+  SuperAdminCockpitData,
+  OnboardingDraft,
 } from './types';
+import { getSession } from './auth';
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+
+export class ApiAuthError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiAuthError';
+    this.status = status;
+  }
+}
+
+export function getAuthHeaders(extra?: HeadersInit): Record<string, string> {
+  const merged: Record<string, string> = {};
+  if (extra) {
+    new Headers(extra).forEach((value, key) => {
+      merged[key] = value;
+    });
+  }
+  const token = getSession()?.token;
+  if (token && !merged.Authorization && !merged.authorization) {
+    merged.Authorization = `Bearer ${token}`;
+  }
+  return merged;
+}
+
+async function authFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = getAuthHeaders(init.headers);
+  return fetch(url, { ...init, headers });
+}
 
 export async function fetchTickets(
   status?: string,
@@ -29,9 +68,12 @@ export async function fetchTickets(
     if (isMember) params.append('isMember', 'true');
     if (workspaceId && workspaceId !== 'ALL') params.append('workspaceId', workspaceId);
 
-    const res = await fetch(`${API_BASE_URL}/tickets?${params.toString()}`, {
+    const res = await authFetch(`${API_BASE_URL}/tickets?${params.toString()}`, {
       cache: 'no-store',
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiAuthError(res.status, 'Authentication required to load tickets');
+    }
     if (!res.ok) throw new Error('Failed to fetch from backend');
     const data = await res.json();
     if (isMember) {
@@ -45,7 +87,10 @@ export async function fetchTickets(
       );
     }
     return data;
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return [];
+    }
     // Graceful offline mock fallback
     const mockTickets: Ticket[] = [
       {
@@ -118,12 +163,18 @@ export async function fetchTickets(
 
 export async function fetchMessages(ticketId: string): Promise<Message[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/messages/ticket/${ticketId}`, {
+    const res = await authFetch(`${API_BASE_URL}/messages/ticket/${ticketId}`, {
       cache: 'no-store',
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiAuthError(res.status, 'Authentication required to load messages');
+    }
     if (!res.ok) throw new Error('Failed to fetch messages');
     return await res.json();
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return [];
+    }
     return [
       {
         id: 'msg-01',
@@ -185,7 +236,7 @@ export async function createTicket(
       : titleOrPayload;
 
   try {
-    const res = await fetch(`${API_BASE_URL}/tickets`, {
+    const res = await authFetch(`${API_BASE_URL}/tickets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -225,9 +276,9 @@ export async function createMessage(
     attachmentType?: string;
     attachmentData?: string;
   },
-): Promise<Message> {
+): Promise<Message | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/messages`, {
+    const res = await authFetch(`${API_BASE_URL}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -242,9 +293,15 @@ export async function createMessage(
         attachmentData: attachmentMeta?.attachmentData || attachments?.[0]?.data,
       }),
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiAuthError(res.status, 'Authentication required to post messages');
+    }
     if (!res.ok) throw new Error('Failed to post message');
     return await res.json();
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return null;
+    }
     return {
       id: `msg-${Date.now().toString(36)}`,
       ticketId,
@@ -265,15 +322,20 @@ export async function updateTicketStatus(
   ticketId: string,
   status: TicketStatus,
   resolutionNotes?: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
-    await fetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
+    const res = await authFetch(`${API_BASE_URL}/tickets/${ticketId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, resolutionNotes }),
     });
+    if (res.status === 401 || res.status === 403) {
+      return false;
+    }
+    return res.ok;
   } catch {
     // Offline simulated
+    return true;
   }
 }
 
@@ -285,7 +347,7 @@ export async function generateAiReply(
   attachments?: AttachmentPayload[],
 ): Promise<DraftReplyResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/ai/draft-reply`, {
+    const res = await authFetch(`${API_BASE_URL}/ai/draft-reply`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -298,14 +360,23 @@ export async function generateAiReply(
           'Standard refund policy: All duplicate charges are automatically refunded in full within 3-5 business days upon agent verification. No deduction fees apply.',
       }),
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiAuthError(res.status, 'Authentication required for AI reply');
+    }
     if (!res.ok) throw new Error('AI API unavailable');
     return await res.json();
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return {
+        draft: 'Session expired or unauthorized. Please sign in again to use AI Copilot.',
+        groundedSources: [],
+      };
+    }
     const hasAtt = attachments && attachments.length > 0;
     return {
-      draft: `Dear Sarah,\n\nThank you for reaching out to us. We sincerely apologize for the frustration caused by the duplicate billing transaction of $1,200 on October 30.\n\nOur billing team has verified the issue${hasAtt ? ` and carefully inspected your attached ${attachments[0].fileName}` : ''} and processed an immediate refund to your original payment method. You should see the credit reflected on your bank statement within 3 to 5 business days.\n\nPlease let us know if you need any additional confirmation.\n\nWarm regards,\nMarcus Vance\nSentrix Support Engineering`,
+      draft: `Dear Sarah,\n\nThank you for reaching out to us. We sincerely apologize for the frustration caused by the duplicate billing transaction of $1,200 on October 30.\n\nOur billing team has verified the issue${hasAtt ? ` and carefully inspected your attached ${attachments[0].fileName}` : ''} and processed an immediate refund to your original payment method. You should see the credit reflected on your bank statement within 3 to 5 business days.\n\nPlease let us know if you need any additional confirmation.\n\nWarm regards,\nMarcus Vance\nSevaniq Support Engineering`,
       groundedSources: [
-        'Sentrix Refund Policy Section 3.2',
+        'Sevaniq Refund Policy Section 3.2',
         ...(hasAtt ? [`Visual Document (${attachments[0].fileName})`] : []),
       ],
     };
@@ -318,7 +389,7 @@ export async function summarizeThread(
   attachments?: AttachmentPayload[],
 ): Promise<SummarizeResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/ai/summarize-thread`, {
+    const res = await authFetch(`${API_BASE_URL}/ai/summarize-thread`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -327,9 +398,17 @@ export async function summarizeThread(
         attachments,
       }),
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiAuthError(res.status, 'Authentication required for AI summarize');
+    }
     if (!res.ok) throw new Error('AI Summarize failed');
     return await res.json();
-  } catch {
+  } catch (err) {
+    if (err instanceof ApiAuthError) {
+      return {
+        bulletPoints: ['Session expired or unauthorized. Please sign in again to summarize threads.'],
+      };
+    }
     const hasAtt = attachments && attachments.length > 0;
     return {
       bulletPoints: [
@@ -349,7 +428,7 @@ export async function summarizeThread(
 
 export async function fetchMyWorkspace(identifier: string): Promise<WorkspaceData | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/my-workspace?identifier=${encodeURIComponent(identifier)}`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/my-workspace?identifier=${encodeURIComponent(identifier)}`, {
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -368,7 +447,7 @@ export async function validateWorkspaceInvite(
 ): Promise<ValidateInviteResult> {
   try {
     const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
-    const res = await fetch(`${API_BASE_URL}/workspace/validate-invite/${encodeURIComponent(token)}${q}`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/validate-invite/${encodeURIComponent(token)}${q}`, {
       cache: 'no-store',
     });
     if (!res.ok) {
@@ -377,16 +456,16 @@ export async function validateWorkspaceInvite(
     }
     return await res.json();
   } catch {
-    return { valid: false, error: 'Cannot connect to Sentrix backend server.' };
+    return { valid: false, error: 'Cannot connect to Sevaniq backend server.' };
   }
 }
 
 export async function joinWorkspace(
   token: string,
   fullName: string,
-): Promise<{ success: boolean; user?: any; error?: string }> {
+): Promise<{ success: boolean; user?: ApiUserProfile; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/join`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, fullName }),
@@ -405,7 +484,7 @@ export async function regenerateWorkspaceToken(
   identifier: string,
 ): Promise<{ success: boolean; inviteToken?: string; inviteUrl?: string; workspace?: WorkspaceData; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/regenerate-token`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/regenerate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier }),
@@ -425,7 +504,7 @@ export async function removeWorkspaceMember(
   memberId: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/member/${encodeURIComponent(memberId)}?ownerIdentifier=${encodeURIComponent(ownerIdentifier)}`,
       {
         method: 'DELETE',
@@ -443,7 +522,7 @@ export async function removeWorkspaceMember(
 
 export async function purgeWorkspaceOnLogout(identifier: string): Promise<void> {
   try {
-    await fetch(`${API_BASE_URL}/workspace/purge-on-logout`, {
+    await authFetch(`${API_BASE_URL}/workspace/purge-on-logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier }),
@@ -456,7 +535,7 @@ export async function purgeWorkspaceOnLogout(identifier: string): Promise<void> 
 export async function checkMemberStatus(userId: string): Promise<boolean> {
   if (!userId) return true;
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/member-status?userId=${encodeURIComponent(userId)}`,
       { cache: 'no-store' },
     );
@@ -476,7 +555,7 @@ export async function generateSingleUseToken(
   identifier: string,
 ): Promise<{ success: boolean; inviteToken?: string; inviteUrl?: string; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/generate-token`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/generate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier }),
@@ -493,7 +572,7 @@ export async function generateSingleUseToken(
 
 export async function memberLogout(memberId: string, workspaceId?: string): Promise<void> {
   try {
-    await fetch(`${API_BASE_URL}/workspace/member-logout`, {
+    await authFetch(`${API_BASE_URL}/workspace/member-logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberId, workspaceId }),
@@ -508,7 +587,7 @@ export async function setupWorkspaceCapacity(
   capacity: number,
 ): Promise<{ success: boolean; capacity: number; workspaceId?: string; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/setup-capacity`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/setup-capacity`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, capacity }),
@@ -524,10 +603,10 @@ export async function setupWorkspaceCapacity(
 }
 
 export async function fetchOwnerAnalytics(
-  identifier: string = 'pungkyrama',
+  identifier: string,
 ): Promise<OwnerAnalyticsData | null> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/analytics/owner-dashboard?identifier=${encodeURIComponent(identifier)}`,
       { cache: 'no-store' },
     );
@@ -543,7 +622,7 @@ export async function generatePodsForIndustry(
   customDescription?: string,
 ): Promise<GeneratePodsResponse | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/ai/generate-pods`, {
+    const res = await authFetch(`${API_BASE_URL}/ai/generate-pods`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ industry, customDescription }),
@@ -557,9 +636,14 @@ export async function generatePodsForIndustry(
 
 export async function setupMultiPod(
   payload: SetupMultiPodPayload,
-): Promise<{ success: boolean; organization?: any; workspaces?: any[]; error?: string }> {
+): Promise<{
+  success: boolean;
+  organization?: OrganizationSummaryRecord;
+  workspaces?: TokenWorkspaceSummary[];
+  error?: string;
+}> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/setup-multi-pod`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/setup-multi-pod`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -578,7 +662,7 @@ export async function fetchOrganizationPods(
   identifier: string,
 ): Promise<OrganizationPodsResponse | null> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/pods?identifier=${encodeURIComponent(identifier)}`,
       { cache: 'no-store' },
     );
@@ -594,7 +678,7 @@ export async function createCustomPod(
   pod: { name: string; podCategory?: string; description?: string; maxMembers?: number },
 ): Promise<{ success: boolean; pod?: PodInfo; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/custom-pod`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/custom-pod`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, ...pod }),
@@ -616,7 +700,7 @@ export async function transferTicketPod(
   actorId?: string,
 ): Promise<{ success: boolean; ticket?: Ticket; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/tickets/${ticketId}/transfer-pod`, {
+    const res = await authFetch(`${API_BASE_URL}/tickets/${ticketId}/transfer-pod`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetPodId, handoverNote, actorId }),
@@ -648,8 +732,9 @@ export async function setupMultiPodV2(payload: {
   }>;
 }): Promise<{
   success: boolean;
-  organization?: any;
-  pods?: any[];
+  token?: string;
+  organization?: OrganizationSummaryRecord;
+  pods?: TokenWorkspaceSummary[];
   leaderTokens?: Array<{
     workspaceId: string;
     workspaceName: string;
@@ -661,7 +746,7 @@ export async function setupMultiPodV2(payload: {
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/setup-multi-pod-v2`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/setup-multi-pod-v2`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -681,10 +766,13 @@ export async function setupMultiPodV2(payload: {
 
 
 
-export async function fetchLeaderTokenStatus(token: string, sessionId?: string): Promise<any> {
+export async function fetchLeaderTokenStatus(
+  token: string,
+  sessionId?: string,
+): Promise<LeaderTokenStatusResult> {
   try {
     const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/leader-token-status/${encodeURIComponent(token)}${q}`,
       { cache: 'no-store' },
     );
@@ -703,11 +791,11 @@ export async function togglePodQuotaLock(payload: {
   valid?: boolean;
   success?: boolean;
   error?: string;
-  quotaStats?: any;
-  workspace?: any;
+  quotaStats?: QuotaStats;
+  workspace?: TokenWorkspaceSummary;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/toggle-pod-quota-lock`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/toggle-pod-quota-lock`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -731,13 +819,13 @@ export async function lockLeaderQuota(payload: {
 }): Promise<{
   success: boolean;
   isReLogin?: boolean;
-  leader?: any;
-  workspace?: any;
-  agentTokens?: Array<{ token: string; joinUrl: string }>;
+  leader?: ApiUserProfile;
+  workspace?: TokenWorkspaceSummary;
+  agentTokens?: LeaderAgentTokenPreview[];
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/lock-leader-quota`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/lock-leader-quota`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -752,10 +840,13 @@ export async function lockLeaderQuota(payload: {
   }
 }
 
-export async function fetchAgentTokenStatus(token: string, sessionId?: string): Promise<any> {
+export async function fetchAgentTokenStatus(
+  token: string,
+  sessionId?: string,
+): Promise<AgentTokenStatusResult> {
   try {
     const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/agent-token-status/${encodeURIComponent(token)}${q}`,
       { cache: 'no-store' },
     );
@@ -772,12 +863,12 @@ export async function claimAgentToken(payload: {
   sessionId?: string;
 }): Promise<{
   success: boolean;
-  user?: any;
-  workspace?: any;
+  user?: ApiUserProfile;
+  workspace?: TokenWorkspaceSummary;
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/claim-agent-token`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/claim-agent-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -792,9 +883,11 @@ export async function claimAgentToken(payload: {
   }
 }
 
-export async function fetchSuperAdminCockpit(identifier: string): Promise<any> {
+export async function fetchSuperAdminCockpit(
+  identifier: string,
+): Promise<SuperAdminCockpitData | null> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/super-admin-cockpit?identifier=${encodeURIComponent(identifier)}`,
       { cache: 'no-store' },
     );
@@ -832,7 +925,7 @@ export async function fetchPendingLeaderTokens(identifier: string): Promise<{
   }>;
 } | null> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/pending-leader-tokens?identifier=${encodeURIComponent(identifier)}`,
       { cache: 'no-store' },
     );
@@ -843,9 +936,11 @@ export async function fetchPendingLeaderTokens(identifier: string): Promise<{
   }
 }
 
-export async function completeOnboarding(identifier: string): Promise<{ success: boolean; error?: string }> {
+export async function completeOnboarding(
+  identifier: string,
+): Promise<{ success: boolean; token?: string; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/complete-onboarding`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/complete-onboarding`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier }),
@@ -860,9 +955,12 @@ export async function completeOnboarding(identifier: string): Promise<{ success:
   }
 }
 
-export async function saveOnboardingDraft(identifier: string, draft: any): Promise<boolean> {
+export async function saveOnboardingDraft(
+  identifier: string,
+  draft: OnboardingDraft,
+): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/onboarding-draft`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/onboarding-draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, draft }),
@@ -873,9 +971,9 @@ export async function saveOnboardingDraft(identifier: string, draft: any): Promi
   }
 }
 
-export async function fetchOnboardingDraft(identifier: string): Promise<any> {
+export async function fetchOnboardingDraft(identifier: string): Promise<OnboardingDraft | null> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/onboarding-draft?identifier=${encodeURIComponent(identifier)}`,
       { cache: 'no-store' },
     );
@@ -889,7 +987,7 @@ export async function fetchOnboardingDraft(identifier: string): Promise<any> {
 
 export async function deleteOnboardingDraft(identifier: string): Promise<boolean> {
   try {
-    const res = await fetch(
+    const res = await authFetch(
       `${API_BASE_URL}/workspace/onboarding-draft?identifier=${encodeURIComponent(identifier)}`,
       { method: 'DELETE' },
     );
@@ -910,11 +1008,19 @@ export async function validateServiceSemantic(payload: {
   suggestAddAsNew: boolean;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/ai/validate-service-semantic`, {
+    const res = await authFetch(`${API_BASE_URL}/ai/validate-service-semantic`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (res.status === 401 || res.status === 403) {
+      return {
+        isCompatible: false,
+        confidenceScore: 0,
+        explanation: 'Authentication required to validate service alignment.',
+        suggestAddAsNew: false,
+      };
+    }
     if (!res.ok) {
       return {
         isCompatible: true,
@@ -949,7 +1055,7 @@ export async function regenerateToken(
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/regenerate-token`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/regenerate-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, identifier, workspaceId }),
@@ -975,7 +1081,7 @@ export async function adminForceLogoutUser(
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/force-logout`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/force-logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, username, token, requesterIdentifier }),
@@ -992,7 +1098,7 @@ export async function adminForceLogoutUser(
 
 export async function cleanupDemoTickets(): Promise<{ count: number }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/tickets/demo/cleanup`, {
+    const res = await authFetch(`${API_BASE_URL}/tickets/demo/cleanup`, {
       method: 'POST',
     });
     if (!res.ok) throw new Error('Failed to cleanup demo tickets');
@@ -1005,9 +1111,9 @@ export async function cleanupDemoTickets(): Promise<{ count: number }> {
 export async function renamePersonnel(
   userId: string,
   newFullName: string,
-): Promise<{ success: boolean; user?: any; error?: string }> {
+): Promise<{ success: boolean; user?: ApiUserProfile; error?: string }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/rename-personnel`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/rename-personnel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, newFullName }),
@@ -1032,13 +1138,13 @@ export async function transferPersonnel(
 ): Promise<{
   success: boolean;
   message?: string;
-  user?: any;
-  sourceWorkspace?: any;
-  targetWorkspace?: any;
+  user?: ApiUserProfile;
+  sourceWorkspace?: TokenWorkspaceSummary;
+  targetWorkspace?: TokenWorkspaceSummary;
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/transfer-personnel`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/transfer-personnel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, targetWorkspaceId, targetRole }),
@@ -1062,12 +1168,12 @@ export async function promoteLeader(
 ): Promise<{
   success: boolean;
   message?: string;
-  newLeader?: any;
-  demotedLeader?: any;
+  newLeader?: ApiUserProfile;
+  demotedLeader?: ApiUserProfile;
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/promote-leader`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/promote-leader`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, workspaceId }),
@@ -1091,12 +1197,12 @@ export async function swapPersonnel(
 ): Promise<{
   success: boolean;
   message?: string;
-  userA?: any;
-  userB?: any;
+  userA?: ApiUserProfile;
+  userB?: ApiUserProfile;
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/swap-personnel`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/swap-personnel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userAId, userBId }),
@@ -1122,12 +1228,12 @@ export async function createSpecializedPod(payload: {
 }): Promise<{
   success: boolean;
   message?: string;
-  workspace?: any;
+  workspace?: TokenWorkspaceSummary;
   leaderToken?: string;
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/create-pod`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/create-pod`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -1148,12 +1254,12 @@ export async function addSeatToPod(payload: {
 }): Promise<{
   success: boolean;
   message?: string;
-  workspace?: any;
+  workspace?: TokenWorkspaceSummary;
   newTokens?: { token: string; role: string; joinUrl: string }[];
   error?: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/workspace/add-seat`, {
+    const res = await authFetch(`${API_BASE_URL}/workspace/add-seat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

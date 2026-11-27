@@ -1,3 +1,5 @@
+import type { OnboardingDraft } from './types';
+
 export interface UserSession {
   id?: string;
   username: string;
@@ -15,7 +17,7 @@ export interface UserSession {
   avatarUrl?: string | null;
   token?: string;
   onboardingCompleted?: boolean;
-  onboardingDraft?: any;
+  onboardingDraft?: OnboardingDraft | null;
 }
 
 export interface StoredUser extends UserSession {
@@ -23,8 +25,8 @@ export interface StoredUser extends UserSession {
   createdAt: string;
 }
 
-const STORAGE_USERS_KEY = 'sentrix_registered_users_v1';
-const STORAGE_SESSION_KEY = 'sentrix_active_session_v1';
+const STORAGE_USERS_KEY = 'sevaniq_registered_users_v1';
+const STORAGE_SESSION_KEY = 'sevaniq_active_session_v1';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 // Cryptographic SHA-256 Hashing via native Web Crypto API
@@ -175,13 +177,13 @@ export async function registerUser(params: {
 
       // Clean slate guarantee for newly registered user: wipe any old residual drafts
       try {
-        localStorage.removeItem(`sentirix_onboarding_draft_${cleanUsername}`);
-        localStorage.removeItem(`sentirix_onboarding_draft_${cleanEmail}`);
-        localStorage.removeItem('sentirix_onboarding_step');
-        localStorage.removeItem('sentirix_pending_tokens');
-        localStorage.removeItem('sentirix_dispatched_tokens');
-        localStorage.removeItem('sentirix_regenerated_tokens');
-        localStorage.removeItem('sentirix_planned_capacity');
+        localStorage.removeItem(`sevaniq_onboarding_draft_${cleanUsername}`);
+        localStorage.removeItem(`sevaniq_onboarding_draft_${cleanEmail}`);
+        localStorage.removeItem('sevaniq_onboarding_step');
+        localStorage.removeItem('sevaniq_pending_tokens');
+        localStorage.removeItem('sevaniq_dispatched_tokens');
+        localStorage.removeItem('sevaniq_regenerated_tokens');
+        localStorage.removeItem('sevaniq_planned_capacity');
       } catch {}
 
       // Also sync to local registry
@@ -205,7 +207,7 @@ export async function registerUser(params: {
   } catch (err) {
     return {
       success: false,
-      error: 'Unable to connect to Sentirix server. Please make sure the backend server is running.',
+      error: 'Unable to connect to Sevaniq server. Please make sure the backend server is running.',
     };
   }
 }
@@ -256,27 +258,11 @@ export async function loginUser(
       return { success: false, error: message };
     }
   } catch {
-    // 2. Resilient Offline Local Fallback
-    if (cleanId === 'pungkyrama' && password === '0o0o 0o0o') {
-      const localUsers = getRegisteredUsers();
-      const storedAdmin = localUsers.find((u) => u.username.toLowerCase() === 'pungkyrama');
-      const adminSession: UserSession = {
-        username: 'pungkyrama',
-        email: 'admin@sentrix.enterprise',
-        role: 'ADMIN',
-        isVerified: true,
-        avatarText: 'PR',
-        avatarUrl: storedAdmin?.avatarUrl ?? null,
-        onboardingCompleted: true,
-      };
-      setSession(adminSession);
-      return { success: true, user: adminSession };
-    }
-
+    // 2. Resilient Offline Local Fallback (never allow offline admin bypass)
     if (targetRole === 'ADMIN') {
       return {
         success: false,
-        error: 'Invalid Admin credentials. (Hint: username "pungkyrama" and password "0o0o 0o0o")',
+        error: 'Unable to verify administrator credentials while offline. Please ensure the backend server is running.',
       };
     }
 
@@ -329,32 +315,23 @@ export async function updateUserAvatar(
     setSession(currentSession);
   }
 
-  // 2. Update local registered users store
+  // 2. Update local registered users store (never synthesize admin records client-side)
   const users = getRegisteredUsers();
   const idx = users.findIndex((u) => u.username.toLowerCase() === username.toLowerCase());
   if (idx !== -1) {
     users[idx].avatarUrl = avatarUrl;
     saveRegisteredUsers(users);
-  } else if (username.toLowerCase() === 'pungkyrama') {
-    users.push({
-      username: 'pungkyrama',
-      email: 'admin@sentrix.enterprise',
-      role: 'ADMIN',
-      isVerified: true,
-      avatarText: 'PR',
-      avatarUrl: avatarUrl,
-      passwordHash: '',
-      createdAt: new Date().toISOString(),
-      onboardingCompleted: true,
-    });
-    saveRegisteredUsers(users);
   }
 
   // 3. Persist to Backend NestJS API & PostgreSQL
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (currentSession?.token) {
+      headers.Authorization = `Bearer ${currentSession.token}`;
+    }
     const res = await fetch(`${API_BASE_URL}/auth/avatar`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         username,
         avatarUrl,
@@ -365,6 +342,10 @@ export async function updateUserAvatar(
     if (res.ok) {
       const data = await res.json();
       return { success: true, avatarUrl: data.avatarUrl ?? avatarUrl };
+    }
+    if (res.status === 401 || res.status === 403) {
+      console.warn('Backend avatar update rejected: authentication required');
+      return { success: false, avatarUrl };
     }
   } catch (err) {
     console.warn('Backend avatar update skipped/offline fallback applied:', err);
@@ -380,9 +361,7 @@ export function getSession(): UserSession | null {
     // Active authenticated session is strictly scoped to sessionStorage.
     // When the browser or all tabs are closed, sessionStorage is automatically cleared,
     // ensuring the next visitor lands cleanly on the public landing page before login.
-    const raw =
-      sessionStorage.getItem(STORAGE_SESSION_KEY) ||
-      sessionStorage.getItem('sentirix_active_session_v1');
+    const raw = sessionStorage.getItem(STORAGE_SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -393,22 +372,18 @@ export function setSession(session: UserSession): void {
   if (typeof window === 'undefined') return;
   // Save to sessionStorage for browser-session isolation (auto-clears on browser close)
   sessionStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(session));
-  sessionStorage.setItem('sentirix_active_session_v1', JSON.stringify(session));
 
   // Clean any active session key from localStorage so browser restart never auto-logs in
   try {
     localStorage.removeItem(STORAGE_SESSION_KEY);
-    localStorage.removeItem('sentirix_active_session_v1');
-    localStorage.removeItem('sentrix_active_session_v1');
-    localStorage.removeItem('omniflow_active_session_v1');
 
     // Retain persistent onboarding draft per specific user identifier for seamless resume on login
     if (session.onboardingDraft) {
       if (session.username) {
-        localStorage.setItem(`sentirix_onboarding_draft_${session.username.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
+        localStorage.setItem(`sevaniq_onboarding_draft_${session.username.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
       }
       if (session.email) {
-        localStorage.setItem(`sentirix_onboarding_draft_${session.email.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
+        localStorage.setItem(`sevaniq_onboarding_draft_${session.email.toLowerCase()}`, JSON.stringify(session.onboardingDraft));
       }
     }
   } catch {}
@@ -464,17 +439,12 @@ export async function logoutUser(userId?: string): Promise<void> {
 
   try {
     localStorage.removeItem(STORAGE_SESSION_KEY);
-    localStorage.removeItem('sentirix_active_session_v1');
-    localStorage.removeItem('sentrix_active_session_v1');
-    localStorage.removeItem('omniflow_active_session_v1');
-    localStorage.removeItem('sentirix_onboarding_step');
-    localStorage.removeItem('sentirix_pending_tokens');
-    localStorage.removeItem('sentirix_dispatched_tokens');
-    localStorage.removeItem('sentirix_regenerated_tokens');
+    localStorage.removeItem('sevaniq_onboarding_step');
+    localStorage.removeItem('sevaniq_pending_tokens');
+    localStorage.removeItem('sevaniq_dispatched_tokens');
+    localStorage.removeItem('sevaniq_regenerated_tokens');
     localStorage.removeItem(STORAGE_USERS_KEY);
-    localStorage.removeItem('sentirix_registered_users_v1');
-    localStorage.removeItem('sentrix_registered_users_v1');
-    localStorage.removeItem('sentirix_planned_capacity');
+    localStorage.removeItem('sevaniq_planned_capacity');
   } catch {}
 }
 

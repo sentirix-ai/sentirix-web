@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
   Users,
@@ -30,6 +31,18 @@ import {
   regenerateToken,
 } from '../../lib/api';
 import { setSession, getSession } from '../../lib/auth';
+import type {
+  LeaderTokenStatusResult,
+  AgentTokenStatusResult,
+  ValidateInviteResult,
+  QuotaStats,
+  TokenWorkspaceSummary,
+} from '../../lib/types';
+
+type JoinTokenData = Partial<LeaderTokenStatusResult & AgentTokenStatusResult & ValidateInviteResult> & {
+  workspace?: TokenWorkspaceSummary & { totalSeats?: number; assignedQuota?: number };
+  quotaStats?: QuotaStats;
+};
 
 const cleanPodName = (name?: string) => {
   if (!name) return '';
@@ -43,10 +56,12 @@ function JoinWorkspaceContent() {
   const searchParams = useSearchParams();
   const token = sanitizeToken(searchParams.get('token'));
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => Boolean(token));
   const [tokenType, setTokenType] = useState<'LEADER' | 'AGENT' | 'LEGACY'>('LEGACY');
-  const [tokenData, setTokenData] = useState<any>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [tokenData, setTokenData] = useState<JoinTokenData | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(() =>
+    !token ? 'Invitation token not found in URL.' : null,
+  );
   const [isLockedToOtherSession, setIsLockedToOtherSession] = useState(false);
   const [isClaimedSeat, setIsClaimedSeat] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -81,12 +96,12 @@ function JoinWorkspaceContent() {
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const currentToken = sanitizeToken(urlParams.get('token'));
-      if (currentToken && currentToken.startsWith('STX-LDR-')) {
+      if (currentToken && currentToken.startsWith('SVQ-LDR-')) {
         const entered =
-          sessionStorage.getItem(`sentirix_leader_entered_${currentToken}`) ||
-          localStorage.getItem(`sentirix_leader_entered_${currentToken}`);
+          sessionStorage.getItem(`sevaniq_leader_entered_${currentToken}`) ||
+          localStorage.getItem(`sevaniq_leader_entered_${currentToken}`);
         if (!entered) {
-          const raw = sessionStorage.getItem(`sentirix_leader_locked_${currentToken}`);
+          const raw = sessionStorage.getItem(`sevaniq_leader_locked_${currentToken}`);
           if (raw) return JSON.parse(raw);
         }
       }
@@ -101,7 +116,7 @@ function JoinWorkspaceContent() {
       const urlParams = new URLSearchParams(window.location.search);
       const currentToken = sanitizeToken(urlParams.get('token'));
       if (currentToken) {
-        const raw = sessionStorage.getItem(`sentirix_copied_tokens_${currentToken}`);
+        const raw = sessionStorage.getItem(`sevaniq_copied_tokens_${currentToken}`);
         if (raw) return JSON.parse(raw);
       }
     } catch {
@@ -113,18 +128,16 @@ function JoinWorkspaceContent() {
 
   const getClientSessionId = () => {
     if (typeof window === 'undefined') return '';
-    let sid = sessionStorage.getItem('sentirix_client_session_id');
+    let sid = sessionStorage.getItem('sevaniq_client_session_id');
     if (!sid) {
       sid = 'sess_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now();
-      sessionStorage.setItem('sentirix_client_session_id', sid);
+      sessionStorage.setItem('sevaniq_client_session_id', sid);
     }
     return sid;
   };
 
   useEffect(() => {
     if (!token) {
-      setIsLoading(false);
-      setErrorMessage('Invitation token not found in URL.');
       return;
     }
 
@@ -135,7 +148,7 @@ function JoinWorkspaceContent() {
       const sid = getClientSessionId();
 
       try {
-        if (token.startsWith('STX-LDR-')) {
+        if (token.startsWith('SVQ-LDR-')) {
           setTokenType('LEADER');
           const res = await fetchLeaderTokenStatus(token, sid);
           if (!res.valid) {
@@ -154,16 +167,16 @@ function JoinWorkspaceContent() {
               setLeaderLockedResult(null);
               if (typeof window !== 'undefined') {
                 try {
-                  sessionStorage.removeItem(`sentirix_leader_locked_${token}`);
+                  sessionStorage.removeItem(`sevaniq_leader_locked_${token}`);
                 } catch {}
               }
-            } else if (typeof window !== 'undefined' && token.startsWith('STX-LDR-')) {
+            } else if (typeof window !== 'undefined' && token.startsWith('SVQ-LDR-')) {
               const alreadyEntered =
-                sessionStorage.getItem(`sentirix_leader_entered_${token}`) ||
-                localStorage.getItem(`sentirix_leader_entered_${token}`);
+                sessionStorage.getItem(`sevaniq_leader_entered_${token}`) ||
+                localStorage.getItem(`sevaniq_leader_entered_${token}`);
 
               if (!alreadyEntered) {
-                const cached = sessionStorage.getItem(`sentirix_leader_locked_${token}`);
+                const cached = sessionStorage.getItem(`sevaniq_leader_locked_${token}`);
                 if (cached) {
                   try {
                     const parsed = JSON.parse(cached);
@@ -174,7 +187,7 @@ function JoinWorkspaceContent() {
                 }
 
                 // Restore persistent copiedTokens
-                const rawCopied = sessionStorage.getItem(`sentirix_copied_tokens_${token}`);
+                const rawCopied = sessionStorage.getItem(`sevaniq_copied_tokens_${token}`);
                 if (rawCopied) {
                   try {
                     const parsedCopied = JSON.parse(rawCopied);
@@ -188,16 +201,17 @@ function JoinWorkspaceContent() {
 
             if (res.workspace?.isQuotaLocked) {
               setIsQuotaLocked(true);
-              if (res.workspace.assignedQuota > 1) {
-                setSelectedSubordinates(res.workspace.assignedQuota - 1);
+              const assigned = res.workspace.assignedQuota ?? 0;
+              if (assigned > 1) {
+                setSelectedSubordinates(assigned - 1);
               }
-            } else if (res.quotaStats?.allowedOptions?.length > 0) {
-              const opts = res.quotaStats.allowedOptions;
+            } else if ((res.quotaStats?.allowedOptions?.length ?? 0) > 0) {
+              const opts = res.quotaStats!.allowedOptions;
               // Penambahan kuota bawahan selalu default dimulai dari 1 anggota (opts[0]), bukan nilai maksimal
               setSelectedSubordinates(opts[0]);
             }
           }
-        } else if (token.startsWith('STX-AGT-')) {
+        } else if (token.startsWith('SVQ-AGT-')) {
           setTokenType('AGENT');
           const res = await fetchAgentTokenStatus(token, sid);
           if (!res.valid) {
@@ -242,11 +256,11 @@ function JoinWorkspaceContent() {
       const sid = getClientSessionId();
       const res = await fetchLeaderTokenStatus(token, sid);
       if (res?.valid && res.quotaStats) {
-        setTokenData((prev: any) => ({ ...prev, ...res }));
+        setTokenData((prev) => ({ ...prev, ...res }));
         if (res.workspace?.isQuotaLocked) {
           setIsQuotaLocked(true);
-          if (res.workspace.assignedQuota > 1) {
-            setSelectedSubordinates(res.workspace.assignedQuota - 1);
+          if ((res.workspace.assignedQuota ?? 0) > 1) {
+            setSelectedSubordinates((res.workspace.assignedQuota ?? 1) - 1);
           }
         } else if (res.quotaStats.isLastPod && res.quotaStats.allowedOptions?.length > 0) {
           setSelectedSubordinates(res.quotaStats.allowedOptions[0]);
@@ -270,11 +284,12 @@ function JoinWorkspaceContent() {
       const sid = getClientSessionId();
       const res = await fetchLeaderTokenStatus(token, sid);
       if (res?.valid && res.agentTokens && res.agentTokens.length > 0) {
+        const nextTokens = res.agentTokens;
         setLeaderLockedResult((prev) => {
           if (!prev) return prev;
           return {
             ...prev,
-            agentTokens: res.agentTokens,
+            agentTokens: nextTokens,
           };
         });
       }
@@ -308,7 +323,7 @@ function JoinWorkspaceContent() {
       }
       setIsQuotaLocked(targetLock);
       if (res.quotaStats) {
-        setTokenData((prev: any) => ({
+        setTokenData((prev) => ({
           ...prev,
           quotaStats: res.quotaStats,
           workspace: {
@@ -318,8 +333,8 @@ function JoinWorkspaceContent() {
           },
         }));
       }
-    } catch (err: any) {
-      setFormError(err.message || 'Error communicating with server.');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Error communicating with server.');
     } finally {
       setIsLockingQuota(false);
     }
@@ -360,15 +375,17 @@ function JoinWorkspaceContent() {
 
       // Store leader session
       if (res.leader) {
+        const leaderName = res.leader.fullName || res.leader.username || effectiveName || 'Leader';
         setSession({
           id: res.leader.id,
-          username: res.leader.username,
-          fullName: res.leader.fullName,
-          email: res.leader.email,
+          username: res.leader.username || `leader_${token.slice(0, 8)}`,
+          fullName: leaderName,
+          email: res.leader.email || '',
           role: 'LEADER',
           workspaceRole: 'LEADER',
           isVerified: true,
-          avatarText: res.leader.fullName.slice(0, 2).toUpperCase(),
+          avatarText: leaderName.slice(0, 2).toUpperCase(),
+          token: res.leader.token,
           onboardingCompleted: true,
           workspaceId: res.workspace?.id || res.leader.workspaceId,
         });
@@ -376,8 +393,8 @@ function JoinWorkspaceContent() {
         if (res.isReLogin || tokenData?.isExistingLeader) {
           if (typeof window !== 'undefined' && token) {
             try {
-              sessionStorage.setItem(`sentirix_leader_entered_${token}`, 'true');
-              localStorage.setItem(`sentirix_leader_entered_${token}`, 'true');
+              sessionStorage.setItem(`sevaniq_leader_entered_${token}`, 'true');
+              localStorage.setItem(`sevaniq_leader_entered_${token}`, 'true');
             } catch {}
           }
           window.location.href = '/dashboard';
@@ -386,13 +403,13 @@ function JoinWorkspaceContent() {
       }
 
       const lockedData = {
-        workspaceName: res.workspace?.name || tokenData?.workspace?.name,
+        workspaceName: res.workspace?.name || tokenData?.workspace?.name || 'Pod Workspace',
         assignedQuota: res.workspace?.assignedQuota || selectedSubordinates + 1,
         agentTokens: res.agentTokens || [],
       };
 
       if (typeof window !== 'undefined' && token) {
-        sessionStorage.setItem(`sentirix_leader_locked_${token}`, JSON.stringify(lockedData));
+        sessionStorage.setItem(`sevaniq_leader_locked_${token}`, JSON.stringify(lockedData));
       }
 
       setLeaderLockedResult(lockedData);
@@ -438,15 +455,17 @@ function JoinWorkspaceContent() {
       }
 
       if (res.user) {
+        const agentName = res.user.fullName || res.user.username || fullName.trim() || 'Agent';
         setSession({
           id: res.user.id,
-          username: res.user.username,
-          fullName: res.user.fullName,
-          email: res.user.email,
+          username: res.user.username || `agent_${token.slice(0, 8)}`,
+          fullName: agentName,
+          email: res.user.email || '',
           role: 'USER',
           workspaceRole: 'AGENT',
           isVerified: true,
-          avatarText: res.user.fullName.slice(0, 2).toUpperCase(),
+          avatarText: agentName.slice(0, 2).toUpperCase(),
+          token: res.user.token,
           onboardingCompleted: true,
           workspaceId: res.workspace?.id || res.user.workspaceId,
           isGuestMember: true,
@@ -473,7 +492,22 @@ function JoinWorkspaceContent() {
       setIsSubmitting(true);
       const res = await joinWorkspace(token, fullName.trim());
       if (res.success && res.user) {
-        setSession(res.user);
+        const memberName = res.user.fullName || res.user.username || fullName.trim();
+        setSession({
+          id: res.user.id,
+          username: res.user.username || `member_${token.slice(0, 8)}`,
+          fullName: memberName,
+          email: res.user.email || '',
+          role: 'USER',
+          workspaceRole: res.user.workspaceRole || 'AGENT',
+          workspaceId: res.user.workspaceId,
+          workspaceName: res.user.workspaceName,
+          isGuestMember: res.user.isGuestMember ?? true,
+          avatarText: res.user.avatarText || memberName.slice(0, 2).toUpperCase(),
+          avatarUrl: res.user.avatarUrl ?? null,
+          token: res.user.token,
+          onboardingCompleted: res.user.onboardingCompleted ?? true,
+        });
         window.location.href = '/dashboard';
       } else {
         setErrorMessage(res.error || 'Failed to join workspace.');
@@ -492,7 +526,7 @@ function JoinWorkspaceContent() {
       const next = [...prev, tok];
       if (typeof window !== 'undefined' && token) {
         try {
-          sessionStorage.setItem(`sentirix_copied_tokens_${token}`, JSON.stringify(next));
+          sessionStorage.setItem(`sevaniq_copied_tokens_${token}`, JSON.stringify(next));
         } catch {}
       }
       return next;
@@ -510,7 +544,7 @@ function JoinWorkspaceContent() {
           const next = prev.filter((t) => t !== oldTok && t !== res.newToken);
           if (typeof window !== 'undefined' && token) {
             try {
-              sessionStorage.setItem(`sentirix_copied_tokens_${token}`, JSON.stringify(next));
+              sessionStorage.setItem(`sevaniq_copied_tokens_${token}`, JSON.stringify(next));
             } catch {}
           }
           return next;
@@ -533,7 +567,7 @@ function JoinWorkspaceContent() {
             ),
           };
           if (typeof window !== 'undefined' && token) {
-            sessionStorage.setItem(`sentirix_leader_locked_${token}`, JSON.stringify(updated));
+            sessionStorage.setItem(`sevaniq_leader_locked_${token}`, JSON.stringify(updated));
           }
           return updated;
         });
@@ -559,13 +593,15 @@ function JoinWorkspaceContent() {
 
       {/* Header */}
       <header className="relative z-10 max-w-5xl mx-auto w-full px-6 py-6 flex items-center justify-between">
-        <a href="/" className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-700 bg-white p-1 flex items-center justify-center shadow-lg">
-            <img src="/logo_warna_s.png" alt="Sentirix Logo" className="w-full h-full object-contain" />
+            <img src="/logo_sevaniq_icon.png" alt="Sevaniq Logo" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg text-white tracking-tight">Sentirix</span>
+              <div className="bg-white px-2 py-0.5 rounded-md flex items-center">
+                <img src="/sevaniq_wordmark.png" alt="SEVANIQ" className="h-4 w-auto object-contain" />
+              </div>
               <span className="text-[10px] font-bold uppercase tracking-wider bg-blue-950/80 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
                 {tokenType === 'LEADER' ? 'LEADER ACTIVATION' : 'AI COPILOT'}
               </span>
@@ -574,7 +610,7 @@ function JoinWorkspaceContent() {
               AUTONOMOUS SUPPORT INTELLIGENCE
             </p>
           </div>
-        </a>
+        </Link>
 
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -646,28 +682,28 @@ function JoinWorkspaceContent() {
             <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
               {isClaimedSeat && tokenType === 'LEADER' && !isLockedToOtherSession ? (
                 <>
-                  <a
+                  <Link
                     href="/"
                     className="inline-flex items-center gap-1.5 text-xs text-white bg-blue-600 hover:bg-blue-500 px-5 py-2.5 rounded-xl transition-all font-semibold shadow-lg shadow-blue-600/30 cursor-pointer"
                   >
                     <span>Sign In to Corporate Portal</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </a>
-                  <a
+                  </Link>
+                  <Link
                     href="/"
                     className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white px-4 py-2.5 rounded-xl border border-slate-800 hover:bg-slate-800/60 transition-all font-medium cursor-pointer"
                   >
                     <span>Return to Corporate Portal</span>
-                  </a>
+                  </Link>
                 </>
               ) : (
-                <a
+                <Link
                   href="/"
                   className="inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-5 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 transition-all font-semibold cursor-pointer"
                 >
                   <span>Return to Corporate Portal</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </Link>
               )}
             </div>
           </div>
@@ -778,10 +814,10 @@ function JoinWorkspaceContent() {
                 if (typeof window !== 'undefined') {
                   try {
                     if (token) {
-                      sessionStorage.removeItem(`sentirix_leader_locked_${token}`);
-                      sessionStorage.removeItem(`sentirix_copied_tokens_${token}`);
-                      sessionStorage.setItem(`sentirix_leader_entered_${token}`, 'true');
-                      localStorage.setItem(`sentirix_leader_entered_${token}`, 'true');
+                      sessionStorage.removeItem(`sevaniq_leader_locked_${token}`);
+                      sessionStorage.removeItem(`sevaniq_copied_tokens_${token}`);
+                      sessionStorage.setItem(`sevaniq_leader_entered_${token}`, 'true');
+                      localStorage.setItem(`sevaniq_leader_entered_${token}`, 'true');
                     }
 
                     // Strictly enforce LEADER role in session so Leader enters frontline helpdesk, not Admin Cockpit
@@ -794,7 +830,7 @@ function JoinWorkspaceContent() {
                       id: cur?.id || leaderUser?.id || tokenData?.existingLeaderId || `leader_${token}`,
                       username: cur?.username || leaderUser?.username || tokenData?.existingLeaderUsername || `leader_${token.slice(0, 8)}`,
                       fullName: cur?.fullName || leaderName,
-                      email: cur?.email || leaderUser?.email || `leader@sentrix.local`,
+                      email: cur?.email || leaderUser?.email || `leader@sevaniq.local`,
                       role: 'LEADER' as const,
                       workspaceRole: 'LEADER',
                       isVerified: true,

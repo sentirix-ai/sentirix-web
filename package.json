@@ -1,8 +1,8 @@
 {
-  "name": "sentirix-web",
+  "name": "sevaniq-web",
   "version": "1.0.0",
   "description": "The AI-Native Customer Support Platform - Modern Next.js 16 Web Dashboard",
-  "author": "Sentirix Team",
+  "author": "Sevaniq Team",
   "private": true,
   "license": "MIT",
   "scripts": {
