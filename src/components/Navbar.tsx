@@ -4,13 +4,10 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import {
   Plus,
-  Radio,
   Crown,
   LogOut,
   UserCheck,
   Users,
-  TrendingUp,
-  LayoutDashboard,
   WifiOff,
   Camera,
   Check,
@@ -26,8 +23,6 @@ interface NavbarProps {
   onLogout?: () => void;
   workspace?: WorkspaceData | null;
   onOpenTeamModal?: () => void;
-  activeAdminTab?: 'ANALYTICS' | 'HELPDESK';
-  onSelectAdminTab?: (tab: 'ANALYTICS' | 'HELPDESK') => void;
   onOpenProfileModal?: () => void;
   pods?: PodInfo[];
   selectedPodId?: string;
@@ -44,8 +39,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLogout,
   workspace,
   onOpenTeamModal,
-  activeAdminTab = 'ANALYTICS',
-  onSelectAdminTab,
   onOpenProfileModal,
   pods,
   selectedPodId = 'ALL',
@@ -54,17 +47,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   organizationName,
   industry,
 }) => {
-  const isSuperAdmin =
-    user?.username?.toLowerCase() === 'pungkyrama' ||
-    user?.role === 'SUPER_ADMIN' ||
+  const isTenantOwner =
+    user?.role === 'TENANT_OWNER' ||
     (user?.role === 'ADMIN' && !user?.workspaceId);
   const isLeader =
-    !isSuperAdmin &&
+    !isTenantOwner &&
     (user?.role === 'POD_LEADER' ||
       user?.role === 'LEADER' ||
       user?.workspaceRole === 'LEADER' ||
       workspace?.isLeader === true);
-  const isAgent = !isSuperAdmin && !isLeader;
+  const isAgent = !isTenantOwner && !isLeader;
   const [copiedPortal, setCopiedPortal] = useState(false);
 
   const handleCopyPortal = () => {
@@ -117,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
         {/* New Ticket Button matching D:\1.png (Available for Helpdesk & Pod Personnel) */}
-        {!isSuperAdmin && (
+        {!isTenantOwner && (
           <button
             onClick={onNewTicketClick}
             className="flex items-center gap-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-bold text-xs px-4 py-2 rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -128,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
         {/* Share Customer Portal Link Button */}
-        {!isSuperAdmin && (
+        {!isTenantOwner && (
           <button
             onClick={handleCopyPortal}
             className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-lg border border-slate-200 transition-colors cursor-pointer"
@@ -200,10 +192,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 group-hover:text-[#2563EB] transition-colors">
               <span>{user?.fullName || user?.username || 'User'}</span>
-              {isSuperAdmin ? (
+              {isTenantOwner ? (
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-extrabold bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded border border-amber-300">
                   <Crown className="w-3 h-3 text-amber-700" />
-                  Founder
+                  Owner
                 </span>
               ) : isLeader ? (
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-bold bg-[#ECFDF5] text-[#059669] px-1.5 py-0.2 rounded border border-[#A7F3D0]">
@@ -218,8 +210,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
             <p className="text-[10px] text-slate-500 font-medium group-hover:text-slate-700 transition-colors">
-              {isSuperAdmin
-                ? 'Platform Owner & Webmaster'
+              {isTenantOwner
+                ? 'Company Tenant Owner'
                 : isLeader
                   ? 'Support Pod Leader'
                   : 'Frontline Support Agent'}

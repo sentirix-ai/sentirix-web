@@ -8,7 +8,6 @@ import {
   Message,
   TicketStatus,
   WorkspaceData,
-  OwnerAnalyticsData,
   PodInfo,
   AttachmentPayload,
 } from '../../lib/types';
@@ -22,7 +21,6 @@ import {
   purgeWorkspaceOnLogout,
   checkMemberStatus,
   memberLogout,
-  fetchOwnerAnalytics,
   fetchOrganizationPods,
 } from '../../lib/api';
 import { getSession, setSession, logoutUser, UserSession } from '../../lib/auth';
@@ -32,8 +30,6 @@ import { TicketDetail } from '../../components/TicketDetail';
 import { AiCopilotSidebar } from '../../components/AiCopilotSidebar';
 import { NewTicketModal, NewTicketPayload } from '../../components/NewTicketModal';
 import { TeamInviteModal } from '../../components/TeamInviteModal';
-import { OwnerAnalyticsView } from '../../components/OwnerAnalyticsView';
-import { AdminCockpitView } from '../../components/AdminCockpitView';
 import { ProfileModal } from '../../components/ProfileModal';
 import { CreatePodModal } from '../../components/CreatePodModal';
 import { TransferPodModal } from '../../components/TransferPodModal';
@@ -63,9 +59,6 @@ export default function DashboardPage() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isCreatePodModalOpen, setIsCreatePodModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
-  const [adminTab, setAdminTab] = useState<'ANALYTICS' | 'HELPDESK'>('ANALYTICS');
-  const [ownerAnalytics, setOwnerAnalytics] = useState<OwnerAnalyticsData | null>(null);
-  const [isRefreshingAnalytics, setIsRefreshingAnalytics] = useState(false);
 
   // Multi-Pod Enterprise State
   const [pods, setPods] = useState<PodInfo[]>([]);
@@ -77,15 +70,6 @@ export default function DashboardPage() {
   const handleProfileUpdated = (updatedUser: UserSession) => {
     setUser(updatedUser);
   };
-
-  const loadAnalytics = useCallback(async () => {
-    const activeId = getSession()?.username;
-    if (!activeId) return;
-    setIsRefreshingAnalytics(true);
-    const data = await fetchOwnerAnalytics(activeId);
-    if (data) setOwnerAnalytics(data);
-    setIsRefreshingAnalytics(false);
-  }, []);
 
   // Check Auth Session
   useEffect(() => {
@@ -99,30 +83,25 @@ export default function DashboardPage() {
         return;
       }
 
-      // Strictly route Super Admins / Org Owners out of frontline helpdesk
-      if ((session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') && session.username.toLowerCase() !== 'pungkyrama') {
+      // Strictly route Tenant Owners / Admins out of frontline helpdesk into Company Cockpit
+      if (session.role === 'TENANT_OWNER' || session.role === 'ADMIN') {
         if (!session.onboardingCompleted) {
           router.push('/onboarding?step=4');
         } else {
-          router.push('/admin/cockpit');
+          router.push('/cockpit');
         }
         return;
       }
 
-      const isSuperAdmin =
-        session.username.toLowerCase() === 'pungkyrama' ||
-        session.role === 'SUPER_ADMIN' ||
-        (session.role === 'ADMIN' && !session.workspaceId);
       const isLeader =
-        !isSuperAdmin &&
-        (session.role === 'POD_LEADER' ||
-          session.role === 'LEADER' ||
-          session.workspaceRole === 'LEADER' ||
-          (!session.isGuestMember && Boolean(session.workspaceId)));
+        session.role === 'POD_LEADER' ||
+        session.role === 'LEADER' ||
+        session.workspaceRole === 'LEADER' ||
+        (!session.isGuestMember && Boolean(session.workspaceId));
       const isGuest = Boolean(session.isGuestMember) && !isLeader;
 
       // If regular user has not yet completed onboarding, redirect to /onboarding
-      if (!isSuperAdmin && !isLeader && !isGuest && !session.onboardingCompleted) {
+      if (!isLeader && !isGuest && !session.onboardingCompleted) {
         router.push('/onboarding');
         return;
       }
@@ -148,13 +127,8 @@ export default function DashboardPage() {
 
       setUser(session);
 
-      // If Platform Owner (@pungkyrama), load owner analytics
-      if (isSuperAdmin) {
-        void loadAnalytics();
-      }
-
-      // Load Workspace & Multi-Pod setup for regular users & Leaders
-      if (!isSuperAdmin && session.username) {
+      // Load Workspace & Multi-Pod setup for Leaders & Agents
+      if (session.username) {
         if (session.workspaceId) {
           setSelectedPodId(session.workspaceId);
         }
@@ -179,7 +153,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [router, loadAnalytics]);
+  }, [router]);
 
   // Load Tickets (Filtered by Status, Search, and Selected Pod)
   const loadTickets = useCallback(async () => {
@@ -240,10 +214,12 @@ export default function DashboardPage() {
   useEffect(() => {
     let socket: Socket | null = null;
     try {
+      const currentSession = getSession();
       socket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnectionAttempts: 10,
         reconnectionDelay: 1500,
+        auth: currentSession?.token ? { token: currentSession.token } : undefined,
       });
       socketRef.current = socket;
 
@@ -321,7 +297,7 @@ export default function DashboardPage() {
       // Listen for real-time team member left / logged out (Requirement 2)
       socket.on('team:member_left', () => {
         const session = getSession();
-        if (session && !session.workspaceId && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+        if (session && !session.workspaceId && session.role !== 'TENANT_OWNER' && session.role !== 'ADMIN') {
           fetchMyWorkspace(session.username).then((ws) => {
             if (ws) setWorkspace(ws);
           });
@@ -331,7 +307,7 @@ export default function DashboardPage() {
       // Listen for real-time team member joined
       socket.on('team:member_joined', () => {
         const session = getSession();
-        if (session && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+        if (session && session.role !== 'TENANT_OWNER' && session.role !== 'ADMIN') {
           fetchMyWorkspace(session.username).then((ws) => {
             if (ws) setWorkspace(ws);
           });
@@ -341,7 +317,7 @@ export default function DashboardPage() {
       // Listen for real-time team member removed
       socket.on('team:member_removed', () => {
         const session = getSession();
-        if (session && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+        if (session && session.role !== 'TENANT_OWNER' && session.role !== 'ADMIN') {
           fetchMyWorkspace(session.username).then((ws) => {
             if (ws) setWorkspace(ws);
           });
@@ -351,7 +327,7 @@ export default function DashboardPage() {
       // Listen for workspace link regenerated
       socket.on('team:workspace_updated', () => {
         const session = getSession();
-        if (session && session.role !== 'ADMIN' && session.username.toLowerCase() !== 'pungkyrama') {
+        if (session && session.role !== 'TENANT_OWNER' && session.role !== 'ADMIN') {
           fetchMyWorkspace(session.username).then((ws) => {
             if (ws) setWorkspace(ws);
           });
@@ -707,7 +683,7 @@ export default function DashboardPage() {
         } catch {
           // Fail silently
         }
-      } else if (user.role !== 'ADMIN' && user.username?.toLowerCase() !== 'pungkyrama') {
+      } else if (user.role !== 'TENANT_OWNER' && user.role !== 'ADMIN') {
         // Requirement 3: Workspace owner logout purges all members
         try {
           await purgeWorkspaceOnLogout(user.username);
@@ -732,8 +708,6 @@ export default function DashboardPage() {
         onLogout={handleLogout}
         workspace={workspace}
         onOpenTeamModal={() => setIsTeamModalOpen(true)}
-        activeAdminTab={adminTab}
-        onSelectAdminTab={setAdminTab}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
         pods={pods}
         selectedPodId={selectedPodId}
@@ -787,7 +761,7 @@ export default function DashboardPage() {
         onSubmit={handleCreateTicketSubmit}
       />
 
-      {/* Team Invite Modal (Only accessible for regular users, excluded for Admin @pungkyrama) */}
+      {/* Team Invite Modal */}
       <TeamInviteModal
         isOpen={isTeamModalOpen}
         onClose={() => setIsTeamModalOpen(false)}

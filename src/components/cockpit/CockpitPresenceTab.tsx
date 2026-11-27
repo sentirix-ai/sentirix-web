@@ -14,19 +14,19 @@ import {
 import type {
   CockpitPresenceUser,
   CockpitWorkspaceItem,
-  SuperAdminCockpitData,
+  CompanyCockpitData,
 } from '../../lib/types';
 import { formatDuration } from './cockpit.utils';
 
 export interface CockpitPresenceTabProps {
-  cockpitData: SuperAdminCockpitData;
+  cockpitData: CompanyCockpitData;
   workspaces: CockpitWorkspaceItem[];
   currentTime: number;
   selectedUserHistory: CockpitPresenceUser | null;
   setSelectedUserHistory: React.Dispatch<React.SetStateAction<CockpitPresenceUser | null>>;
 }
 
-/** Super Admin Presence tab: real-time online duration, SLA state, and disconnect history. */
+/** Company Cockpit Presence tab: real-time online duration, SLA state, and disconnect history. */
 export function CockpitPresenceTab({
   cockpitData,
   workspaces,
@@ -51,15 +51,15 @@ export function CockpitPresenceTab({
               <span className="font-bold text-white">{user.fullName}</span>
               <span
                 className={`text-[9px] font-extrabold px-2 py-0.5 rounded ${
-                  user.role === 'SUPER_ADMIN'
+                  user.role === 'TENANT_OWNER' || user.role === 'ADMIN'
                     ? 'bg-purple-950 text-purple-300 border border-purple-800'
                     : user.role === 'LEADER'
                       ? 'bg-amber-950 text-amber-300 border border-amber-800'
                       : 'bg-blue-950 text-blue-300 border border-blue-800'
                 }`}
               >
-                {user.role === 'SUPER_ADMIN'
-                  ? 'SUPER ADMIN'
+                {user.role === 'TENANT_OWNER' || user.role === 'ADMIN'
+                  ? 'OWNER'
                   : user.role === 'LEADER'
                     ? 'LEADER'
                     : 'AGENT'}
@@ -71,10 +71,10 @@ export function CockpitPresenceTab({
         {/* Readiness & Workload */}
         <td className="py-3.5 px-4">
           <div className="space-y-1">
-            {user.role === 'SUPER_ADMIN' || user.username?.toLowerCase() === 'pungkyrama' ? (
+            {user.role === 'TENANT_OWNER' || user.role === 'ADMIN' ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-950/90 to-yellow-950/80 border border-amber-500/60 text-amber-300 text-[11px] font-bold shadow-xs shadow-amber-500/10">
-                <Crown className="w-3 h-3 text-amber-400 fill-amber-400 animate-pulse" />
-                <span>Platform Founder Sovereign</span>
+                <Crown className="w-3 h-3 text-amber-400 fill-amber-400" />
+                <span>Company Tenant Owner</span>
               </span>
             ) : user.operationalState === 'SERVING' || (isOnline && (user.activeTicketsCount || 0) > 0) ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-500/50 text-cyan-300 text-[11px] font-bold">
@@ -203,7 +203,7 @@ export function CockpitPresenceTab({
             {/* Presence Barometer Cards */}
             {(() => {
               const staffUsers = (cockpitData?.presenceMonitoring || []).filter(
-                (u) => u.role !== 'SUPER_ADMIN',
+                (u) => u.role !== 'TENANT_OWNER' && u.role !== 'ADMIN',
               );
               const totalStaffCount = staffUsers.length;
               const onlineStaffCount = staffUsers.filter((u) => u.isOnline).length;
@@ -290,7 +290,8 @@ export function CockpitPresenceTab({
               {workspaces.map((ws, wsIdx: number) => {
                 const podUsers = (cockpitData?.presenceMonitoring || []).filter(
                   (u) =>
-                    u.role !== 'SUPER_ADMIN' &&
+                    u.role !== 'TENANT_OWNER' &&
+                    u.role !== 'ADMIN' &&
                     (u.workspaceId === ws.id || u.podName === ws.name),
                 );
 
@@ -405,8 +406,8 @@ export function CockpitPresenceTab({
                         <strong className="text-white">
                           {selectedUserHistory.role === 'LEADER'
                             ? 'Pod Leader'
-                            : selectedUserHistory.role === 'SUPER_ADMIN'
-                              ? 'Executive Super Admin'
+                            : selectedUserHistory.role === 'TENANT_OWNER' || selectedUserHistory.role === 'ADMIN'
+                              ? 'Company Tenant Owner'
                               : 'Frontline Agent'}
                         </strong>
                       </p>

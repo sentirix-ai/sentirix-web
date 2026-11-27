@@ -63,6 +63,7 @@ export default function PresenceHeartbeat() {
       socket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnectionAttempts: 5,
+        auth: session.token ? { token: session.token } : undefined,
       });
 
       socket.on(

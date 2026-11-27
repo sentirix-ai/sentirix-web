@@ -1,7 +1,6 @@
 'use client';
 
 export type CockpitTabId =
-  | 'PLATFORM'
   | 'OVERVIEW'
   | 'PRESENCE'
   | 'PERSONNEL'

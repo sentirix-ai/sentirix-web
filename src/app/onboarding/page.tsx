@@ -12,7 +12,7 @@ import {
   generatePodsForIndustry,
   setupMultiPodV2,
   regenerateToken,
-  fetchSuperAdminCockpit,
+  fetchCompanyCockpit,
   fetchPendingLeaderTokens,
   completeOnboarding,
   validateServiceSemantic,
@@ -260,14 +260,14 @@ export default function TitaniumOnboardingPage() {
             setGeneratedLeaderTokens(dbRes.leaderTokens);
             setCurrentStep(4);
 
-            // Force session promotion to ADMIN with onboardingCompleted: false
-            const adminSession: UserSession = {
+            // Force session promotion to TENANT_OWNER with onboardingCompleted: false
+            const ownerSession: UserSession = {
               ...active,
-              role: 'ADMIN',
+              role: 'TENANT_OWNER',
               onboardingCompleted: false,
             };
-            setSession(adminSession);
-            setLocalSession(adminSession);
+            setSession(ownerSession);
+            setLocalSession(ownerSession);
 
             // Restore dispatched & regenerated tokens
             try {
@@ -287,8 +287,8 @@ export default function TitaniumOnboardingPage() {
           if (typeof window !== 'undefined') {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('step') !== '2') {
-              if (active.role === 'ADMIN' || dbRes?.hasPendingTokens) {
-                router.push('/admin/cockpit');
+              if (active.role === 'TENANT_OWNER' || active.role === 'ADMIN' || dbRes?.hasPendingTokens) {
+                router.push('/cockpit');
               } else {
                 router.push('/dashboard');
               }
@@ -394,7 +394,7 @@ export default function TitaniumOnboardingPage() {
           const stepParam = params.get('step');
           if (stepParam === '2') {
             setCurrentStep(2);
-            fetchSuperAdminCockpit(active.username).then((data) => {
+            fetchCompanyCockpit().then((data) => {
               if (!cancelled && data?.organization) {
                 if (data.organization.name) setOrganizationName(data.organization.name);
                 if (data.organization.industry) setSelectedIndustry(data.organization.industry);
@@ -939,10 +939,10 @@ export default function TitaniumOnboardingPage() {
         return;
       }
 
-      // Update session: PROMOTE TO ADMIN, preserve refreshed JWT with updated role
+      // Update session: PROMOTE TO TENANT_OWNER, preserve refreshed JWT with updated role
       const updatedSession: UserSession = {
         ...session,
-        role: 'ADMIN',
+        role: 'TENANT_OWNER',
         ...(res.token ? { token: res.token } : {}),
         onboardingCompleted: false,
       };
@@ -1047,7 +1047,7 @@ export default function TitaniumOnboardingPage() {
     if (active) {
       const finalSession: UserSession = {
         ...active,
-        role: 'ADMIN',
+        role: 'TENANT_OWNER',
         onboardingCompleted: true,
       };
       setSession(finalSession);
@@ -1072,7 +1072,7 @@ export default function TitaniumOnboardingPage() {
       localStorage.removeItem('sevaniq_regenerated_tokens');
     } catch {}
 
-    router.push('/admin/cockpit');
+    router.push('/cockpit');
   };
 
   if (isVerifying) {

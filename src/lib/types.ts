@@ -161,52 +161,6 @@ export interface ValidateInviteResult {
   remainingSeats?: number;
 }
 
-export interface OwnerUserLead {
-  id: string;
-  username: string;
-  fullName: string;
-  email: string;
-  phone: string | null;
-  role: string;
-  verificationMethod: string;
-  onboardingCompleted: boolean;
-  createdAt: string;
-  workspace?: {
-    id: string;
-    name: string;
-    maxMembers: number;
-    currentMembersCount: number;
-    remainingSeats: number;
-    totalTokensGenerated: number;
-  } | null;
-}
-
-export interface OwnerAnalyticsData {
-  summary: {
-    totalUsers: number;
-    totalWorkspaces: number;
-    totalActiveMembers: number;
-    totalTickets: number;
-    emailVerifiedCount: number;
-    phoneVerifiedCount: number;
-    completedOnboardingCount: number;
-    onboardingRate: number;
-  };
-  capacityDistribution: {
-    capacity: number;
-    count: number;
-    percentage: number;
-    label: string;
-  }[];
-  growthTrend: {
-    date: string;
-    dayLabel: string;
-    signups: number;
-    activeWorkspaces: number;
-  }[];
-  usersDirectory: OwnerUserLead[];
-}
-
 export interface PodConfig {
   id?: string;
   name: string;
@@ -503,7 +457,7 @@ export interface CockpitStats {
   totalEvaluatedTickets?: number;
 }
 
-export interface SuperAdminCockpitData {
+export interface CompanyCockpitData {
   organization: OrganizationSummaryRecord;
   stats: CockpitStats;
   workspaces: CockpitWorkspaceItem[];

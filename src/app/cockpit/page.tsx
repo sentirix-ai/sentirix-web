@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Crown,
   Layers,
   Users,
   ShieldCheck,
@@ -13,18 +12,15 @@ import {
   Clock,
   Globe,
 } from 'lucide-react';
-import { getSession, logoutUser, UserSession } from '../../../lib/auth';
+import { getSession, logoutUser, UserSession } from '../../lib/auth';
 import { io, Socket } from 'socket.io-client';
-import { OwnerAnalyticsView } from '../../../components/OwnerAnalyticsView';
 import {
-  OwnerAnalyticsData,
-  SuperAdminCockpitData,
+  CompanyCockpitData,
   CockpitWorkspaceItem,
   CockpitPresenceUser,
-} from '../../../lib/types';
+} from '../../lib/types';
 import {
-  fetchSuperAdminCockpit,
-  fetchOwnerAnalytics,
+  fetchCompanyCockpit,
   regenerateToken,
   cleanupDemoTickets,
   renamePersonnel,
@@ -33,8 +29,8 @@ import {
   createSpecializedPod,
   addSeatToPod,
   checkMemberStatus,
-  adminForceLogoutUser,
-} from '../../../lib/api';
+  forceLogoutPersonnel,
+} from '../../lib/api';
 import {
   cleanPodName,
   INDUSTRY_DEFAULT_SERVICES,
@@ -43,23 +39,23 @@ import {
   type ForceLogoutTarget,
   type PromotingUserTarget,
   type SwappingUserTarget,
-} from '../../../components/cockpit/cockpit.utils';
-import { CockpitOverviewTab } from '../../../components/cockpit/CockpitOverviewTab';
-import { CockpitPresenceTab } from '../../../components/cockpit/CockpitPresenceTab';
-import { CockpitPersonnelTab } from '../../../components/cockpit/CockpitPersonnelTab';
-import { CockpitTokensTab } from '../../../components/cockpit/CockpitTokensTab';
-import { CockpitCrisisTab } from '../../../components/cockpit/CockpitCrisisTab';
-import { CockpitChannelsTab } from '../../../components/cockpit/CockpitChannelsTab';
-import { CockpitPersonnelModals } from '../../../components/cockpit/CockpitPersonnelModals';
-import { CockpitPodModals } from '../../../components/cockpit/CockpitPodModals';
+} from '../../components/cockpit/cockpit.utils';
+import { CockpitOverviewTab } from '../../components/cockpit/CockpitOverviewTab';
+import { CockpitPresenceTab } from '../../components/cockpit/CockpitPresenceTab';
+import { CockpitPersonnelTab } from '../../components/cockpit/CockpitPersonnelTab';
+import { CockpitTokensTab } from '../../components/cockpit/CockpitTokensTab';
+import { CockpitCrisisTab } from '../../components/cockpit/CockpitCrisisTab';
+import { CockpitChannelsTab } from '../../components/cockpit/CockpitChannelsTab';
+import { CockpitPersonnelModals } from '../../components/cockpit/CockpitPersonnelModals';
+import { CockpitPodModals } from '../../components/cockpit/CockpitPodModals';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 
-export default function SuperAdminCockpitPage() {
+export default function CompanyCockpitPage() {
   const router = useRouter();
 
   const [session, setLocalSession] = useState<UserSession | null>(null);
-  const [cockpitData, setCockpitData] = useState<SuperAdminCockpitData | null>(null);
+  const [cockpitData, setCockpitData] = useState<CompanyCockpitData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
@@ -80,8 +76,6 @@ export default function SuperAdminCockpitPage() {
   const [forcingLogoutUser, setForcingLogoutUser] = useState<string | null>(null);
   const [confirmForceLogoutTarget, setConfirmForceLogoutTarget] = useState<ForceLogoutTarget | null>(null);
   const [activeTab, setActiveTab] = useState<CockpitTabId>('OVERVIEW');
-  const [platformAnalytics, setPlatformAnalytics] = useState<OwnerAnalyticsData | null>(null);
-  const [isRefreshingPlatform, setIsRefreshingPlatform] = useState(false);
   const [selectedUserHistory, setSelectedUserHistory] = useState<CockpitPresenceUser | null>(null);
   const [currentTime, setCurrentTime] = useState<number>(0);
 
@@ -469,8 +463,7 @@ export default function SuperAdminCockpitPage() {
     if (showSpinner) setIsLoading(true);
     setErrorMessage(null);
     try {
-      const targetIdentifier = activeUser.username || activeUser.email || (activeUser.id as string);
-      const data = await fetchSuperAdminCockpit(targetIdentifier);
+      const data = await fetchCompanyCockpit();
       if (!data) {
         // If user or organization does not exist in the database (or service frozen/deleted),
         // immediately purge session and redirect to pre-login page
@@ -499,17 +492,6 @@ export default function SuperAdminCockpitPage() {
     }
   };
 
-  const loadPlatformAnalytics = async (identifier?: string) => {
-    const activeId = identifier || getSession()?.username;
-    if (!activeId) return;
-    setIsRefreshingPlatform(true);
-    try {
-      const data = await fetchOwnerAnalytics(activeId);
-      if (data) setPlatformAnalytics(data);
-    } catch {}
-    setIsRefreshingPlatform(false);
-  };
-
   useEffect(() => {
     let cancelled = false;
     let socket: Socket | null = null;
@@ -522,32 +504,27 @@ export default function SuperAdminCockpitPage() {
         window.location.href = '/';
         return;
       }
-      if (active.onboardingCompleted === false && active.username?.toLowerCase() !== 'pungkyrama') {
+      if (active.role !== 'TENANT_OWNER' && active.role !== 'ADMIN') {
+        router.push('/dashboard');
+        return;
+      }
+      if (active.onboardingCompleted === false) {
         router.push('/onboarding?step=4');
         return;
       }
       setLocalSession(active);
       void loadData(active, true);
 
-      if (active.role === 'SUPER_ADMIN' || active.username?.toLowerCase() === 'pungkyrama') {
-        void loadPlatformAnalytics(active.username);
-        if (typeof window !== 'undefined' && (window.location.search.includes('view=platform') || !window.location.search)) {
-          setActiveTab('PLATFORM');
-        }
-      }
-
       // 1. Real-Time WebSocket Presence & Event Stream for instantaneous audit updates (0ms latency)
       try {
         socket = io(SOCKET_URL, {
           transports: ['websocket', 'polling'],
           reconnectionAttempts: 5,
+          auth: active.token ? { token: active.token } : undefined,
         });
 
         const handleLivePresence = () => {
           void loadData(active, false);
-          if (active.role === 'SUPER_ADMIN' || active.username?.toLowerCase() === 'pungkyrama') {
-            void loadPlatformAnalytics(active.username);
-          }
         };
 
         socket.on('presence:changed', handleLivePresence);
@@ -564,9 +541,6 @@ export default function SuperAdminCockpitPage() {
       // 2. High-frequency safety net polling fallback (every 2.5 seconds)
       interval = setInterval(() => {
         void loadData(active, false);
-        if (active.role === 'SUPER_ADMIN' || active.username?.toLowerCase() === 'pungkyrama') {
-          void loadPlatformAnalytics(active.username);
-        }
       }, 2500);
     });
 
@@ -682,11 +656,10 @@ export default function SuperAdminCockpitPage() {
     try {
       setForcingLogoutUser(key);
       const activeSession = session || getSession();
-      const res = await adminForceLogoutUser(
+      const res = await forceLogoutPersonnel(
         target.userId,
         target.username || target.name,
         target.token,
-        activeSession?.username,
       );
       if (res.success && activeSession) {
         setConfirmForceLogoutTarget(null);
@@ -714,13 +687,13 @@ export default function SuperAdminCockpitPage() {
       <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-xs text-slate-400">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span>Verifying Sevaniq Executive Privileges...</span>
+          <span>Loading Company Cockpit...</span>
         </div>
       </div>
     );
   }
 
-  const org: SuperAdminCockpitData['organization'] = cockpitData.organization;
+  const org: CompanyCockpitData['organization'] = cockpitData.organization;
   const stats = cockpitData.stats || {};
   const tokenAudit = cockpitData.tokenAudit || [];
   const crisisTickets = cockpitData.crisisTickets || [];
@@ -868,23 +841,15 @@ export default function SuperAdminCockpitPage() {
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
           {[
-            ...(session?.username?.toLowerCase() === 'pungkyrama'
-              ? [
-                  {
-                    id: 'PLATFORM',
-                    label: 'Platform Founder Overview',
-                    icon: Crown,
-                    isSpecial: true,
-                  },
-                ]
-              : []),
             { id: 'OVERVIEW', label: 'Pod Topology & Workload', icon: Layers },
             { id: 'PRESENCE', label: 'Staff Presence & SLA Monitoring', icon: Clock, count: stats.onlineCount || 0 },
             {
               id: 'PERSONNEL',
               label: 'Personnel Directory & Identity',
               icon: Users,
-              count: (cockpitData?.presenceMonitoring || []).filter((u) => u.role !== 'SUPER_ADMIN').length,
+              count: (cockpitData?.presenceMonitoring || []).filter(
+                (u) => u.role !== 'TENANT_OWNER' && u.role !== 'ADMIN',
+              ).length,
             },
             { id: 'TOKENS', label: 'Single-Use Token Audit Hub', icon: ShieldCheck, count: tokenAudit.length },
             {
@@ -901,7 +866,6 @@ export default function SuperAdminCockpitPage() {
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
-            const isPlatformTab = tab.id === 'PLATFORM';
             return (
               <button
                 key={tab.id}
@@ -909,15 +873,11 @@ export default function SuperAdminCockpitPage() {
                 onClick={() => setActiveTab(tab.id as typeof activeTab)}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                   isActive
-                    ? isPlatformTab
-                      ? 'bg-gradient-to-r from-amber-500 to-indigo-600 text-white shadow-lg shadow-amber-500/20'
-                      : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
-                    : isPlatformTab
-                      ? 'bg-amber-950/30 text-amber-300 border border-amber-500/30 hover:bg-amber-900/40'
-                      : 'bg-[#111827] text-slate-400 hover:text-white hover:bg-slate-800'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                    : 'bg-[#111827] text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isPlatformTab ? 'text-amber-300' : ''}`} />
+                <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span
@@ -932,17 +892,6 @@ export default function SuperAdminCockpitPage() {
             );
           })}
         </div>
-
-        {/* TAB 0: PLATFORM FOUNDER ANALYTICS */}
-        {activeTab === 'PLATFORM' && (
-          <section className="space-y-4">
-            <OwnerAnalyticsView
-              analyticsData={platformAnalytics}
-              onRefresh={loadPlatformAnalytics}
-              isRefreshing={isRefreshingPlatform}
-            />
-          </section>
-        )}
 
         {/* TAB 1: POD TOPOLOGY */}
         {activeTab === 'OVERVIEW' && <CockpitOverviewTab workspaces={workspaces} />}

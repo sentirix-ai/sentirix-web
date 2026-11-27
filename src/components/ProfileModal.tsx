@@ -145,7 +145,7 @@ const ProfileModalContent: React.FC<{
 
   const currentDisplayAvatar = isRemoving ? null : selectedImage;
   const hasChanges = (user.avatarUrl || null) !== currentDisplayAvatar;
-  const isAdmin = user.role === 'ADMIN' || user.username.toLowerCase() === 'pungkyrama';
+  const isAdmin = user.role === 'TENANT_OWNER' || user.role === 'ADMIN';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -295,7 +295,7 @@ const ProfileModalContent: React.FC<{
                   <span className="block text-[10px] uppercase font-bold text-slate-400">Access Role</span>
                   <span className="block text-xs font-bold text-slate-800 truncate">
                     {isAdmin
-                      ? 'Platform Founder & Admin'
+                      ? 'Company Tenant Owner'
                       : user.isGuestMember
                         ? 'Support Agent'
                         : 'Support Pod Leader'}

@@ -15,12 +15,12 @@ import {
 import type {
   CockpitPresenceUser,
   CockpitWorkspaceItem,
-  SuperAdminCockpitData,
+  CompanyCockpitData,
 } from '../../lib/types';
 import { cleanPodName, formatDuration } from './cockpit.utils';
 
 export interface CockpitPersonnelTabProps {
-  cockpitData: SuperAdminCockpitData;
+  cockpitData: CompanyCockpitData;
   workspaces: CockpitWorkspaceItem[];
   personnelSearchQuery: string;
   setPersonnelSearchQuery: React.Dispatch<React.SetStateAction<string>>;
@@ -29,7 +29,7 @@ export interface CockpitPersonnelTabProps {
   handleOpenSwapUser: (user: CockpitPresenceUser, pod: CockpitWorkspaceItem) => void;
 }
 
-/** Super Admin Personnel Directory: governance actions, KPI metrics, and pod roster. */
+/** Company Personnel Directory: governance actions, KPI metrics, and pod roster. */
 export function CockpitPersonnelTab({
   cockpitData,
   workspaces,
@@ -49,7 +49,7 @@ export function CockpitPersonnelTab({
                   <span>Personnel Directory &amp; Identity Governance</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Audit, filter, and manage staff identities across all operational pods. Super Admins have sovereign override authority to rename leaders and frontline members, and reassign workforce across pods.
+                  Audit, filter, and manage staff identities across all operational pods. Company owners can rename leaders and frontline members, and reassign workforce across pods.
                 </p>
               </div>
 
@@ -78,7 +78,7 @@ export function CockpitPersonnelTab({
             {/* Quick Stats Overview */}
             {(() => {
               const allStaff = (cockpitData?.presenceMonitoring || []).filter(
-                (u) => u.role !== 'SUPER_ADMIN',
+                (u) => u.role !== 'TENANT_OWNER' && u.role !== 'ADMIN',
               );
               const totalLeaders = allStaff.filter((u) => u.role === 'LEADER').length;
               const totalMembers = allStaff.filter((u) => u.role !== 'LEADER').length;
@@ -151,7 +151,8 @@ export function CockpitPersonnelTab({
                   const cleanedPod = cleanPodName(ws.name);
                   const podUsers = (cockpitData?.presenceMonitoring || []).filter(
                     (u) =>
-                      u.role !== 'SUPER_ADMIN' &&
+                      u.role !== 'TENANT_OWNER' &&
+                      u.role !== 'ADMIN' &&
                       (u.workspaceId === ws.id || u.podName === ws.name),
                   );
 
@@ -228,7 +229,7 @@ export function CockpitPersonnelTab({
                               <th className="py-3 px-4">Served Today (Daily)</th>
                               <th className="py-3 px-4">Lifetime Served</th>
                               <th className="py-3 px-4">Avg Handling Time</th>
-                              <th className="py-3 px-4 text-right">Super Admin Authority</th>
+                              <th className="py-3 px-4 text-right">Company Governance</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60 font-medium">

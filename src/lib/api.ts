@@ -6,7 +6,6 @@ import {
   SummarizeResponse,
   WorkspaceData,
   ValidateInviteResult,
-  OwnerAnalyticsData,
   PodInfo,
   OrganizationPodsResponse,
   GeneratePodsResponse,
@@ -19,7 +18,7 @@ import {
   LeaderTokenStatusResult,
   AgentTokenStatusResult,
   LeaderAgentTokenPreview,
-  SuperAdminCockpitData,
+  CompanyCockpitData,
   OnboardingDraft,
 } from './types';
 import { getSession } from './auth';
@@ -602,21 +601,6 @@ export async function setupWorkspaceCapacity(
   }
 }
 
-export async function fetchOwnerAnalytics(
-  identifier: string,
-): Promise<OwnerAnalyticsData | null> {
-  try {
-    const res = await authFetch(
-      `${API_BASE_URL}/analytics/owner-dashboard?identifier=${encodeURIComponent(identifier)}`,
-      { cache: 'no-store' },
-    );
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 export async function generatePodsForIndustry(
   industry: string,
   customDescription?: string,
@@ -883,14 +867,11 @@ export async function claimAgentToken(payload: {
   }
 }
 
-export async function fetchSuperAdminCockpit(
-  identifier: string,
-): Promise<SuperAdminCockpitData | null> {
+export async function fetchCompanyCockpit(): Promise<CompanyCockpitData | null> {
   try {
-    const res = await authFetch(
-      `${API_BASE_URL}/workspace/super-admin-cockpit?identifier=${encodeURIComponent(identifier)}`,
-      { cache: 'no-store' },
-    );
+    const res = await authFetch(`${API_BASE_URL}/workspace/cockpit`, {
+      cache: 'no-store',
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -1070,11 +1051,10 @@ export async function regenerateToken(
   }
 }
 
-export async function adminForceLogoutUser(
+export async function forceLogoutPersonnel(
   userId?: string,
   username?: string,
   token?: string,
-  requesterIdentifier?: string,
 ): Promise<{
   success: boolean;
   message?: string;
@@ -1084,7 +1064,7 @@ export async function adminForceLogoutUser(
     const res = await authFetch(`${API_BASE_URL}/workspace/force-logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, username, token, requesterIdentifier }),
+      body: JSON.stringify({ userId, username, token }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import type {
   CockpitWorkspaceItem,
-  SuperAdminCockpitData,
+  CompanyCockpitData,
 } from '../../lib/types';
 import {
   cleanPodName,
@@ -22,7 +22,7 @@ import {
 } from './cockpit.utils';
 
 export interface CockpitPersonnelModalsProps {
-  cockpitData: SuperAdminCockpitData;
+  cockpitData: CompanyCockpitData;
   workspaces: CockpitWorkspaceItem[];
   confirmForceLogoutTarget: ForceLogoutTarget | null;
   setConfirmForceLogoutTarget: React.Dispatch<React.SetStateAction<ForceLogoutTarget | null>>;

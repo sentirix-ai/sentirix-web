@@ -60,7 +60,6 @@ export default function LandingPage() {
   // Auth Modal State
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
-  const [loginRole, setLoginRole] = useState<'USER' | 'ADMIN'>('USER');
 
   // Login Form States
   const [loginIdentifier, setLoginIdentifier] = useState('');
@@ -360,7 +359,7 @@ export default function LandingPage() {
   useEffect(() => {
     const session = getSession();
     if (session) {
-      if (!session.onboardingCompleted && session.role !== 'SUPER_ADMIN' && session.role !== 'ADMIN') {
+      if (!session.onboardingCompleted && session.role !== 'TENANT_OWNER' && session.role !== 'ADMIN') {
         const uName = (session.username || '').toLowerCase();
         let targetStep = 1;
 
@@ -398,13 +397,13 @@ export default function LandingPage() {
 
       // 1. Check if user has an unfinished Step 4 Token Distribution session (Resilient restore on browser reopen/crash)
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sevaniq_onboarding_step') : null;
-      if (pendingStep === '4' || (!session.onboardingCompleted && (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN'))) {
+      if (pendingStep === '4' || (!session.onboardingCompleted && (session.role === 'TENANT_OWNER' || session.role === 'ADMIN'))) {
         router.push('/onboarding?step=4');
         return;
       }
 
-      if (session.role === 'SUPER_ADMIN' || session.role === 'ADMIN') {
-        router.push('/admin/cockpit');
+      if (session.role === 'TENANT_OWNER' || session.role === 'ADMIN') {
+        router.push('/cockpit');
       } else if (session.isGuestMember || session.onboardingCompleted) {
         router.push('/dashboard');
       } else {
@@ -436,7 +435,7 @@ export default function LandingPage() {
 
     try {
       setIsLoggingIn(true);
-      const res = await loginUser(loginIdentifier, loginPassword, loginRole);
+      const res = await loginUser(loginIdentifier, loginPassword);
 
       if (!res.success) {
         setLoginError(res.error || 'Invalid credentials.');
@@ -444,7 +443,7 @@ export default function LandingPage() {
       }
 
       // Check onboarding & role status:
-      if (!res.user?.onboardingCompleted && res.user?.role !== 'ADMIN') {
+      if (!res.user?.onboardingCompleted && res.user?.role !== 'TENANT_OWNER' && res.user?.role !== 'ADMIN') {
         const uName = (res.user?.username || '').toLowerCase();
         const uEmail = (res.user?.email || '').toLowerCase();
         let targetStep = 1;
@@ -482,14 +481,11 @@ export default function LandingPage() {
       }
 
       const pendingStep = typeof window !== 'undefined' ? localStorage.getItem('sevaniq_onboarding_step') : null;
-      if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') && res.user?.username?.toLowerCase() !== 'pungkyrama')) {
+      if (pendingStep === '4' || (!res.user?.onboardingCompleted && (res.user?.role === 'TENANT_OWNER' || res.user?.role === 'ADMIN'))) {
         router.push('/onboarding?step=4');
-      } else if (res.user?.username?.toLowerCase() === 'pungkyrama') {
-        // Platform Founder / Root Owner: enters Platform Overview in Cockpit
-        router.push('/admin/cockpit?view=platform');
-      } else if (res.user?.role === 'SUPER_ADMIN' || res.user?.role === 'ADMIN') {
-        // Business Tenant Owner (e.g. kuco.corp): enters Company Cockpit
-        router.push('/admin/cockpit');
+      } else if (res.user?.role === 'TENANT_OWNER' || res.user?.role === 'ADMIN') {
+        // Business Tenant Owner: enters Company Cockpit
+        router.push('/cockpit');
       } else if (res.user?.isGuestMember || res.user?.onboardingCompleted) {
         // Frontline Staff (Leaders & Agents: Meta, Mimi, etc): enters Ticket Workbench
         router.push('/dashboard');
@@ -596,7 +592,6 @@ export default function LandingPage() {
   const handleProceedToLogin = () => {
     setShowVerificationNotice(false);
     setAuthMode('LOGIN');
-    setLoginRole('USER');
     setLoginIdentifier(createdUsernameNotice || signupEmail);
     setLoginPassword('');
     setSignupConfirmPassword('');
@@ -668,7 +663,6 @@ export default function LandingPage() {
             <button
               onClick={() => {
                 setAuthMode('LOGIN');
-                setLoginRole('USER');
                 setLoginIdentifier('');
                 setLoginPassword('');
                 setLoginError(null);

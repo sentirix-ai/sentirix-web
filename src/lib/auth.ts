@@ -6,7 +6,8 @@ export interface UserSession {
   fullName?: string;
   email: string;
   phone?: string;
-  role: 'SUPER_ADMIN' | 'POD_LEADER' | 'AGENT' | 'CUSTOMER' | 'ADMIN' | 'USER' | 'LEADER';
+  role: 'TENANT_OWNER' | 'POD_LEADER' | 'AGENT' | 'CUSTOMER' | 'ADMIN' | 'USER' | 'LEADER';
+  organizationId?: string;
   workspaceRole?: string;
   isGuestMember?: boolean;
   workspaceId?: string;
@@ -216,7 +217,6 @@ export async function registerUser(params: {
 export async function loginUser(
   identifier: string,
   password: string,
-  targetRole: 'USER' | 'ADMIN' = 'USER',
 ): Promise<{ success: boolean; user?: UserSession; error?: string }> {
   const cleanId = identifier.trim();
 
@@ -228,7 +228,6 @@ export async function loginUser(
       body: JSON.stringify({
         identifier: cleanId,
         password,
-        role: targetRole,
       }),
     });
 
@@ -240,6 +239,7 @@ export async function loginUser(
         email: data.email,
         phone: data.phone,
         role: data.role,
+        organizationId: data.organizationId ?? undefined,
         verificationMethod: data.verificationMethod,
         isVerified: data.isVerified,
         avatarText: data.avatarText,
@@ -258,13 +258,7 @@ export async function loginUser(
       return { success: false, error: message };
     }
   } catch {
-    // 2. Resilient Offline Local Fallback (never allow offline admin bypass)
-    if (targetRole === 'ADMIN') {
-      return {
-        success: false,
-        error: 'Unable to verify administrator credentials while offline. Please ensure the backend server is running.',
-      };
-    }
+    // 2. Resilient Offline Local Fallback (only for non-owner frontline members)
 
     const users = getRegisteredUsers();
     const lowerId = cleanId.toLowerCase();
@@ -395,7 +389,7 @@ export function setSession(session: UserSession): void {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: session.id,
-        role: session.role === 'SUPER_ADMIN' || session.role === 'ADMIN' ? 'SUPER_ADMIN' : session.role === 'POD_LEADER' || session.role === 'LEADER' ? 'POD_LEADER' : 'AGENT',
+        role: session.role === 'TENANT_OWNER' || session.role === 'ADMIN' ? 'TENANT_OWNER' : session.role === 'POD_LEADER' || session.role === 'LEADER' ? 'POD_LEADER' : 'AGENT',
         workspaceId: session.workspaceId,
       }),
     }).catch(() => {});
