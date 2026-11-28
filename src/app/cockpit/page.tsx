@@ -86,14 +86,17 @@ export default function CompanyCockpitPage() {
   const [editNameError, setEditNameError] = useState<string | null>(null);
   const [personnelSearchQuery, setPersonnelSearchQuery] = useState('');
 
-  // Commercial Monetization & Horizontal Expansion: Deploy Specialized Pod ($149/mo)
+  // Commercial Monetization & Horizontal Expansion: Deploy Specialized Pod(s)
   const [isCreatePodOpen, setIsCreatePodOpen] = useState(false);
-  const [newPodServicesSelection, setNewPodServicesSelection] = useState<string[]>([]);
+  const [deployPodStep, setDeployPodStep] = useState<1 | 2>(1);
+  const [showPodCapacityNotice, setShowPodCapacityNotice] = useState(false);
+  const [additionalMembersInput, setAdditionalMembersInput] = useState<number>(8);
+  const [isNewCapacityLocked, setIsNewCapacityLocked] = useState<boolean>(false);
+  const [newPodsDraft, setNewPodsDraft] = useState<Array<{ name: string; seats: number; services: string[] }>>([]);
   const [customServicesList, setCustomServicesList] = useState<string[]>([]);
   const [newCustomServiceInput, setNewCustomServiceInput] = useState('');
   const [editingCustomServiceName, setEditingCustomServiceName] = useState<string | null>(null);
   const [editingCustomServiceText, setEditingCustomServiceText] = useState('');
-  const [newPodCapacity, setNewPodCapacity] = useState<number>(2);
   const [isDeployingPod, setIsDeployingPod] = useState(false);
   const [createPodError, setCreatePodError] = useState<string | null>(null);
 
@@ -270,15 +273,24 @@ export default function CompanyCockpitPage() {
   // Pod Allocation & Naming Governance:
   const workspaces = cockpitData?.workspaces || [];
   const currentPodsCount = workspaces.length;
-  const nextPodSequenceNumber = currentPodsCount + 1;
-  const autoPodName = nextPodSequenceNumber < 10 ? `Pod 0${nextPodSequenceNumber}` : `Pod ${nextPodSequenceNumber}`;
+  const underfilledPods = workspaces.filter((w) => (w.assignedQuota || w.maxMembers || 0) < 8);
+  const calculatedNewPodCount = Math.max(1, Math.ceil((Number(additionalMembersInput) || 1) / 8));
 
-  // Service Catalog & Allocation Mapping (Option A: Checklist with informative pod badges)
+  const calculateBalancedSeats = (totalMembers: number, podCount: number): number[] => {
+    if (podCount <= 0) return [];
+    const base = Math.floor(totalMembers / podCount);
+    const remainder = totalMembers % podCount;
+    const result: number[] = [];
+    for (let i = 0; i < podCount; i++) {
+      result.push(base + (i < remainder ? 1 : 0));
+    }
+    return result;
+  };
+
+  // Service Catalog & Allocation Mapping (Preserves existing org services from initial setup)
   const currentOrgIndustry = cockpitData?.organization?.industry || 'OTHER';
   const existingWsServices: string[] = Array.from(new Set(workspaces.flatMap((w) => w.services || [])));
 
-  // Prioritas utama: Jika organisasi sudah memiliki Pod di database, gunakan tepat 6 layanan yang sudah aktif di pod tersebut!
-  // Fallback: Jika pod masih kosong, gunakan 6 layanan preset dari industrinya (atau OTHER jika custom).
   const baseCatalogServices: string[] =
     existingWsServices.length > 0
       ? existingWsServices
@@ -298,9 +310,78 @@ export default function CompanyCockpitPage() {
     });
   });
 
-  const handleToggleService = (svc: string) => {
-    setNewPodServicesSelection((prev) =>
-      prev.includes(svc) ? prev.filter((s) => s !== svc) : [...prev, svc],
+  const handleLockNewPodCapacity = () => {
+    if (!additionalMembersInput || additionalMembersInput < 1) {
+      setCreatePodError('Specify at least 1 team member.');
+      return;
+    }
+    setCreatePodError(null);
+    const podCount = Math.max(1, Math.ceil(additionalMembersInput / 8));
+    const balanced = calculateBalancedSeats(additionalMembersInput, podCount);
+    const unassigned = allAvailableServices.filter(
+      (s) => !workspaces.some((w) => (w.services || []).includes(s)),
+    );
+
+    const nextPods: Array<{ name: string; seats: number; services: string[] }> = [];
+    for (let i = 0; i < podCount; i++) {
+      const seqNum = currentPodsCount + i + 1;
+      const podLabel = seqNum < 10 ? `Pod 0${seqNum}` : `Pod ${seqNum}`;
+      const existingDraft = newPodsDraft[i];
+      const defaultSvc =
+        unassigned[i % Math.max(1, unassigned.length)] ||
+        allAvailableServices[i % Math.max(1, allAvailableServices.length)];
+      nextPods.push({
+        name: podLabel,
+        seats: balanced[i] || 1,
+        services:
+          existingDraft?.services && existingDraft.services.length > 0
+            ? existingDraft.services
+            : defaultSvc
+            ? [defaultSvc]
+            : [],
+      });
+    }
+
+    setNewPodsDraft(nextPods);
+    setIsNewCapacityLocked(true);
+  };
+
+  const handleUnlockNewPodCapacity = () => {
+    setIsNewCapacityLocked(false);
+    setCreatePodError(null);
+  };
+
+  const handleAdjustNewPodSeats = (podIndex: number, delta: number) => {
+    setNewPodsDraft((prev) =>
+      prev.map((p, idx) => {
+        if (idx !== podIndex) return p;
+        const nextSeats = Math.min(8, Math.max(1, p.seats + delta));
+        return { ...p, seats: nextSeats };
+      }),
+    );
+  };
+
+  const handleResetNewPodSeatsToBalanced = () => {
+    const podCount = Math.max(1, Math.ceil(additionalMembersInput / 8));
+    const balanced = calculateBalancedSeats(additionalMembersInput, podCount);
+    setNewPodsDraft((prev) =>
+      prev.map((p, idx) => ({
+        ...p,
+        seats: balanced[idx] || 1,
+      })),
+    );
+  };
+
+  const handleToggleServiceForNewPod = (podIndex: number, svc: string) => {
+    setNewPodsDraft((prev) =>
+      prev.map((p, idx) => {
+        if (idx !== podIndex) return p;
+        const exists = p.services.includes(svc);
+        return {
+          ...p,
+          services: exists ? p.services.filter((s) => s !== svc) : [...p.services, svc],
+        };
+      }),
     );
     if (createPodError) setCreatePodError(null);
   };
@@ -308,11 +389,8 @@ export default function CompanyCockpitPage() {
   const handleAddCustomService = () => {
     const clean = newCustomServiceInput.trim();
     if (!clean) return;
-    if (!customServicesList.some((s) => s.toLowerCase() === clean.toLowerCase())) {
+    if (!allAvailableServices.some((s) => s.toLowerCase() === clean.toLowerCase())) {
       setCustomServicesList((prev) => [...prev, clean]);
-    }
-    if (!newPodServicesSelection.includes(clean)) {
-      setNewPodServicesSelection((prev) => [...prev, clean]);
     }
     setNewCustomServiceInput('');
     if (createPodError) setCreatePodError(null);
@@ -320,7 +398,12 @@ export default function CompanyCockpitPage() {
 
   const handleDeleteCustomService = (svcToDelete: string) => {
     setCustomServicesList((prev) => prev.filter((s) => s !== svcToDelete));
-    setNewPodServicesSelection((prev) => prev.filter((s) => s !== svcToDelete));
+    setNewPodsDraft((prev) =>
+      prev.map((p) => ({
+        ...p,
+        services: p.services.filter((s) => s !== svcToDelete),
+      })),
+    );
     if (editingCustomServiceName === svcToDelete) {
       setEditingCustomServiceName(null);
       setEditingCustomServiceText('');
@@ -340,7 +423,12 @@ export default function CompanyCockpitPage() {
       return;
     }
     setCustomServicesList((prev) => prev.map((s) => (s === oldName ? clean : s)));
-    setNewPodServicesSelection((prev) => prev.map((s) => (s === oldName ? clean : s)));
+    setNewPodsDraft((prev) =>
+      prev.map((p) => ({
+        ...p,
+        services: p.services.map((s) => (s === oldName ? clean : s)),
+      })),
+    );
     setEditingCustomServiceName(null);
     setEditingCustomServiceText('');
   };
@@ -352,26 +440,33 @@ export default function CompanyCockpitPage() {
 
   const handleDeploySpecializedPod = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPodServicesSelection.length === 0) {
-      setCreatePodError('Please select at least 1 service category for this pod.');
+    if (newPodsDraft.length === 0) {
+      setCreatePodError('Lock headcount allocation before deploying.');
+      return;
+    }
+    const missingServicesPod = newPodsDraft.find((p) => p.services.length === 0);
+    if (missingServicesPod) {
+      setCreatePodError(`Select at least 1 service category for ${missingServicesPod.name}.`);
       return;
     }
     try {
       setIsDeployingPod(true);
       setCreatePodError(null);
 
-      const res = await createSpecializedPod({
-        name: autoPodName,
-        podCategory: 'SPECIALIZED',
-        services: newPodServicesSelection,
-        quota: newPodCapacity,
-        organizationId: cockpitData?.organization?.id,
-        requesterIdentifier: session?.username || session?.id,
-      });
+      for (const pod of newPodsDraft) {
+        const res = await createSpecializedPod({
+          name: pod.name,
+          podCategory: 'SPECIALIZED',
+          services: pod.services,
+          quota: pod.seats,
+          organizationId: cockpitData?.organization?.id,
+          requesterIdentifier: session?.username || session?.id,
+        });
 
-      if (!res.success) {
-        setCreatePodError(res.error || 'Failed to deploy specialized pod.');
-        return;
+        if (!res.success) {
+          setCreatePodError(res.error || `Failed to deploy ${pod.name}.`);
+          return;
+        }
       }
 
       setIsCreatePodOpen(false);
@@ -382,7 +477,7 @@ export default function CompanyCockpitPage() {
         await loadData(session, false);
       }
     } catch {
-      setCreatePodError('Network error while provisioning specialized pod.');
+      setCreatePodError('Network error while provisioning pods.');
     } finally {
       setIsDeployingPod(false);
     }
@@ -437,17 +532,21 @@ export default function CompanyCockpitPage() {
 
 
   const handleOpenCreatePod = () => {
-    const unassigned = allAvailableServices.filter(
-      (s) => !workspaces.some((w) => (w.services || []).includes(s)),
-    );
-    setNewPodServicesSelection(
-      unassigned.length > 0 ? [unassigned[0]] : allAvailableServices.slice(0, 1),
-    );
     setNewCustomServiceInput('');
     setEditingCustomServiceName(null);
     setEditingCustomServiceText('');
-    setNewPodCapacity(2);
     setCreatePodError(null);
+
+    if (underfilledPods.length > 0) {
+      setShowPodCapacityNotice(true);
+      return;
+    }
+
+    setShowPodCapacityNotice(false);
+    setDeployPodStep(1);
+    setAdditionalMembersInput(8);
+    setIsNewCapacityLocked(false);
+    setNewPodsDraft([]);
     setIsCreatePodOpen(true);
   };
 
@@ -927,6 +1026,8 @@ export default function CompanyCockpitPage() {
             regeneratingToken={regeneratingToken}
             freshRegeneratedTokens={freshRegeneratedTokens}
             forcingLogoutUser={forcingLogoutUser}
+            showPodCapacityNotice={showPodCapacityNotice}
+            onDismissPodCapacityNotice={() => setShowPodCapacityNotice(false)}
             handleCopyLink={handleCopyLink}
             handleRegenerateToken={handleRegenerateToken}
             onOpenCreatePod={handleOpenCreatePod}
@@ -985,21 +1086,30 @@ export default function CompanyCockpitPage() {
         <CockpitPodModals
           isCreatePodOpen={isCreatePodOpen}
           setIsCreatePodOpen={setIsCreatePodOpen}
-          autoPodName={autoPodName}
+          deployPodStep={deployPodStep}
+          setDeployPodStep={setDeployPodStep}
+          additionalMembersInput={additionalMembersInput}
+          setAdditionalMembersInput={setAdditionalMembersInput}
+          calculatedNewPodCount={calculatedNewPodCount}
+          isNewCapacityLocked={isNewCapacityLocked}
+          setIsNewCapacityLocked={setIsNewCapacityLocked}
+          newPodsDraft={newPodsDraft}
+          handleLockNewPodCapacity={handleLockNewPodCapacity}
+          handleUnlockNewPodCapacity={handleUnlockNewPodCapacity}
+          handleAdjustNewPodSeats={handleAdjustNewPodSeats}
+          handleResetNewPodSeatsToBalanced={handleResetNewPodSeatsToBalanced}
           allAvailableServices={allAvailableServices}
           servicePodMap={servicePodMap}
-          newPodServicesSelection={newPodServicesSelection}
           customServicesList={customServicesList}
           newCustomServiceInput={newCustomServiceInput}
           setNewCustomServiceInput={setNewCustomServiceInput}
           editingCustomServiceName={editingCustomServiceName}
           editingCustomServiceText={editingCustomServiceText}
           setEditingCustomServiceText={setEditingCustomServiceText}
-          newPodCapacity={newPodCapacity}
-          setNewPodCapacity={setNewPodCapacity}
           isDeployingPod={isDeployingPod}
           createPodError={createPodError}
-          handleToggleService={handleToggleService}
+          setCreatePodError={setCreatePodError}
+          handleToggleServiceForNewPod={handleToggleServiceForNewPod}
           handleAddCustomService={handleAddCustomService}
           handleDeleteCustomService={handleDeleteCustomService}
           handleStartEditCustomService={handleStartEditCustomService}

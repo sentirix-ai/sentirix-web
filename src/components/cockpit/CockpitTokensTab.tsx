@@ -2,6 +2,7 @@
 
 import React from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Crown,
   Lock,
@@ -10,9 +11,10 @@ import {
   RefreshCw,
   ShieldCheck,
   Unlock,
+  X,
 } from 'lucide-react';
 import type { CockpitTokenAuditItem, CockpitWorkspaceItem } from '../../lib/types';
-import type { ForceLogoutTarget } from './cockpit.utils';
+import { cleanPodName, type ForceLogoutTarget } from './cockpit.utils';
 
 export interface CockpitTokensTabProps {
   workspaces: CockpitWorkspaceItem[];
@@ -22,6 +24,8 @@ export interface CockpitTokensTabProps {
   regeneratingToken: string | null;
   freshRegeneratedTokens: Set<string>;
   forcingLogoutUser: string | null;
+  showPodCapacityNotice: boolean;
+  onDismissPodCapacityNotice: () => void;
   handleCopyLink: (token: string) => void;
   handleRegenerateToken: (oldToken: string) => Promise<void>;
   onOpenCreatePod: () => void;
@@ -38,36 +42,90 @@ export function CockpitTokensTab({
   regeneratingToken,
   freshRegeneratedTokens,
   forcingLogoutUser,
+  showPodCapacityNotice,
+  onDismissPodCapacityNotice,
   handleCopyLink,
   handleRegenerateToken,
   onOpenCreatePod,
   onOpenAddSeat,
   onRequestForceLogout,
 }: CockpitTokensTabProps) {
+  const underfilledPods = workspaces.filter(
+    (ws) => (ws.assignedQuota || ws.maxMembers || 0) < 8,
+  );
+  const shouldShowCapacityNotice = showPodCapacityNotice && underfilledPods.length > 0;
+
   return (
           <section className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2.5">
-                  <ShieldCheck className="w-5 h-5 text-blue-400" />
-                  <span>Single-Use Token Audit &amp; Credential Governance Hub</span>
-                  <span className="text-xs font-mono font-semibold text-blue-300 bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-800/60">
-                    {tokenAudit.length} Registered Tokens
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Cryptographic single-use token lifecycle &amp; capacity issuance. Provision new pods or expand agent seats with strict quota lock enforcement.
-                </p>
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2.5">
+                    <ShieldCheck className="w-5 h-5 text-blue-400" />
+                    <span>Single-Use Token Audit &amp; Credential Governance Hub</span>
+                    <span className="text-xs font-mono font-semibold text-blue-300 bg-blue-950/80 px-2.5 py-0.5 rounded-full border border-blue-800/60">
+                      {tokenAudit.length} Registered Tokens
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Cryptographic single-use token lifecycle &amp; capacity issuance. Provision new pods or expand agent seats with strict quota lock enforcement.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onOpenCreatePod}
+                  className="px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg border cursor-pointer shrink-0 self-start sm:self-auto group bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/25 border-blue-400/30"
+                >
+                  <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
+                  <span>Deploy New Pod</span>
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={onOpenCreatePod}
-                className="px-4 py-2.5 rounded-xl text-white text-xs font-bold transition-all flex items-center gap-2 shadow-lg border cursor-pointer shrink-0 self-start sm:self-auto group bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 shadow-blue-600/25 border-blue-400/30"
-              >
-                <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform duration-200" />
-                <span>Deploy New Pod</span>
-              </button>
+              {shouldShowCapacityNotice && (
+                <div
+                  role="alert"
+                  className="rounded-xl bg-[#0F172A] border border-amber-500/40 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-150"
+                >
+                  <div className="flex items-start sm:items-center gap-2.5 text-xs text-slate-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                    <span>
+                      <strong className="text-amber-300 font-semibold">
+                        Capacity requirement not met.
+                      </strong>{' '}
+                      Fill existing pods to 8 members before deploying a new pod (
+                      {underfilledPods
+                        .map(
+                          (ws) =>
+                            `${cleanPodName(ws.name)}: ${ws.assignedQuota || ws.maxMembers || 0}/8`,
+                        )
+                        .join(', ')}
+                      ).
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {underfilledPods.map((ws) => (
+                      <button
+                        key={ws.id}
+                        type="button"
+                        onClick={() => onOpenAddSeat(ws)}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/40 text-emerald-300 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Expand {cleanPodName(ws.name)}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={onDismissPodCapacityNotice}
+                      aria-label="Dismiss notice"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {workspaces.length === 0 && tokenAudit.length === 0 ? (

@@ -3,11 +3,17 @@
 import React from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   Building2,
   Check,
+  GitFork,
+  Lock,
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
+  ShieldCheck,
   Trash2,
   UserPlus,
   Users,
@@ -16,24 +22,39 @@ import {
 import type { CockpitWorkspaceItem } from '../../lib/types';
 import { cleanPodName } from './cockpit.utils';
 
+export interface NewPodDraftItem {
+  name: string;
+  seats: number;
+  services: string[];
+}
+
 export interface CockpitPodModalsProps {
   isCreatePodOpen: boolean;
   setIsCreatePodOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  autoPodName: string;
+  deployPodStep: 1 | 2;
+  setDeployPodStep: React.Dispatch<React.SetStateAction<1 | 2>>;
+  additionalMembersInput: number;
+  setAdditionalMembersInput: React.Dispatch<React.SetStateAction<number>>;
+  calculatedNewPodCount: number;
+  isNewCapacityLocked: boolean;
+  setIsNewCapacityLocked: React.Dispatch<React.SetStateAction<boolean>>;
+  newPodsDraft: NewPodDraftItem[];
+  handleLockNewPodCapacity: () => void;
+  handleUnlockNewPodCapacity: () => void;
+  handleAdjustNewPodSeats: (podIndex: number, delta: number) => void;
+  handleResetNewPodSeatsToBalanced: () => void;
   allAvailableServices: string[];
   servicePodMap: Record<string, string[]>;
-  newPodServicesSelection: string[];
   customServicesList: string[];
   newCustomServiceInput: string;
   setNewCustomServiceInput: React.Dispatch<React.SetStateAction<string>>;
   editingCustomServiceName: string | null;
   editingCustomServiceText: string;
   setEditingCustomServiceText: React.Dispatch<React.SetStateAction<string>>;
-  newPodCapacity: number;
-  setNewPodCapacity: React.Dispatch<React.SetStateAction<number>>;
   isDeployingPod: boolean;
   createPodError: string | null;
-  handleToggleService: (svc: string) => void;
+  setCreatePodError: React.Dispatch<React.SetStateAction<string | null>>;
+  handleToggleServiceForNewPod: (podIndex: number, svc: string) => void;
   handleAddCustomService: () => void;
   handleDeleteCustomService: (svcToDelete: string) => void;
   handleStartEditCustomService: (svc: string) => void;
@@ -49,25 +70,34 @@ export interface CockpitPodModalsProps {
   handleAddSeatsToPod: (e: React.FormEvent) => Promise<void>;
 }
 
-/** Deploy specialized pod & add seat capacity expansion modals. */
+/** Deploy new operational pods (gated by 8-member capacity) & add seat capacity expansion modals. */
 export function CockpitPodModals({
   isCreatePodOpen,
   setIsCreatePodOpen,
-  autoPodName,
+  deployPodStep,
+  setDeployPodStep,
+  additionalMembersInput,
+  setAdditionalMembersInput,
+  calculatedNewPodCount,
+  isNewCapacityLocked,
+  setIsNewCapacityLocked,
+  newPodsDraft,
+  handleLockNewPodCapacity,
+  handleUnlockNewPodCapacity,
+  handleAdjustNewPodSeats,
+  handleResetNewPodSeatsToBalanced,
   allAvailableServices,
   servicePodMap,
-  newPodServicesSelection,
   customServicesList,
   newCustomServiceInput,
   setNewCustomServiceInput,
   editingCustomServiceName,
   editingCustomServiceText,
   setEditingCustomServiceText,
-  newPodCapacity,
-  setNewPodCapacity,
   isDeployingPod,
   createPodError,
-  handleToggleService,
+  setCreatePodError,
+  handleToggleServiceForNewPod,
   handleAddCustomService,
   handleDeleteCustomService,
   handleStartEditCustomService,
@@ -82,22 +112,35 @@ export function CockpitPodModals({
   addSeatError,
   handleAddSeatsToPod,
 }: CockpitPodModalsProps) {
+  const totalNewAllocatedSeats = newPodsDraft.reduce((sum, p) => sum + (p.seats || 0), 0);
+  const isNewAllocationBalanced =
+    isNewCapacityLocked && totalNewAllocatedSeats === additionalMembersInput;
+
   return (
     <>
         {isCreatePodOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+            <div className="bg-[#111827] border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
               {/* Header */}
-              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
+              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#0F172A]">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-500/40 text-blue-400 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl border flex items-center justify-center bg-blue-600/20 border-blue-500/40 text-blue-400">
                     <Building2 className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-white">Deploy New Pod</h3>
+                    <div className="flex items-center gap-2.5">
+                      <h3 className="text-sm font-bold text-white tracking-tight">
+                        Deploy New Pod
+                      </h3>
+                      <span className="text-[10px] font-mono font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                        Step {deployPodStep} of 2
+                      </span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Set up a dedicated operational unit and assign service coverage</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {deployPodStep === 1
+                        ? 'Specify additional headcount to calculate and lock pod seat allocations.'
+                        : 'Assign ticket categories to each new pod while preserving existing service baselines.'}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -105,229 +148,164 @@ export function CockpitPodModals({
                   onClick={() => {
                     if (!isDeployingPod) setIsCreatePodOpen(false);
                   }}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors"
+                  className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                  aria-label="Close modal"
                 >
-                  ✕
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* Body */}
               <div className="p-6 overflow-y-auto space-y-5 flex-1">
-                <form onSubmit={handleDeploySpecializedPod} className="space-y-4">
-                    {/* 1. Pod Name (Auto-calculated & Locked) */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-200 block">
-                        Pod Name
-                      </label>
-                      <div className="w-full bg-[#0B0F19] border border-slate-700/80 rounded-xl px-3.5 py-2.5 flex items-center">
-                        <span className="text-xs font-mono font-bold text-white tracking-wide flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                          {autoPodName}
-                        </span>
+                {deployPodStep === 1 && (
+                  <div className="space-y-5">
+                    <div className="p-5 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                          Additional Team Members
+                        </label>
+                        {isNewCapacityLocked && (
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-[11px] font-bold flex items-center gap-1.5">
+                              <Lock className="w-3 h-3" />
+                              <span>LOCKED</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleUnlockNewPodCapacity}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer border border-slate-700"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                        <input
+                          type="number"
+                          min={1}
+                          max={500}
+                          disabled={isNewCapacityLocked}
+                          value={additionalMembersInput}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            const nextVal = isNaN(val) ? 1 : Math.max(1, val);
+                            setAdditionalMembersInput(nextVal);
+                            setIsNewCapacityLocked(false);
+                          }}
+                          className={`w-full sm:w-40 bg-[#111827] border-2 text-white text-2xl font-black rounded-xl px-4 py-2.5 text-center font-mono focus:outline-hidden transition-all ${
+                            isNewCapacityLocked
+                              ? 'border-emerald-500/50 bg-emerald-950/10 text-emerald-200 cursor-not-allowed'
+                              : 'border-blue-500/60 focus:border-blue-400'
+                          }`}
+                        />
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          With <strong className="text-white">{additionalMembersInput} {additionalMembersInput === 1 ? 'member' : 'members'}</strong>, Sevaniq provisions{' '}
+                          <strong className="text-emerald-400">
+                            {calculatedNewPodCount} new {calculatedNewPodCount === 1 ? 'pod' : 'pods'}
+                          </strong>{' '}
+                          (up to 8 members per pod).
+                        </p>
+                      </div>
+
+                      {!isNewCapacityLocked && (
+                        <div className="pt-3 border-t border-slate-800/80 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={handleLockNewPodCapacity}
+                            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/20"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Lock &amp; Allocate Capacity</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* 2. Service Selection (Checklist Model with Informative Badges) */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-200 block">
-                          Service Coverage
-                        </label>
-                        <span className="text-[11px] text-slate-400 font-mono">
-                          {newPodServicesSelection.length} Selected
-                        </span>
-                      </div>
-
-                      <div className="bg-[#0B0F19] border border-slate-700/80 rounded-xl p-2 max-h-56 overflow-y-auto space-y-1.5">
-                        {allAvailableServices.map((svc) => {
-                          const isChecked = newPodServicesSelection.includes(svc);
-                          const assignedPods = servicePodMap[svc] || [];
-                          const isCustom = customServicesList.includes(svc);
-                          const isEditing = editingCustomServiceName === svc;
-
-                          if (isEditing) {
-                            return (
-                              <div
-                                key={svc}
-                                className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900 border border-blue-500/80 shadow-md"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="text"
-                                  autoFocus
-                                  value={editingCustomServiceText}
-                                  onChange={(e) => setEditingCustomServiceText(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSaveEditCustomService(svc);
-                                    } else if (e.key === 'Escape') {
-                                      e.preventDefault();
-                                      handleCancelEditCustomService();
-                                    }
-                                  }}
-                                  className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-                                  placeholder="Service name..."
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveEditCustomService(svc)}
-                                  title="Save Changes"
-                                  className="p-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors cursor-pointer"
-                                >
-                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleCancelEditCustomService}
-                                  title="Cancel"
-                                  className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            );
-                          }
-
-                          return (
-                            <div
-                              key={svc}
-                              onClick={() => handleToggleService(svc)}
-                              className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer select-none group/item ${
-                                isChecked
-                                  ? 'bg-blue-950/40 border-blue-500/50 text-white shadow-sm shadow-blue-950/50'
-                                  : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                    {isNewCapacityLocked && (
+                      <div className="p-5 rounded-xl bg-[#0B0F19] border border-blue-500/30 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800">
+                          <h4 className="text-xs font-bold text-white flex items-center gap-2 font-mono">
+                            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                            <span>Pod Seat Distribution</span>
+                          </h4>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
+                                isNewAllocationBalanced
+                                  ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-400'
+                                  : 'bg-amber-950/80 border-amber-500/40 text-amber-400'
                               }`}
                             >
-                              <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                <div
-                                  className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0 ${
-                                    isChecked
-                                      ? 'bg-blue-600 border-blue-500 text-white'
-                                      : 'border-slate-600 bg-slate-800/80'
-                                  }`}
-                                >
-                                  {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                                </div>
-                                <span className="text-xs font-medium truncate">{svc}</span>
-                              </div>
-
-                              {/* Option A Informative Badges & Actions */}
-                              <div className="shrink-0 flex items-center gap-1.5">
-                                {isCustom ? (
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleStartEditCustomService(svc);
-                                      }}
-                                      title="Edit Custom Service Name"
-                                      className="p-1 rounded-md hover:bg-slate-800 text-slate-400 hover:text-blue-300 transition-colors cursor-pointer"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteCustomService(svc);
-                                      }}
-                                      title="Delete Custom Service"
-                                      className="p-1 rounded-md hover:bg-red-950/60 text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ) : (
-                                  assignedPods.length > 0 ? (
-                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                                      In {assignedPods.join(', ')}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-500/30">
-                                      Unassigned
-                                    </span>
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Inline Add Custom Service */}
-                      <div className="flex items-center gap-2 pt-1">
-                        <input
-                          type="text"
-                          disabled={isDeployingPod}
-                          placeholder="e.g., VIP Account Escalations..."
-                          value={newCustomServiceInput}
-                          onChange={(e) => setNewCustomServiceInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddCustomService();
-                            }
-                          }}
-                          className="flex-1 bg-[#0B0F19] border border-slate-700/80 focus:border-blue-500 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition-all"
-                        />
-                        <button
-                          type="button"
-                          disabled={isDeployingPod || !newCustomServiceInput.trim()}
-                          onClick={handleAddCustomService}
-                          className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Add</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 3. Pod Capacity (Flexible 2 - 8 Members) */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-200 block">
-                        Pod Capacity
-                      </label>
-                      <div className="w-full bg-[#0B0F19] border border-slate-700/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <Users className="w-4 h-4 text-blue-400 shrink-0" />
-                          <div>
-                            <span className="text-xs font-bold text-white font-mono">
-                              {newPodCapacity} Members
+                              {isNewAllocationBalanced ? (
+                                <Check className="w-3 h-3" />
+                              ) : (
+                                <AlertTriangle className="w-3 h-3" />
+                              )}
+                              <span>
+                                {totalNewAllocatedSeats} / {additionalMembersInput} Seats Allocated
+                              </span>
                             </span>
-                            <p className="text-[11px] text-slate-400 mt-0.5">
-                              1 Pod Leader + {newPodCapacity - 1} Support Agent{newPodCapacity - 1 > 1 ? 's' : ''}
-                            </p>
+                            {!isNewAllocationBalanced && (
+                              <button
+                                type="button"
+                                onClick={handleResetNewPodSeatsToBalanced}
+                                className="text-[11px] font-mono text-slate-300 hover:text-white bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Auto-Balance</span>
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        {/* Stepper Controls: Strict Bounds [2, 8] */}
-                        <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700/80 rounded-lg p-1">
-                          <button
-                            type="button"
-                            disabled={isDeployingPod || newPodCapacity <= 2}
-                            onClick={() => setNewPodCapacity((prev) => Math.max(2, prev - 1))}
-                            className="w-7 h-7 rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-white font-bold flex items-center justify-center transition-all cursor-pointer disabled:cursor-not-allowed select-none text-sm"
-                            title="Decrease capacity"
-                          >
-                            -
-                          </button>
-                          <span className="w-6 text-center text-xs font-mono font-bold text-white select-none">
-                            {newPodCapacity}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={isDeployingPod || newPodCapacity >= 8}
-                            onClick={() => setNewPodCapacity((prev) => Math.min(8, prev + 1))}
-                            className="w-7 h-7 rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-white font-bold flex items-center justify-center transition-all cursor-pointer disabled:cursor-not-allowed select-none text-sm"
-                            title="Increase capacity"
-                          >
-                            +
-                          </button>
+                        <div className="space-y-2.5">
+                          {newPodsDraft.map((pod, idx) => (
+                            <div
+                              key={pod.name}
+                              className="p-3 rounded-xl bg-[#111827] border border-slate-800 flex items-center justify-between gap-3"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <Users className="w-4 h-4 text-blue-400 shrink-0" />
+                                <div>
+                                  <div className="text-xs font-mono font-bold text-white">
+                                    {pod.name}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400">
+                                    1 Pod Leader + {Math.max(0, pod.seats - 1)} Support {pod.seats - 1 === 1 ? 'Agent' : 'Agents'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700/80 rounded-lg p-1">
+                                <button
+                                  type="button"
+                                  disabled={pod.seats <= 1}
+                                  onClick={() => handleAdjustNewPodSeats(idx, -1)}
+                                  className="w-7 h-7 rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white font-bold flex items-center justify-center cursor-pointer disabled:cursor-not-allowed text-sm"
+                                >
+                                  -
+                                </button>
+                                <span className="w-6 text-center text-xs font-mono font-bold text-white">
+                                  {pod.seats}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={pod.seats >= 8}
+                                  onClick={() => handleAdjustNewPodSeats(idx, 1)}
+                                  className="w-7 h-7 rounded-md bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-white font-bold flex items-center justify-center cursor-pointer disabled:cursor-not-allowed text-sm"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {createPodError && (
                       <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
@@ -339,31 +317,255 @@ export function CockpitPodModals({
                     <div className="pt-2 flex items-center justify-end gap-2.5">
                       <button
                         type="button"
-                        disabled={isDeployingPod}
                         onClick={() => setIsCreatePodOpen(false)}
-                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
                       >
                         Cancel
                       </button>
                       <button
-                        type="submit"
-                        disabled={isDeployingPod || newPodServicesSelection.length === 0}
-                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                        type="button"
+                        disabled={!isNewAllocationBalanced}
+                        onClick={() => setDeployPodStep(2)}
+                        className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                       >
-                        {isDeployingPod ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Creating {autoPodName}...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Deploy {autoPodName} &amp; Issue Token</span>
-                          </>
-                        )}
+                        <span>Continue to Services</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {deployPodStep === 2 && (
+                  <form onSubmit={handleDeploySpecializedPod} className="space-y-5">
+                    {/* Add Custom Ticket Category */}
+                    <div className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-2.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block">
+                        Add Custom Ticket Category
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          disabled={isDeployingPod}
+                          placeholder="e.g., VIP Account Escalations"
+                          value={newCustomServiceInput}
+                          onChange={(e) => setNewCustomServiceInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddCustomService();
+                            }
+                          }}
+                          className="flex-1 bg-[#111827] border border-slate-700/80 focus:border-blue-500 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none transition-all"
+                        />
+                        <button
+                          type="button"
+                          disabled={isDeployingPod || !newCustomServiceInput.trim()}
+                          onClick={handleAddCustomService}
+                          className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 cursor-pointer shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Category</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* New Pod Cards */}
+                    <div className="space-y-4">
+                      {newPodsDraft.map((pod, pIdx) => (
+                        <div
+                          key={pod.name}
+                          className="p-4 rounded-xl bg-[#0B0F19] border border-slate-800 space-y-3"
+                        >
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-500" />
+                              <h4 className="text-sm font-mono font-bold text-white">
+                                {pod.name}
+                              </h4>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-mono text-blue-400 bg-blue-950/60 border border-blue-500/30 px-2.5 py-0.5 rounded-full font-semibold">
+                                {pod.services.length} Selected
+                              </span>
+                              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-semibold">
+                                {pod.seats} {pod.seats === 1 ? 'Seat' : 'Seats'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                            {allAvailableServices.map((svc, sIdx) => {
+                              const isChecked = pod.services.includes(svc);
+                              const existingPods = servicePodMap[svc] || [];
+                              const siblingPods = newPodsDraft
+                                .filter((other, idx) => idx !== pIdx && other.services.includes(svc))
+                                .map((other) => other.name);
+                              const allCoveringPods = [...existingPods, ...siblingPods];
+                              const isCustom = customServicesList.includes(svc);
+                              const isEditing = editingCustomServiceName === svc;
+                              const indexNumber = sIdx + 1 < 10 ? `0${sIdx + 1}` : `${sIdx + 1}`;
+
+                              if (isEditing) {
+                                return (
+                                  <div
+                                    key={`${pod.name}-${svc}`}
+                                    className="flex items-center gap-2 p-2 rounded-lg bg-slate-900 border border-blue-500/80"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="text"
+                                      autoFocus
+                                      value={editingCustomServiceText}
+                                      onChange={(e) => setEditingCustomServiceText(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          handleSaveEditCustomService(svc);
+                                        } else if (e.key === 'Escape') {
+                                          e.preventDefault();
+                                          handleCancelEditCustomService();
+                                        }
+                                      }}
+                                      className="flex-1 bg-slate-950 border border-slate-700 rounded-md px-2.5 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEditCustomService(svc)}
+                                      className="p-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white cursor-pointer"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditCustomService}
+                                      className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div
+                                  key={`${pod.name}-${svc}`}
+                                  onClick={() => handleToggleServiceForNewPod(pIdx, svc)}
+                                  className={`flex items-center justify-between gap-2.5 p-2.5 rounded-lg border transition-all cursor-pointer select-none ${
+                                    isChecked
+                                      ? 'bg-blue-950/35 border-blue-500/60 text-white'
+                                      : 'bg-slate-900/60 border-slate-800/80 hover:border-slate-700 text-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <span className="w-6 h-6 rounded-md bg-slate-800/90 border border-slate-700/70 text-[11px] font-mono font-bold text-slate-400 flex items-center justify-center shrink-0">
+                                      {indexNumber}
+                                    </span>
+                                    <span className="text-xs font-medium truncate">{svc}</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {isCustom && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleStartEditCustomService(svc);
+                                          }}
+                                          title="Rename category"
+                                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-blue-300 cursor-pointer"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteCustomService(svc);
+                                          }}
+                                          title="Delete category"
+                                          className="p-1 rounded hover:bg-red-950/60 text-slate-400 hover:text-red-400 cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    )}
+                                    {allCoveringPods.length > 0 && (
+                                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">
+                                        <GitFork className="w-2.5 h-2.5 text-cyan-400" />
+                                        <span>{allCoveringPods.join(', ')}</span>
+                                      </span>
+                                    )}
+                                    <div
+                                      className={`w-4 h-4 rounded flex items-center justify-center border ${
+                                        isChecked
+                                          ? 'bg-blue-600 border-blue-500 text-white'
+                                          : 'border-slate-600 bg-slate-800/80'
+                                      }`}
+                                    >
+                                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {createPodError && (
+                      <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                        <span className="text-red-400 font-bold">Error:</span>
+                        <span>{createPodError}</span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center justify-between gap-2.5">
+                      <button
+                        type="button"
+                        disabled={isDeployingPod}
+                        onClick={() => {
+                          setCreatePodError(null);
+                          setDeployPodStep(1);
+                        }}
+                        className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" />
+                        <span>Back</span>
+                      </button>
+                      <div className="flex items-center gap-2.5">
+                        <button
+                          type="button"
+                          disabled={isDeployingPod}
+                          onClick={() => setIsCreatePodOpen(false)}
+                          className="px-4 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isDeployingPod || newPodsDraft.some((p) => p.services.length === 0)}
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-blue-600/30 flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isDeployingPod ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Provisioning Pods...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>
+                                Deploy {newPodsDraft.length} {newPodsDraft.length === 1 ? 'Pod' : 'Pods'} &amp; Issue Tokens
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </form>
+                )}
               </div>
             </div>
           </div>
